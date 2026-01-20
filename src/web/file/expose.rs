@@ -1,5 +1,4 @@
-use std::sync::LazyLock;
-
+use crate::web::file::task::query;
 use axum::{
     Router,
     extract::Path,
@@ -9,9 +8,8 @@ use axum::{
 };
 use dashmap::DashSet;
 use serde::Deserialize;
+use std::sync::LazyLock;
 use tokio_util::io::ReaderStream;
-
-use crate::web::file::task::query;
 
 // 对应 /task/:id
 #[derive(Deserialize)]

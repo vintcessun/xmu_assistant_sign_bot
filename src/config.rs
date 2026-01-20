@@ -11,12 +11,17 @@ const CONFIG: Config = Config {
     },
     bot: BotConfig {
         command_prefix: "/",
+        self_qq: "1363408373",
     },
 };
 
 pub fn ensure_dir(path: &'static str) -> &'static str {
     fs::create_dir_all(path).expect("Failed to create necessary directory");
     path
+}
+
+pub fn get_self_qq() -> &'static str {
+    CONFIG.bot.self_qq
 }
 
 pub const DATA_DIR: &str = "./data";
@@ -57,12 +62,14 @@ impl Default for ServerConfig {
 #[derive(Serialize, Debug, Clone)]
 pub struct BotConfig {
     pub command_prefix: &'static str,
+    pub self_qq: &'static str,
 }
 
 impl Default for BotConfig {
     fn default() -> Self {
         BotConfig {
             command_prefix: "/",
+            self_qq: "1363408373",
         }
     }
 }

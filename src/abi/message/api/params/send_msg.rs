@@ -1,13 +1,16 @@
 use super::Params;
-use crate::abi::{
-    echo::Echo,
-    logic_import::Message,
-    message::{
-        self, MessageSend, Sender, Target,
-        api::data,
-        event_body,
-        message_body::{self, SegmentSend},
+use crate::{
+    abi::{
+        echo::Echo,
+        logic_import::Message,
+        message::{
+            self, MessageSend, Sender, Target,
+            api::data,
+            event_body,
+            message_body::{self, SegmentSend},
+        },
     },
+    config::get_self_qq,
 };
 use core::panic;
 use helper::{api, box_new};
@@ -148,7 +151,7 @@ fn get_msg(
     for msg in messages {
         message.push(message_body::SegmentSend::Node(
             message_body::node::DataSend::Content(message_body::node::DataSend2 {
-                user_id: "1363408373".to_string(),
+                user_id: get_self_qq().to_string(),
                 nickname: "指令回复".to_string(),
                 content: box_new!(MessageSend, msg.clone()),
             }),

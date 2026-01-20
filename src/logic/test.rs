@@ -1,11 +1,14 @@
+use std::sync::Arc;
+
 use super::BuildHelp;
 use crate::{
     abi::{logic_import::*, message::from_str},
     api::xmu_service::{
         llm::ChooseCourse,
-        lnt::{Distribute, Exams},
+        lnt::{Distribute, Exams, Submissions, SubmissionsId},
     },
     logic::helper::get_client_or_err,
+    web::md::task::MdTask,
 };
 use anyhow::anyhow;
 use tracing::trace;
@@ -42,8 +45,8 @@ pub async fn test(ctx: Context) -> Result<()> {
     Ok(())
 }
 
-#[handler(msg_type=Message,command="get_test",echo_cmd=true,
-help_msg=r#"用法:/get_test <ID>
+#[handler(msg_type=Message,command="gettest",echo_cmd=true,
+help_msg=r#"用法:/gettest <ID>
 <ID>: 查询小测的ID，通过 /test 命令获取
 功能: 查询指定小测的内容"#)]
 pub async fn get_test(ctx: Context) -> Result<()> {
@@ -57,11 +60,64 @@ pub async fn get_test(ctx: Context) -> Result<()> {
 
     let distribute = Distribute::get_from_client(&client, id).await?;
 
-    for subject in distribute.subjects {
-        trace!("题目信息：{:?}", subject);
-        //TODO:处理题目信息
-        todo!("处理题目信息");
+    let client = Arc::new(client);
+
+    let result = distribute.parse(client).await?;
+
+    for msg in result.message.build_chunk(30) {
+        ctx.send_message_async(msg);
     }
+
+    let task = MdTask::new(result.markdown);
+
+    ctx.send_message_async(from_str(format!(
+        "小测内容已生成，访问链接下载或预览：{}",
+        task.get_url()
+    )));
+
+    task.finish().await?;
+
+    Ok(())
+}
+
+#[handler(msg_type=Message,command="testans",echo_cmd=true,
+help_msg=r#"用法:/testans <ID>
+<ID>: 查询小测的ID，通过 /test 命令获取
+功能: 查询小测的答案，如果老师有公布的话"#)]
+pub async fn test_ans(ctx: Context) -> Result<()> {
+    let client = get_client_or_err(&ctx).await?;
+    let id = ctx
+        .get_message_text()
+        .split_whitespace()
+        .collect::<String>()
+        .parse::<i64>()
+        .map_err(|e| anyhow!("不是有效的ID: {}\n可以通过/test 获取ID", e))?;
+
+    let submissions = Submissions::get_from_client(&client, id).await?;
+
+    let submission_id = submissions
+        .submissions
+        .first()
+        .ok_or(anyhow!("未找到小测答案，请确认老师是否公布答案"))?
+        .id;
+
+    let submission = SubmissionsId::get_from_client(&client, id, submission_id).await?;
+
+    let client = Arc::new(client);
+
+    let result = submission.parse(client).await?;
+    for msg in result.message.build_chunk(30) {
+        ctx.send_message_async(msg);
+    }
+
+    let task = MdTask::new(result.markdown);
+
+    ctx.send_message_async(from_str(format!(
+        "小测答案已生成，访问链接下载或预览：{}",
+        task.get_url()
+    )));
+
+    task.finish().await?;
 
     Ok(())
 }

@@ -3,8 +3,9 @@ use crate::api::{
     storage::{File, FileBackend},
 };
 use anyhow::Result;
+use futures::{FutureExt, future::BoxFuture};
 use futures_util::StreamExt;
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
 /// 根据 2026-01-09 最新 Bench 结果（详见 session.rs 的 test）：
@@ -17,6 +18,45 @@ pub async fn download_to_file(
     filename: &str,
 ) -> Result<File> {
     download_to_backend::<File>(client, url, filename).await
+}
+
+pub struct FutureFile {
+    pub path: PathBuf,
+    pub future: BoxFuture<'static, Result<()>>,
+}
+
+pub fn download_to_file_sync(client: Arc<SessionClient>, url: &str, filename: &str) -> FutureFile {
+    download_to_backend_sync::<File>(client, url, filename)
+}
+
+pub fn download_to_backend_sync<T: FileBackend>(
+    client: Arc<SessionClient>,
+    url: &str,
+    filename: &str,
+) -> FutureFile {
+    // 1. 准备后端（分配路径并创建占位）
+    let backend = T::prepare(filename);
+    let path = backend.get_path().clone();
+    let path_clone = path.clone();
+    let url_clone = url.to_string();
+
+    let future = async move {
+        let url = url_clone;
+        let path = path_clone;
+        // 2. 获取元数据（复用 SessionClient 自动处理 Cookie）
+        let head_resp = client.get(&url).await?;
+        let total_size = head_resp
+            .content_length()
+            .ok_or_else(|| anyhow::anyhow!("无法获取 Content-Length"))?;
+
+        // 3. 执行 11 协程并行下载
+        download_parallel_benchmarked(client, &url, &path, total_size).await?;
+
+        Ok::<(), anyhow::Error>(())
+    }
+    .boxed();
+
+    FutureFile { path, future }
 }
 
 pub async fn download_to_backend<T: FileBackend>(
@@ -32,10 +72,10 @@ pub async fn download_to_backend<T: FileBackend>(
 
     // 2. 准备后端（分配路径并创建占位）
     let backend = T::prepare(filename);
-    let path = backend.get_path().clone();
+    let path = backend.get_path();
 
     // 3. 执行 11 协程并行下载
-    download_parallel_benchmarked(client, url, &path, total_size).await?;
+    download_parallel_benchmarked(client, url, path, total_size).await?;
 
     Ok(backend)
 }

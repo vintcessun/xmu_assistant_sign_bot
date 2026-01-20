@@ -1,3 +1,4 @@
+mod classroom;
 mod download;
 mod echo;
 mod helper;
@@ -18,6 +19,10 @@ register_handler_with_help!(
         login::LogoutHandler,
         download::DownloadHandler,
         test::TestHandler,
+        test::GetTestHandler,
+        test::TestAnsHandler,
+        classroom::ClassHandler,
+        classroom::GetClassHandler,
     ],
     other = [llm::LlmMessageHandler, llm::LlmNoticeHandler,]
 );

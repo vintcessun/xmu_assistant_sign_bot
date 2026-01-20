@@ -1,4 +1,6 @@
 use helper::box_new;
+use serde::Deserialize;
+use serde::Serialize;
 
 use super::super::MessageSend;
 use super::super::message_body::*;
@@ -12,6 +14,7 @@ impl MessageSend {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MessageSendBuilder {
     segments: Vec<SegmentSend>,
 }
@@ -33,6 +36,27 @@ impl Default for MessageSendBuilder {
 impl MessageSendBuilder {
     pub fn build(self) -> MessageSend {
         MessageSend::Array(self.segments)
+    }
+
+    pub fn build_chunk(self, chunk_size: usize) -> Vec<MessageSend> {
+        let mut result = Vec::new();
+        let mut current_chunk = Vec::with_capacity(chunk_size);
+        for segment in self.segments {
+            current_chunk.push(segment);
+            if current_chunk.len() >= chunk_size {
+                result.push(MessageSend::Array(current_chunk));
+                current_chunk = Vec::with_capacity(chunk_size);
+            }
+        }
+        if !current_chunk.is_empty() {
+            result.push(MessageSend::Array(current_chunk));
+        }
+        result
+    }
+
+    pub fn extend(&mut self, other: MessageSendBuilder) {
+        self.segments.reserve(other.segments.len());
+        self.segments.extend(other.segments);
     }
 
     pub fn add_seg(mut self, segment: SegmentSend) -> Self {

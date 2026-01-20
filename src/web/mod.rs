@@ -5,6 +5,7 @@ pub mod file;
 pub mod md;
 
 use file::file_router;
+use md::md_router;
 
 const URL: &str = "https://zzy.vintces.icu";
 const LOCAL: &str = "0.0.0.0:3080";
@@ -24,6 +25,7 @@ pub async fn start() -> Result<()> {
 fn router() -> Router {
     let router = Router::new();
     let router = router.nest("/file", file_router());
+    let router = router.nest("/md", md_router()); // 嵌套 md 模块路由
     main_router(router)
 }
 

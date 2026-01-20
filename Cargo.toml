@@ -52,7 +52,6 @@ serde_urlencoded = "0.7.1"
 ahash = "0.8.12"
 rand = { version = "0.9.2", features = ["alloc"] }
 soft-aes = "0.2.2"
-base64 = "0.22.1"
 memchr = "2.7.6"
 mimalloc = "0.1.48"
 axum = "0.8.8"
@@ -66,6 +65,12 @@ phf = "0.13.1"
 sha2 = "0.10.9"
 hnsw_rs = "0.3.3"
 arc-swap = { version = "1.8.0", features = ["serde"] }
+scraper = "0.25.0"
+ego-tree = "0.10.0"
+base64 = "0.22.1"
+pulldown-cmark = "0.11.0"
+headless_chrome = "1.0.20"
+urlencoding = "2.1.3"
 
 [build-dependencies]
 base64 = "0.22.1"

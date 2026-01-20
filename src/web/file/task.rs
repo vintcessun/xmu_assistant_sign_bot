@@ -9,7 +9,6 @@ use std::{
     sync::{Arc, LazyLock},
     time::SystemTime,
 };
-
 static DATA: LazyLock<HotTable<String, ExposeFileList>> = LazyLock::new(|| HotTable::new("file"));
 
 pub fn query(id: &String) -> Option<Arc<ExposeFileList>> {
