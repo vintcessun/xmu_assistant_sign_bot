@@ -9,7 +9,7 @@ use futures::future::join_all;
 use scraper::{Html, Node};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::task::spawn_blocking;
+use tokio::task::block_in_place;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HtmlParseResult {
@@ -150,9 +150,8 @@ impl HtmlParser {
     // 主入口
     pub async fn parse(&self, html_content: &str) -> Result<HtmlParseResult> {
         let html_content = html_content.to_string();
-        let parser_clone = self.clone();
 
-        let task = spawn_blocking(move || parser_clone.parse_inner(&html_content)).await??;
+        let task = block_in_place(|| self.parse_inner(&html_content))?;
 
         let files = task.download_tasks;
         let futures = files.into_iter().map(|f| f.future);

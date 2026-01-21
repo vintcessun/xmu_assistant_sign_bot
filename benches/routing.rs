@@ -26,9 +26,9 @@ struct MockClient;
 #[async_trait]
 impl BotClient for MockClient {
     // Mock call_api 行为，避免实际网络操作
-    async fn call_api<R: Request + Send>(
-        &self,
-        _request: R,
+    async fn call_api<'a, R: Request + Send>(
+        &'a self,
+        _request: &'a R,
         _echo: Echo,
     ) -> Result<ApiResponsePending<R::Response>> {
         // 模拟异步操作的开销，使其更符合实际分发工作中的 I/O 等待

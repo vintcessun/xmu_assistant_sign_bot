@@ -71,7 +71,7 @@ where
         }
         Message::Group(p) => {
             let params = GroupMemberInfo::new(p.group_id, p.user_id, false);
-            let call = ctx.client.call_api(params, Echo::new()).await;
+            let call = ctx.client.call_api(&params, Echo::new()).await;
             match call {
                 Ok(call) => {
                     let res = call.wait_echo().await;
@@ -119,7 +119,7 @@ where
         }
         Message::Group(p) => {
             let params = GetGroupInfo::new(p.group_id, false);
-            let call = ctx.client.call_api(params, Echo::new()).await;
+            let call = ctx.client.call_api(&params, Echo::new()).await;
             match call {
                 Ok(call) => {
                     let res = call.wait_echo().await;

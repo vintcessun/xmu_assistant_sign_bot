@@ -1,4 +1,4 @@
-use std::{fmt, path::Path, sync::Arc};
+use std::{any::Any, fmt, path::Path, sync::Arc};
 
 use anyhow::Result;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
@@ -13,18 +13,21 @@ pub struct File {
 }
 
 #[derive(Debug)]
-pub enum FileUrl<T: fmt::Debug = ()> {
-    Temp { url: String, _handle: Arc<T> },
+pub enum FileUrl {
+    Temp {
+        url: String,
+        _handle: Arc<dyn Any + Send + Sync>,
+    },
     Raw(String),
 }
 
-impl<T: fmt::Debug> FileUrl<T> {
+impl FileUrl {
     pub fn new(url: String) -> Self {
         FileUrl::Raw(url)
     }
 }
 
-impl<T: fmt::Debug> Clone for FileUrl<T> {
+impl Clone for FileUrl {
     fn clone(&self) -> Self {
         match self {
             FileUrl::Temp { url, _handle } => FileUrl::Temp {
@@ -36,7 +39,7 @@ impl<T: fmt::Debug> Clone for FileUrl<T> {
     }
 }
 
-impl<T: fmt::Debug> FileUrl<T> {
+impl FileUrl {
     pub fn get_url(&self) -> &str {
         match self {
             FileUrl::Temp { url, .. } => url,
@@ -45,7 +48,7 @@ impl<T: fmt::Debug> FileUrl<T> {
     }
 }
 
-impl<T: fmt::Debug> Serialize for FileUrl<T> {
+impl Serialize for FileUrl {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -58,16 +61,16 @@ impl<T: fmt::Debug> Serialize for FileUrl<T> {
     }
 }
 
-impl<'de, T: fmt::Debug> Deserialize<'de> for FileUrl<T> {
+impl<'de> Deserialize<'de> for FileUrl {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         // 定义一个访问者来处理字符串数据
-        struct FileUrlVisitor<T>(std::marker::PhantomData<T>);
+        struct FileUrlVisitor(std::marker::PhantomData<()>);
 
-        impl<'de, T: fmt::Debug> de::Visitor<'de> for FileUrlVisitor<T> {
-            type Value = FileUrl<T>;
+        impl<'de> de::Visitor<'de> for FileUrlVisitor {
+            type Value = FileUrl;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("a string representing a file URL")
@@ -95,7 +98,7 @@ impl<'de, T: fmt::Debug> Deserialize<'de> for FileUrl<T> {
     }
 }
 
-impl<T: fmt::Debug> FileUrl<T> {
+impl FileUrl {
     pub fn from_path(path: &Path) -> Result<Self> {
         let absolute_path = std::fs::canonicalize(path)?;
 

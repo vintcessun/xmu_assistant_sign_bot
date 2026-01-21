@@ -1,7 +1,9 @@
 use super::JwAPI;
 use crate::abi::utils::SmartJsonExt;
+use crate::api::network::SessionClient;
 use anyhow::Result;
 use anyhow::bail;
+use helper::castgc_client_helper;
 use helper::jw_api;
 use serde::{Deserialize, Serialize};
 
@@ -119,9 +121,10 @@ impl Zzy {
         })
     }
 
-    pub async fn get(castgc: &str, student_id: &str) -> Result<Self> {
-        Self::call(
-            castgc,
+    #[castgc_client_helper]
+    pub async fn get_from_client(client: &SessionClient, student_id: &str) -> Result<Self> {
+        Self::call_client(
+            client,
             &ZzyRequest {
                 batch_code: "01",
                 student_id,

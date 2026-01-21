@@ -10,9 +10,9 @@ use crate::abi::{
 
 #[async_trait]
 pub trait BotClient {
-    async fn call_api<T: Params + Serialize + fmt::Debug>(
-        &self,
-        params: T,
+    async fn call_api<'a, T: Params + Serialize + fmt::Debug>(
+        &'a self,
+        params: &'a T,
         echo: Echo,
     ) -> Result<api::ApiResponsePending<T::Response>>;
 }

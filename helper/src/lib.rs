@@ -596,12 +596,12 @@ pub fn jw_api(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let field_quote = if args.auto_row {
         quote! {
-            #[derive(Deserialize, Debug, Clone, Default)]
+            #[derive(Serialize, Deserialize, Debug, Clone, Default)]
             #[serde(rename_all = "UPPERCASE")]
             #vis struct #response_item_ident
             #fields
 
-            #[derive(Deserialize, Debug, Clone, Default)]
+            #[derive(Serialize, Deserialize, Debug, Clone, Default)]
             #[serde(rename_all = "camelCase")]
             #vis struct #data_api_ident {
                 pub rows: Vec<#response_item_ident>,
@@ -613,7 +613,7 @@ pub fn jw_api(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     } else {
         quote! {
-            #[derive(Deserialize, Debug, Clone, Default)]
+            #[derive(Serialize, Deserialize, Debug, Clone, Default)]
             #[serde(rename_all = "camelCase")]
             #vis struct #data_api_ident
             #fields
@@ -630,12 +630,12 @@ pub fn jw_api(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let original_quote = match args.wrap_response {
         WrapState::Normal => quote! {
-            #[derive(Deserialize, Debug, Clone, Default)]
+            #[derive(Serialize, Deserialize, Debug, Clone, Default)]
             #vis struct #datas_ident {
                 pub #dynamic_field_ident: #data_api_ident,
             }
 
-            #[derive(Deserialize, Debug, Clone, Default)]
+            #[derive(Serialize, Deserialize, Debug, Clone, Default)]
             #vis struct #original_ident {
                 pub code: String,
                 pub #data_name: #datas_ident,
@@ -644,14 +644,14 @@ pub fn jw_api(args: TokenStream, input: TokenStream) -> TokenStream {
         WrapState::Query => {
             if args.auto_row {
                 quote! {
-                    #[derive(Deserialize, Debug, Clone, Default)]
+                    #[derive(Serialize, Deserialize, Debug, Clone, Default)]
                     #vis struct #original_ident {
                         pub #data_name: Vec<#response_item_ident>,
                     }
                 }
             } else {
                 quote! {
-                    #[derive(Deserialize, Debug, Clone, Default)]
+                    #[derive(Serialize, Deserialize, Debug, Clone, Default)]
                     #vis struct #original_ident #fields
                 }
             }
@@ -661,21 +661,29 @@ pub fn jw_api(args: TokenStream, input: TokenStream) -> TokenStream {
     let impl_quote = match args.call_type {
         CallType::Get => quote! {
             impl #original_ident {
-                pub async fn call(castgc: &str) -> Result<#original_ident> {
-                    let client = crate::api::xmu_service::jw::get_castgc_client(castgc);
+                pub async fn call_client(client: &crate::api::network::SessionClient) -> Result<#original_ident> {
                     let res_auth = client.get(#original_ident::APP_ENTRANCE).await?;
                     let resp = client.get(#original_ident::URL_DATA).await?.json_smart().await?;
                     Ok(resp)
+                }
+
+                pub async fn call(castgc: &str) -> Result<#original_ident> {
+                    let client = crate::api::xmu_service::jw::get_castgc_client(castgc);
+                    Self::call_client(&client).await
                 }
             }
         },
         CallType::Post => quote! {
             impl #original_ident {
-                pub async fn call<D: Serialize + Sync>(castgc: &str, data: &D) -> Result<#original_ident> {
-                    let client = crate::api::xmu_service::jw::get_castgc_client(castgc);
+                pub async fn call_client<D: Serialize + Sync>(client: &crate::api::network::SessionClient, data: &D) -> Result<#original_ident> {
                     let res_auth = client.get(#original_ident::APP_ENTRANCE).await?;
                     let resp = client.post(#original_ident::URL_DATA, data).await?.json_smart().await?;
                     Ok(resp)
+                }
+
+                pub async fn call<D: Serialize + Sync>(castgc: &str, data: &D) -> Result<#original_ident> {
+                    let client = crate::api::xmu_service::jw::get_castgc_client(castgc);
+                    Self::call_client(&client, data).await
                 }
             }
         },
@@ -1205,4 +1213,146 @@ pub fn box_new(input: TokenStream) -> TokenStream {
         }
         .into(),
     }
+}
+
+#[proc_macro_attribute]
+pub fn castgc_client_helper(_args: TokenStream, input: TokenStream) -> TokenStream {
+    // 1. 解析输入的函数
+    let input_fn = parse_macro_input!(input as ItemFn);
+    let sig = &input_fn.sig;
+    let old_name = sig.ident.to_string();
+    let suffix = "_from_client";
+
+    // 2. 校验后缀
+    if !old_name.ends_with(suffix) {
+        return TokenStream::from(quote_spanned! {
+            sig.ident.span() => compile_error!("Function name must end with '_from_client'");
+        });
+    }
+
+    // 3. 生成新函数名 (去掉后缀)
+    let new_name_str = &old_name[..old_name.len() - suffix.len()];
+    if new_name_str.is_empty() {
+        return TokenStream::from(quote_spanned! {
+            sig.ident.span() => compile_error!("Function name invalid");
+        });
+    }
+    let new_name = format_ident!("{}", new_name_str, span = sig.ident.span());
+
+    // 4. 提取签名要素
+    let vis = &input_fn.vis;
+    let generics = &sig.generics;
+    let where_clause = &generics.where_clause;
+    let return_type = &sig.output;
+
+    // 5. 处理参数：校验第一个参数是否为 &SessionClient 或 Arc<SessionClient>
+    let mut inputs_iter = sig.inputs.iter();
+    let first_arg = inputs_iter.next();
+
+    let is_arc = match first_arg {
+        Some(FnArg::Typed(pat_type)) => match &*pat_type.ty {
+            // 匹配 &SessionClient
+            syn::Type::Reference(ty_ref) => {
+                if let syn::Type::Path(tp) = &*ty_ref.elem {
+                    let last_seg = tp.path.segments.last().unwrap();
+                    if last_seg.ident == "SessionClient" {
+                        false
+                    } else {
+                        return TokenStream::from(quote_spanned! {
+                            pat_type.ty.span() => compile_error!("First arg must be '&SessionClient'");
+                        });
+                    }
+                } else {
+                    return TokenStream::from(quote_spanned! {
+                        pat_type.ty.span() => compile_error!("First arg must be '&SessionClient'");
+                    });
+                }
+            }
+            // 匹配 Arc<SessionClient>
+            syn::Type::Path(ty_path) => {
+                let last_seg = ty_path.path.segments.last().unwrap();
+                if last_seg.ident == "Arc" {
+                    let mut valid_inner = false;
+                    if let syn::PathArguments::AngleBracketed(args) = &last_seg.arguments {
+                        if let Some(syn::GenericArgument::Type(syn::Type::Path(inner_tp))) =
+                            args.args.first()
+                        {
+                            if inner_tp.path.segments.last().map(|s| &s.ident)
+                                == Some(&format_ident!("SessionClient"))
+                            {
+                                valid_inner = true;
+                            }
+                        }
+                    }
+                    if valid_inner {
+                        true
+                    } else {
+                        return TokenStream::from(quote_spanned! {
+                            pat_type.ty.span() => compile_error!("Arc must contain 'SessionClient'");
+                        });
+                    }
+                } else {
+                    return TokenStream::from(quote_spanned! {
+                        pat_type.ty.span() => compile_error!("First arg must be 'Arc<SessionClient>' or '&SessionClient'");
+                    });
+                }
+            }
+            _ => {
+                return TokenStream::from(quote_spanned! {
+                    pat_type.ty.span() => compile_error!("Unsupported client type");
+                });
+            }
+        },
+        _ => {
+            return TokenStream::from(quote_spanned! {
+                sig.span() => compile_error!("Function needs client argument");
+            });
+        }
+    };
+
+    let other_params: Vec<_> = inputs_iter.collect();
+
+    // 提取后续调用参数标识符
+    let call_args: Vec<_> = other_params
+        .iter()
+        .map(|arg| {
+            if let FnArg::Typed(pat_type) = arg {
+                if let Pat::Ident(pat_ident) = &*pat_type.pat {
+                    let id = &pat_ident.ident;
+                    return quote! { #id };
+                }
+            }
+            quote! { _ }
+        })
+        .collect();
+
+    // 6. 生成新函数逻辑
+    let client_invocation = if is_arc {
+        quote! { std::sync::Arc::new(client) }
+    } else {
+        quote! { &client }
+    };
+
+    let original_ident = &sig.ident;
+
+    let gen_fn = quote_spanned! { sig.span() =>
+        #vis async fn #new_name #generics (
+            castgc: &str, // 替换为 castgc 参数
+            #(#other_params),*
+        ) #return_type #where_clause {
+            // 调用你指定的内部生成方法
+            let client = crate::api::xmu_service::jw::get_castgc_client(castgc);
+
+            // 调用原始函数
+            Self::#original_ident(#client_invocation, #(#call_args),*).await
+        }
+    };
+
+    // 7. 合并输出
+    let expanded = quote! {
+        #input_fn
+        #gen_fn
+    };
+
+    TokenStream::from(expanded)
 }

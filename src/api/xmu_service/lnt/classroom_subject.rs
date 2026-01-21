@@ -45,10 +45,9 @@ mod tests {
     use super::*;
     use anyhow::Result;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test() -> Result<()> {
-        //TODO:因为课程平台暂时关闭未测试API
-        let castgc = "TGT-2605352-4k4AWnBpGvBvVUhDSMZTM9e8F-3rEggafQYwsQkjx6kk2jUwtycBvN2LKrInZ6az6IQnull_main";
+        let castgc = "TGT-4017429-6KAhATeeVXolstMjtOxHIv1EHDxnJejNaDlXvFiIYazONlAgn0ijGNwjysYzgJCi8iQnull_main";
         let session = castgc_get_session(castgc).await?;
         let data = ClassroomSubject::get(&session, 2776).await?;
         println!("ClassroomList: {:?}", data);

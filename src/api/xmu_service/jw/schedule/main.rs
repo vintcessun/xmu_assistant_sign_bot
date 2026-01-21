@@ -1,7 +1,10 @@
 use super::JwAPI;
-use crate::abi::utils::SmartJsonExt;
+use crate::{
+    abi::utils::SmartJsonExt,
+    api::{network::SessionClient, xmu_service::jw::ScheduleListResponse},
+};
 use anyhow::Result;
-use helper::jw_api;
+use helper::{castgc_client_helper, jw_api};
 use serde::{Deserialize, Serialize};
 
 #[jw_api(
@@ -17,6 +20,7 @@ pub struct Schedule {
     pub kssj: u16,             // 开始时间
     pub jsjcdm: i64,           // 结束节次代码
     pub ksjcdm: i64,           // 开始节次代码
+    pub xq: i64,               // 星期
                                //pub bjdm: IgnoredAny,    // 班级代码
                                //pub bjmc: IgnoredAny,    // 班级名称
                                //pub jasdm: IgnoredAny,   // 教室代码
@@ -31,8 +35,30 @@ pub struct Schedule {
                                //pub wid: IgnoredAny,     // 唯一ID
                                //pub xh: IgnoredAny,      // 学号
                                //pub xkrs: IgnoredAny,    // 选课人数
-                               //pub xq: IgnoredAny,      // 学期
                                //pub zcmc: IgnoredAny,    // 周次名称
+}
+
+impl Schedule {
+    #[castgc_client_helper]
+    pub async fn get_from_client(
+        client: &SessionClient,
+        schedule_time: &ScheduleListResponse,
+    ) -> Result<Schedule> {
+        Self::get_by_code_from_client(client, &schedule_time.xnxqdm).await
+    }
+
+    #[castgc_client_helper]
+    pub async fn get_by_code_from_client(
+        client: &SessionClient,
+        semester_code: &str,
+    ) -> Result<Schedule> {
+        let data = ScheduleRequest {
+            semester: semester_code,
+            student_id: "",
+        };
+        let schedule = Self::call_client(client, &data).await?;
+        Ok(schedule)
+    }
 }
 
 #[derive(Serialize, Debug)]
@@ -54,8 +80,8 @@ mod tests {
     use anyhow::Result;
 
     #[tokio::test]
-    async fn test_location_my() -> Result<()> {
-        let castgc = "TGT-3689523-tqSGK8uMKkyZVNAjG5H1ss4yc0Rsbdeac8Cwq7T5YKUxMQ3XU2L0cCe5FGiYHO6Z7EUnull_main";
+    async fn test_location_vintcessun() -> Result<()> {
+        let castgc = "TGT-4245016-7k39o2TRjw6GeRQr1iTvzpcGUjtcHqw-nLA1bCNS1MScKGDu4ZIfJTwR9wnMV-QhcY8null_main";
         let data = ScheduleListRequest {};
         let schedule_list = ScheduleList::call(castgc, &data).await?;
         for item in schedule_list.datas.kfdxnxqcx.rows {

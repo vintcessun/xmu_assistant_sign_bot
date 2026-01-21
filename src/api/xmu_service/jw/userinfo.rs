@@ -1,8 +1,8 @@
 use super::JwAPI;
-use crate::abi::utils::SmartJsonExt;
+use crate::{abi::utils::SmartJsonExt, api::network::SessionClient};
 use anyhow::Result;
-use helper::jw_api;
-use serde::Deserialize;
+use helper::{castgc_client_helper, jw_api};
+use serde::{Deserialize, Serialize};
 
 #[jw_api(
     url = "https://jw.xmu.edu.cn/jwapp/sys/jwai/api/user/getCurrentUser.do",
@@ -17,8 +17,9 @@ pub struct UserInfo {
 }
 
 impl UserInfo {
-    pub async fn get_userinfo(castgc: &str) -> Result<UserInfoDataApi> {
-        let userinfo = Self::call(castgc).await?;
+    #[castgc_client_helper]
+    pub async fn get_from_client(client: &SessionClient) -> Result<UserInfoDataApi> {
+        let userinfo = Self::call_client(client).await?;
         Ok(userinfo.datas.getCurrentUser)
     }
 }

@@ -1,4 +1,4 @@
 mod main;
-mod process;
+pub mod process;
 
 pub use main::*;

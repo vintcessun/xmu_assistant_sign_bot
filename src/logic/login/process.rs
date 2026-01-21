@@ -2,24 +2,30 @@ use super::main::DATA;
 use crate::abi::message::MessageSend;
 use crate::api::xmu_service::jw::{UserInfo, Zzy, ZzyProfile};
 use crate::api::xmu_service::lnt::Profile;
-use crate::api::xmu_service::login::{LoginRequest, get_qrcode_id, request_qrcode, wait_qrcode};
+use crate::api::xmu_service::login::{
+    LoginData, LoginRequest, get_qrcode_id, request_qrcode, wait_qrcode,
+};
 use crate::{abi::logic_import::*, api::network::SessionClient};
 use anyhow::Result;
 use std::sync::Arc;
 use tracing::warn;
 
-#[inline(never)]
-pub async fn update_db_and_login_base(
+pub async fn update_and_login(
     session: &SessionClient,
     data: LoginRequest,
     id: i64,
-) -> Result<ZzyProfile> {
+) -> Result<Arc<LoginData>> {
     let login_data = Arc::new(request_qrcode(session, data).await?);
 
     let login_data_insert = login_data.clone();
 
     DATA.insert(id, login_data_insert)?;
 
+    Ok(login_data)
+}
+
+#[inline(never)]
+pub async fn login_base(login_data: Arc<LoginData>) -> Result<ZzyProfile> {
     let user_id = match Profile::get(&login_data.lnt).await {
         Ok(p) => p.user_no.clone(),
         Err(e) => {
@@ -27,7 +33,7 @@ pub async fn update_db_and_login_base(
                 "获取 LNT 用户信息失败，尝试使用 JW 用户信息登录，错误信息: {}",
                 e
             );
-            let userinfo = UserInfo::get_userinfo(&login_data.castgc).await?;
+            let userinfo = UserInfo::get(&login_data.castgc).await?;
             userinfo.user_id
         }
     };
@@ -75,14 +81,16 @@ pub async fn send_msg_and_wait<T: BotClient + BotHandler + fmt::Debug>(
 pub async fn process_login<T: BotClient + BotHandler + fmt::Debug>(
     ctx: &mut Context<T, Message>,
     id: i64,
-) -> Result<()> {
+) -> Result<Arc<LoginData>> {
     let session = SessionClient::new();
 
     let data = send_msg_and_wait(ctx, &session, id).await?;
 
     ctx.send_message_async(message::from_str("登录成功！"));
 
-    let zzy_profile = update_db_and_login_base(&session, data, id).await?;
+    let login_data = update_and_login(&session, data, id).await?;
+
+    let zzy_profile = login_base(login_data.clone()).await?;
 
     ctx.send_message_async(message::from_str(format!(
         "信息:{} 转入学院:{:?}",
@@ -96,5 +104,5 @@ pub async fn process_login<T: BotClient + BotHandler + fmt::Debug>(
 
     ctx.set_title(format!("{}转{}", year, dept)).await?;
 
-    Ok(())
+    Ok(login_data)
 }

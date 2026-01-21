@@ -1,7 +1,7 @@
 const BASE: &str = "file";
 
 use super::BASE_DATA_DIR;
-use crate::config::ensure_dir;
+use crate::{abi::message::file::FileUrl, config::ensure_dir};
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use const_format::concatcp;
@@ -236,5 +236,12 @@ impl File {
         Url::from_file_path(absolute_path)
             .map(|url| url.into())
             .unwrap_or_default()
+    }
+}
+
+impl File {
+    pub async fn to_fileurl(mut self) -> Result<FileUrl> {
+        self.finish().await?;
+        Ok(FileUrl::Raw(self.get_url().await))
     }
 }

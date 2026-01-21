@@ -1,7 +1,7 @@
 use super::JwAPI;
-use crate::abi::utils::SmartJsonExt;
+use crate::{abi::utils::SmartJsonExt, api::network::SessionClient};
 use anyhow::Result;
-use helper::jw_api;
+use helper::{castgc_client_helper, jw_api};
 use serde::{Deserialize, Serialize};
 
 #[jw_api(
@@ -26,6 +26,15 @@ pub struct ScheduleList {
                         //pub rzlbdm: IgnoredAny,      // 认证类别代码
                         //pub wid: IgnoredAny,         // 唯一ID
                         //pub xnxqymc: IgnoredAny,     // 学年学期英文名称
+}
+
+impl ScheduleList {
+    #[castgc_client_helper]
+    pub async fn get_from_client(client: &SessionClient) -> Result<ScheduleList> {
+        let data = ScheduleListRequest {};
+        let schedule_list = Self::call_client(client, &data).await?;
+        Ok(schedule_list)
+    }
 }
 
 #[derive(Serialize, Debug)]

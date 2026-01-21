@@ -286,8 +286,6 @@ define_default_type!(Cache, u8, 1);
 define_default_type!(Proxy, u8, 1);
 
 pub mod image {
-    use std::fmt;
-
     use crate::abi::message::file::FileUrl;
 
     use super::*;
@@ -300,8 +298,8 @@ pub mod image {
     }
 
     #[derive(Serialize, Deserialize, Debug, Clone)]
-    pub struct DataSend<T: fmt::Debug + Clone = ()> {
-        pub file: FileUrl<T>,
+    pub struct DataSend {
+        pub file: FileUrl,
         pub r#type: Option<String>,
         pub cache: Cache,
         pub proxy: Proxy,
@@ -312,8 +310,6 @@ pub mod image {
 define_default_type!(Magic, u8, 0);
 
 pub mod record {
-    use std::fmt;
-
     use crate::abi::message::file::FileUrl;
 
     use super::*;
@@ -326,8 +322,8 @@ pub mod record {
     }
 
     #[derive(Serialize, Deserialize, Debug, Clone)]
-    pub struct DataSend<T: fmt::Debug + Clone = ()> {
-        pub file: FileUrl<T>,
+    pub struct DataSend {
+        pub file: FileUrl,
         pub magic: Magic,
         pub cache: Cache,
         pub proxy: Proxy,
@@ -336,8 +332,6 @@ pub mod record {
 }
 
 pub mod video {
-    use std::fmt;
-
     use crate::abi::message::file::FileUrl;
 
     use super::*;
@@ -349,8 +343,8 @@ pub mod video {
     }
 
     #[derive(Serialize, Deserialize, Debug, Clone)]
-    pub struct DataSend<T: fmt::Debug + Clone = ()> {
-        pub file: FileUrl<T>,
+    pub struct DataSend {
+        pub file: FileUrl,
         pub cache: Cache,
         pub proxy: Proxy,
         pub timeout: Option<u64>,
@@ -622,14 +616,12 @@ pub mod json {
 }
 
 pub mod file {
-    use std::fmt;
-
     use crate::abi::message::file::FileUrl;
 
     use super::*;
     #[derive(Serialize, Deserialize, Debug, Clone)]
-    pub struct DataSend<T: fmt::Debug + Clone = ()> {
-        pub file: FileUrl<T>,
+    pub struct DataSend {
+        pub file: FileUrl,
     }
 
     #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -19,25 +19,25 @@ use std::sync::Arc;
 use tracing::{debug, trace};
 
 #[derive(Serialize, Debug)]
-pub struct ApiSend<T: Params + Serialize> {
+pub struct ApiSend<'a, T: Params + Serialize> {
     pub action: &'static str,
-    pub params: T,
+    pub params: &'a T,
     pub echo: Echo,
 }
 
 #[api("/send_group_msg", data::SendMsgResponse)]
 pub struct SendGroupMessageParams {
     pub group_id: i64,
-    pub message: MessageSend,
+    pub message: Arc<MessageSend>,
 }
 
 impl SendGroupMessageParams {
-    pub const fn new(group_id: i64, message: MessageSend) -> Self {
+    pub const fn new(group_id: i64, message: Arc<MessageSend>) -> Self {
         Self { group_id, message }
     }
 }
 
-#[api("/send_group_forward_msg", data::GetForwardMsgResponse)]
+#[api("/send_group_forward_msg", data::SendMsgResponse)]
 pub struct SendGroupForwardMessageParams {
     pub group_id: i64,
     pub messages: MessageSend,
@@ -67,11 +67,11 @@ impl SendGroupForwardMessageParams {
 #[api("/send_private_msg", data::SendMsgResponse)]
 pub struct SendPrivateMessageParams {
     pub user_id: i64,
-    pub message: MessageSend,
+    pub message: Arc<MessageSend>,
 }
 
 impl SendPrivateMessageParams {
-    pub const fn new(user_id: i64, message: MessageSend) -> Self {
+    pub const fn new(user_id: i64, message: Arc<MessageSend>) -> Self {
         Self { user_id, message }
     }
 }

@@ -158,7 +158,7 @@ mod tests {
 
         println!("用户信息：{:?}", profile);
 
-        let data = Zzy::get(&login_data.castgc, &profile.user_no).await?;
+        let data = Zzy::get_from_client(&session, &profile.user_no).await?;
 
         let zzy_profile = data.get_profile()?;
 

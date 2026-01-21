@@ -83,10 +83,11 @@ impl<
     }
 
     pub async fn send_message(&self, message: MessageSend) -> Result<()> {
+        let message = Arc::new(message);
         match self.target {
             Target::Group(group_id) => {
-                let params = api::SendGroupMessageParams::new(group_id, message);
-                let call = self.client.call_api(params, Echo::new()).await?;
+                let params = api::SendGroupMessageParams::new(group_id, message.clone());
+                let call = self.client.call_api(&params, Echo::new()).await?;
                 let res = call.wait_echo().await?;
                 trace!(?res);
                 match res.status {
@@ -99,8 +100,8 @@ impl<
                 }
             }
             Target::Private(user_id) => {
-                let params = api::SendPrivateMessageParams::new(user_id, message);
-                let call = self.client.call_api(params, Echo::new()).await?;
+                let params = api::SendPrivateMessageParams::new(user_id, message.clone());
+                let call = self.client.call_api(&params, Echo::new()).await?;
                 let res = call.wait_echo().await?;
                 trace!(?res);
                 match res.status {
@@ -144,7 +145,7 @@ impl<
             self.sender.user_id.unwrap_or(0),
             title,
         );
-        let call = self.client.call_api(params, Echo::new()).await?;
+        let call = self.client.call_api(&params, Echo::new()).await?;
         let res = call.wait_echo().await?;
         trace!(?res);
         match res.status {
@@ -178,10 +179,15 @@ impl<
         if let Some(msg) = msg {
             match target {
                 Target::Group(_) => {
-                    let params =
-                        api::SendGroupForwardMessageParams::new(is_echo, list, sender, msg, target);
+                    let params = api::SendGroupForwardMessageParams::new(
+                        is_echo,
+                        list,
+                        sender,
+                        msg.clone(),
+                        target,
+                    );
                     match async move {
-                        let call = client.call_api(params, Echo::new()).await?;
+                        let call = client.call_api(&params, Echo::new()).await?;
                         let res = call.wait_echo().await?;
                         trace!(?res);
                         match res.status {
@@ -208,10 +214,14 @@ impl<
                 }
                 Target::Private(_) => {
                     let params = api::SendPrivateForwardMessageParams::new(
-                        is_echo, list, sender, msg, target,
+                        is_echo,
+                        list,
+                        sender,
+                        msg.clone(),
+                        target,
                     );
                     match async move {
-                        let call = client.call_api(params, Echo::new()).await?;
+                        let call = client.call_api(&params, Echo::new()).await?;
                         let res = call.wait_echo().await?;
                         trace!(?res);
                         match res.status {

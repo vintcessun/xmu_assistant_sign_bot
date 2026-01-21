@@ -93,7 +93,7 @@ pub async fn wait_qrcode(session: &SessionClient, qrcode_id: &str) -> Result<()>
                 return Err(anyhow!("未知的二维码状态码。"));
             }
         }
-        tokio::time::sleep(time::Duration::from_secs(1)).await;
+        tokio::time::sleep(time::Duration::from_secs(10)).await;
     }
     Ok(())
 }
@@ -118,6 +118,19 @@ pub async fn request_qrcode(session: &SessionClient, data: LoginRequest) -> Resu
         castgc: castgc.to_string(),
         lnt: lnt.to_string(),
     })
+}
+
+pub async fn request_qrcode_castgc(session: &SessionClient, data: LoginRequest) -> Result<String> {
+    session
+        .post(&data.url, &data.body)
+        .await?
+        .error_for_status_ref()?;
+
+    let castgc = session
+        .get_cookie("CASTGC", &IDS_URL)
+        .ok_or(anyhow!("登录失败，未获取到CASTGC Cookie"))?;
+
+    Ok(castgc.to_string())
 }
 
 pub async fn get_qrcode_id(session: &SessionClient) -> Result<(String, LoginRequest)> {

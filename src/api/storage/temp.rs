@@ -1,12 +1,14 @@
 const BASE: &str = "temp";
 
 use super::BASE_DATA_DIR;
+use crate::abi::message::file::FileUrl;
 use crate::api::storage::file::{FileBackend, FileStorage};
 use crate::config::ensure_dir;
 use anyhow::Result;
 use async_trait::async_trait;
 use const_format::concatcp;
 use dashmap::DashSet;
+use std::time::Duration;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -15,6 +17,10 @@ use std::{
         atomic::{AtomicUsize, Ordering},
     },
 };
+use tokio::sync::mpsc;
+use tokio::time::sleep;
+use tracing::error;
+use url::Url;
 
 pub static TEMP_DATA_DIR: LazyLock<&'static str> = LazyLock::new(|| {
     let path = concatcp!(BASE_DATA_DIR, "/", BASE);
@@ -29,10 +35,13 @@ pub struct TempFileManager {
     dir: PathBuf,
     cache: DashSet<String>,
     counter: AtomicUsize,
+    tx: mpsc::UnboundedSender<PathBuf>,
 }
 
 impl TempFileManager {
     pub fn new() -> Self {
+        let (tx, mut rx) = mpsc::unbounded_channel::<PathBuf>();
+
         let dir = Path::new(*TEMP_DATA_DIR).to_path_buf();
         let cache = DashSet::new();
         if let Ok(entries) = fs::read_dir(&dir) {
@@ -42,10 +51,26 @@ impl TempFileManager {
                 }
             }
         }
+
+        tokio::spawn(async move {
+            while let Some(path) = rx.recv().await {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    sleep(Duration::from_secs(60)).await; // 延迟删除，防止文件正在被使用
+
+                    let name_string = name.to_string();
+
+                    let _ = fs::remove_file(path);
+
+                    MANAGER.cache.remove(&name_string);
+                }
+            }
+        });
+
         Self {
             dir,
             cache,
             counter: AtomicUsize::new(0),
+            tx,
         }
     }
 
@@ -73,15 +98,8 @@ impl TempFileManager {
     }
 
     pub fn release(&self, path: PathBuf, remove_disk: bool) {
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            let name_string = name.to_string();
-            self.cache.remove(&name_string);
-            if remove_disk {
-                // 异步删除物理文件
-                tokio::task::spawn_blocking(move || {
-                    let _ = fs::remove_file(path);
-                });
-            }
+        if remove_disk {
+            let _ = self.tx.send(path);
         }
     }
 }
@@ -135,5 +153,30 @@ impl FileBackend for TempFile {
     /// 下载完成钩子
     async fn on_complete(&mut self) -> Result<()> {
         Ok(())
+    }
+}
+
+impl TempFile {
+    pub async fn get_url(&self) -> String {
+        let path_for_blocking = self.path.clone();
+
+        let absolute_path = tokio::task::spawn_blocking(move || {
+            // 阻塞 I/O 运行在单独的线程上
+            std::fs::canonicalize(&path_for_blocking).unwrap_or(path_for_blocking)
+        })
+        .await
+        .unwrap_or_else(|e| {
+            error!("spawn_blocking for canonicalize failed: {}", e);
+            // 任务失败时，返回原始路径的克隆
+            self.path.clone()
+        });
+
+        Url::from_file_path(absolute_path)
+            .map(|url| url.into())
+            .unwrap_or_default()
+    }
+
+    pub async fn to_fileurl(self) -> FileUrl {
+        FileUrl::Raw(self.get_url().await)
     }
 }
