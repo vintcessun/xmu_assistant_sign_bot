@@ -81,3 +81,12 @@ where
         .map_err(|e| anyhow!("错误为：{e}\n模型返回的内容为：\n{xml_content}"))?;
     Ok(data)
 }
+
+pub async fn ask_str(chat_message: Vec<ChatMessage>) -> Result<String> {
+    let chat_req = genai::chat::ChatRequest::new(chat_message);
+    let res = CLIENT.exec_chat(MODEL_NAME, chat_req, None).await?;
+    let text = res
+        .first_text()
+        .ok_or_else(|| anyhow::anyhow!("No response"))?;
+    Ok(text.to_string())
+}

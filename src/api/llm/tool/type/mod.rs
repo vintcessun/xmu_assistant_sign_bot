@@ -1,4 +1,5 @@
 mod bool;
+mod hashmap;
 mod i64;
 mod option;
 mod string;
@@ -11,6 +12,7 @@ mod vector;
 // 最后：LLM真鸡巴操蛋，这里为了解析完全正确只能加一堆特判了，性能暂时不考虑了，因为操蛋的都寄吧LLM了，重新请求一次的代价远高于这些解析的开销
 
 pub use bool::LlmBool;
+pub use hashmap::LlmHashMap;
 pub use i64::LlmI64;
 pub use option::LlmOption;
 pub use usize::LlmUsize;

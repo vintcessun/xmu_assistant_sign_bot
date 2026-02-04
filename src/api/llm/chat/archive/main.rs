@@ -1,3 +1,4 @@
+use genai::chat::ChatMessage;
 use tracing::{error, info, trace, warn};
 
 use crate::{
@@ -12,10 +13,13 @@ use crate::{
         network::BotClient,
         websocket::BotHandler,
     },
-    api::llm::chat::archive::{
-        bridge::{llm_msg_from_message, llm_msg_from_notice},
-        identity::{IdentityGroupUpdateSend, IdentityPersonUpdateSend, IdentityUpdate},
-        message_storage::{MessageStorage, NoticeStorage},
+    api::llm::chat::{
+        archive::{
+            bridge::{llm_msg_from_message, llm_msg_from_notice},
+            identity::{IdentityGroupUpdateSend, IdentityPersonUpdateSend, IdentityUpdate},
+            message_storage::{MessageStorage, NoticeStorage},
+        },
+        impression::push_message,
     },
 };
 
@@ -25,12 +29,24 @@ where
 {
     let message = ctx.get_message();
     let id = match &*message {
-        Message::Group(g) => g.message_id.to_string(),
-        Message::Private(p) => p.message_id.to_string(),
+        Message::Group(g) => g.message_id,
+        Message::Private(p) => p.message_id,
     };
 
     let msg_content = llm_msg_from_message(&message).await;
-    MessageStorage::save(id, msg_content).await;
+    let msg_single = msg_content
+        .iter()
+        .map(|x| x.content.parts().clone())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+
+    //消息记录
+    MessageStorage::save(id.to_string(), msg_content).await;
+
+    //印象记录
+    let _ = push_message(id, ChatMessage::user(msg_single)).await;
 }
 
 pub async fn notice_archive<T>(ctx: &mut Context<T, Notice>)

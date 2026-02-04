@@ -122,3 +122,15 @@ pub async fn ask_llm(chat_message: Vec<ChatMessage>) -> Result<ChatResponse> {
     let res = CLIENT.exec_chat(CHAT_MODEL, chat_req, None).await?;
     Ok(res)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    pub async fn test_embedding() -> Result<()> {
+        let embedding = get_single_text_embedding("Hello, world!".to_string()).await?;
+        println!("Embedding: {:?}", embedding);
+        Ok(())
+    }
+}
