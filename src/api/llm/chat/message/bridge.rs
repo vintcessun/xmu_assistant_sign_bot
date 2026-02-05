@@ -74,7 +74,7 @@ impl IntoMessageSend {
 
     pub async fn get_message_send(msg: ChatResponse) -> Result<MessageSend> {
         let msg: MessageSendLlmResponse = Self::get(msg).await?;
-        let mut ret = Vec::with_capacity(msg.message.len());
+        let mut ret = Vec::new();
         for segment in msg.message {
             ret.push(match segment {
                 SegmentSendLlmResponse::At { qq } => SegmentSend::At(at::DataSend { qq }),

@@ -1,8 +1,9 @@
 use super::BuildHelp;
 use crate::{
     abi::{logic_import::*, message::MessageSend},
-    api::llm::{chat::archive::bridge::llm_msg_from_message, tool::generate_image},
+    api::llm::{chat::archive::bridge::llm_msg_from_message_without_archive, tool::generate_image},
 };
+use tracing::trace;
 
 #[handler(msg_type=Message,command="image",echo_cmd=true,
 help_msg=r#"用法:/image <内容>
@@ -11,9 +12,12 @@ help_msg=r#"用法:/image <内容>
 pub async fn image(ctx: Context) -> Result<()> {
     let msg = ctx.get_message();
 
-    let msg = llm_msg_from_message(&msg).await;
+    trace!("收到生成图片消息: {:?}", msg);
+    let msg = llm_msg_from_message_without_archive(&msg).await;
+    trace!("转化为 LLM 消息: {:?}", msg);
 
     let img = generate_image(msg).await?;
+    trace!("生成图片结果: {:?}", img);
 
     let message = MessageSend::new_message()
         .image(img.to_fileurl().await?)

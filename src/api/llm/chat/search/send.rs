@@ -1,13 +1,11 @@
+use crate::api::llm::chat::archive::bridge::llm_msg_from_message_without_archive;
 use crate::api::llm::chat::audit::backlist::Backlist;
 use crate::api::llm::chat::llm::ask_llm;
 use crate::api::llm::chat::message::bridge::IntoMessageSend;
 use crate::api::llm::tool::{LlmBool, LlmPrompt, ask_as};
 use crate::{
     abi::{Context, logic_import::Message, network::BotClient, websocket::BotHandler},
-    api::llm::chat::{
-        archive::bridge::llm_msg_from_message, llm::get_chat_embedding,
-        search::store::MessageSearchStore,
-    },
+    api::llm::chat::{llm::get_chat_embedding, search::store::MessageSearchStore},
 };
 use anyhow::{Result, anyhow};
 use genai::chat::ChatMessage;
@@ -31,7 +29,7 @@ where
 {
     let message = ctx.get_message();
 
-    let msg_src = llm_msg_from_message(&message).await;
+    let msg_src = llm_msg_from_message_without_archive(&message).await;
     let msg = get_chat_embedding(msg_src.clone()).await?;
 
     let result = MessageSearchStore::search(msg.clone(), 5).await?;

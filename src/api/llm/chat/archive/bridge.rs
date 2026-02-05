@@ -213,8 +213,7 @@ pub async fn llm_msg_from_message_receive(message: &MessageReceive) -> Vec<ChatM
     }
 }
 
-pub async fn llm_msg_from_message(message: &Message) -> Vec<ChatMessage> {
-    archive_message_files(message).await;
+pub async fn llm_msg_from_message_without_archive(message: &Message) -> Vec<ChatMessage> {
     match message {
         Message::Private(p) => {
             let data = quick_xml::se::to_string(&p).unwrap_or("未知消息".to_string());
@@ -229,6 +228,11 @@ pub async fn llm_msg_from_message(message: &Message) -> Vec<ChatMessage> {
             ret
         }
     }
+}
+
+pub async fn llm_msg_from_message(message: &Message) -> Vec<ChatMessage> {
+    archive_message_files(message).await;
+    llm_msg_from_message_without_archive(message).await
 }
 
 pub async fn llm_msg_from_notice(notice: &Notice) -> ChatMessage {

@@ -51,7 +51,7 @@ fn bench_cold_storage(c: &mut Criterion) {
             i = (i + 1) % 10000;
 
             async move {
-                t.get(key).await.unwrap();
+                t.get_async(key).await.unwrap();
             }
         });
     });
