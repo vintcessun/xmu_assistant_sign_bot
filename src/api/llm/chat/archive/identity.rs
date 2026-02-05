@@ -52,7 +52,10 @@ impl IdentityUpdate {
         let (tx_person, mut rx_person) = mpsc::unbounded_channel::<IdentityPersonUpdateSend>();
         tokio::spawn(async move {
             while let Some(update) = rx_person.recv().await {
-                let identity = IDENTITY_PERSON_DB.get(update.qq).await.unwrap_or_default();
+                let identity = IDENTITY_PERSON_DB
+                    .get_async(update.qq)
+                    .await
+                    .unwrap_or_default();
                 let new_identity = match identity {
                     None => PersonIdentityInfo {
                         id: update.qq,
@@ -121,7 +124,7 @@ impl IdentityUpdate {
         tokio::spawn(async move {
             while let Some(update) = rx_group.recv().await {
                 let identity = IDENTITY_GROUP_DB
-                    .get(update.group_id)
+                    .get_async(update.group_id)
                     .await
                     .unwrap_or_default();
                 let new_identity = match identity {
@@ -174,7 +177,7 @@ pub struct IdentityPerson;
 
 impl IdentityPerson {
     pub async fn get(qq: i64) -> Option<PersonIdentityInfo> {
-        IDENTITY_PERSON_DB.get(qq).await.unwrap_or_default()
+        IDENTITY_PERSON_DB.get_async(qq).await.unwrap_or_default()
     }
 }
 
@@ -188,6 +191,9 @@ pub struct IdentityGroup;
 
 impl IdentityGroup {
     pub async fn get(group_id: i64) -> Option<GroupIdentityInfo> {
-        IDENTITY_GROUP_DB.get(group_id).await.unwrap_or_default()
+        IDENTITY_GROUP_DB
+            .get_async(group_id)
+            .await
+            .unwrap_or_default()
     }
 }

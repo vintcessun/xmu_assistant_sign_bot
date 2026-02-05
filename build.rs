@@ -417,7 +417,7 @@ fn generate_omikuji_data(out_dir: &str) -> Result<(), Box<dyn std::error::Error>
     writeln!(file)?;
 
     // 5.2. Senso-ji 数组
-    writeln!(file, "pub const SENSO_JI_FORTUNES: &[&'static str] = &[")?;
+    writeln!(file, "pub const SENSO_JI_FORTUNES: &[&str] = &[")?;
     for fortune_str in senso_ji_fortunes_str.iter() {
         writeln!(file, "    \"{}\",", escape_string(fortune_str))?;
     }
@@ -425,7 +425,7 @@ fn generate_omikuji_data(out_dir: &str) -> Result<(), Box<dyn std::error::Error>
     writeln!(file, "\n")?;
 
     // 5.3. Ruanyf 数组
-    writeln!(file, "pub const RUANYF_FORTUNES: &[&'static str] = &[")?;
+    writeln!(file, "pub const RUANYF_FORTUNES: &[&str] = &[")?;
     for fortune in ruanyf_fortunes.iter() {
         writeln!(file, "    \"{}\",", escape_string(fortune))?;
     }
@@ -444,7 +444,7 @@ fn generate_omikuji_data(out_dir: &str) -> Result<(), Box<dyn std::error::Error>
     )?;
     writeln!(
         file,
-        "    let index = rng.gen_range(0..SENSO_JI_FORTUNES.len());"
+        "    let index = rng.random_range(0..SENSO_JI_FORTUNES.len());"
     )?;
     writeln!(file, "    SENSO_JI_FORTUNES[index]")?;
     writeln!(file, "}}")?;
@@ -458,7 +458,7 @@ fn generate_omikuji_data(out_dir: &str) -> Result<(), Box<dyn std::error::Error>
     )?;
     writeln!(
         file,
-        "    let index = rng.gen_range(0..RUANYF_FORTUNES.len());"
+        "    let index = rng.random_range(0..RUANYF_FORTUNES.len());"
     )?;
     writeln!(file, "    RUANYF_FORTUNES[index]")?;
     writeln!(file, "}}")?;

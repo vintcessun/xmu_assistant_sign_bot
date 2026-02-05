@@ -50,13 +50,8 @@ where
     pub fn new(table_name: &'static str) -> Self {
         let kv_table: ColdTable<Uuid, Arc<V>> = ColdTable::new(table_name);
 
-        let handle = tokio::runtime::Handle::try_current()
-            .expect("VectorSearchEngine 必须在 Tokio 运行时内初始化");
-
         // 从 redb 读取所有数据
-        let all_records = handle
-            .block_on(async { kv_table.get_all().await })
-            .expect("从持久化数据库加载数据失败");
+        let all_records = kv_table.get_all().unwrap_or_default();
 
         info!("正在重建索引，总计 {} 条记录...", all_records.len());
 
@@ -104,7 +99,7 @@ where
             // 从 DashMap 获取 UUID
             if let Some(uuid) = id_map.get(&neighbor.d_id) {
                 // 从 ColdTable 获取完整磁盘数据
-                if let Some(data) = self.kv_table.get(*uuid).await? {
+                if let Some(data) = self.kv_table.get_async(*uuid).await? {
                     results.push((*uuid, data));
                 }
             }
@@ -122,7 +117,7 @@ where
         }
 
         // 2. 获取当前所有剩余数据
-        let all_active_records = self.kv_table.get_all().await?;
+        let all_active_records = self.kv_table.get_all_async().await?;
 
         // 3. 在后台线程（Blocking）重建索引，避免阻塞异步运行时
         info!(
@@ -143,6 +138,6 @@ where
 
     /// 获取消息记录通过Uuid
     pub async fn get(&self, uuid: Uuid) -> Option<Arc<V>> {
-        self.kv_table.get(uuid).await.ok().flatten()
+        self.kv_table.get_async(uuid).await.ok().flatten()
     }
 }

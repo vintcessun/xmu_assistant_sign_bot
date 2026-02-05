@@ -4,7 +4,7 @@ use super::config::MODEL_MAP;
 use anyhow::{Result, anyhow};
 use genai::{
     Client, ModelIden, ServiceTarget,
-    chat::ChatMessage,
+    chat::{ChatMessage, ChatResponse},
     resolver::{AuthData, AuthResolver, Endpoint, ServiceTargetResolver},
 };
 use quick_xml::de::from_str;
@@ -53,17 +53,27 @@ pub trait LlmPrompt {
     fn root_name() -> &'static str;
 }
 
-pub async fn ask_as<T>(mut chat_message: Vec<ChatMessage>) -> Result<T>
+pub async fn ask(message: Vec<ChatMessage>) -> Result<ChatResponse> {
+    let chat_req = genai::chat::ChatRequest::new(message);
+    let res = CLIENT.exec_chat(MODEL_NAME, chat_req, None).await?;
+    Ok(res)
+}
+
+pub async fn ask_as<T>(message: Vec<ChatMessage>) -> Result<T>
 where
     T: DeserializeOwned + LlmPrompt,
 {
     // 1. 自动注入 Schema 指令
     let schema = T::get_prompt_schema();
 
-    chat_message.push(ChatMessage::system(
-        "你必须直接返回 XML 格式的数据，禁止任何开场白。格式规范如下：",
-    ));
-    chat_message.push(ChatMessage::system(schema));
+    let chat_message = [
+        message,
+        vec![
+            ChatMessage::system("你必须直接返回 XML 格式的数据，禁止任何开场白。格式规范如下："),
+            ChatMessage::system(schema),
+        ],
+    ]
+    .concat();
 
     // 2. 调用 genai
     let chat_req = genai::chat::ChatRequest::new(chat_message);

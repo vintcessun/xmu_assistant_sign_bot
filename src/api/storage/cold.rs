@@ -12,6 +12,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use std::sync::LazyLock;
 use std::{path::Path, sync::Arc};
 use tokio::task;
+use tokio::task::block_in_place;
 
 static COLD_ENGINE: LazyLock<Arc<Database>> = LazyLock::new(|| {
     let path = Path::new(concatcp!(BASE_DATA_DIR, "/", BASE));
@@ -61,33 +62,34 @@ where
         .await? // 等待后台线程完成
     }
 
+    pub async fn get_async(&self, key: K) -> Result<Option<V>> {
+        block_in_place(|| self.get(key))
+    }
+
     /// 异步查询
-    pub async fn get(&self, key: K) -> Result<Option<V>> {
+    pub fn get(&self, key: K) -> Result<Option<V>> {
         let table_name = self.table_name;
 
-        task::spawn_blocking(move || {
-            let key_vec = bincode::serde::encode_to_vec(&key, BINCODE_CONFIG)?;
+        let key_vec = bincode::serde::encode_to_vec(&key, BINCODE_CONFIG)?;
 
-            let db = &COLD_ENGINE;
-            let read_txn = db.begin_read()?;
-            let definition: TableDefinition<&[u8], &[u8]> = TableDefinition::new(table_name);
+        let db = &COLD_ENGINE;
+        let read_txn = db.begin_read()?;
+        let definition: TableDefinition<&[u8], &[u8]> = TableDefinition::new(table_name);
 
-            let table = match read_txn.open_table(definition) {
-                Ok(t) => t,
-                Err(_) => return Ok(None),
-            };
+        let table = match read_txn.open_table(definition) {
+            Ok(t) => t,
+            Err(_) => return Ok(None),
+        };
 
-            match table.get(key_vec.as_slice())? {
-                Some(access) => {
-                    let v_bytes = access.value();
-                    let (decoded, _): (V, usize) =
-                        bincode::serde::decode_from_slice(v_bytes, BINCODE_CONFIG)?;
-                    Ok(Some(decoded))
-                }
-                None => Ok(None),
+        match table.get(key_vec.as_slice())? {
+            Some(access) => {
+                let v_bytes = access.value();
+                let (decoded, _): (V, usize) =
+                    bincode::serde::decode_from_slice(v_bytes, BINCODE_CONFIG)?;
+                Ok(Some(decoded))
             }
-        })
-        .await?
+            None => Ok(None),
+        }
     }
 
     /// 异步删除
@@ -108,25 +110,26 @@ where
         .await?
     }
 
-    pub async fn get_all(&self) -> Result<Vec<(K, V)>> {
-        let table_name = self.table_name;
-        task::spawn_blocking(move || {
-            let db = &COLD_ENGINE;
-            let read_txn = db.begin_read()?;
-            let definition: TableDefinition<&[u8], &[u8]> = TableDefinition::new(table_name);
-            let table = read_txn.open_table(definition)?;
+    pub async fn get_all_async(&self) -> Result<Vec<(K, V)>> {
+        block_in_place(|| self.get_all())
+    }
 
-            let mut results = Vec::new();
-            for item in table.iter()? {
-                let (k_access, v_access) = item?;
-                let (k, _): (K, usize) =
-                    bincode::serde::decode_from_slice(k_access.value(), BINCODE_CONFIG)?;
-                let (v, _): (V, usize) =
-                    bincode::serde::decode_from_slice(v_access.value(), BINCODE_CONFIG)?;
-                results.push((k, v));
-            }
-            Ok(results)
-        })
-        .await?
+    pub fn get_all(&self) -> Result<Vec<(K, V)>> {
+        let table_name = self.table_name;
+        let db = &COLD_ENGINE;
+        let read_txn = db.begin_read()?;
+        let definition: TableDefinition<&[u8], &[u8]> = TableDefinition::new(table_name);
+        let table = read_txn.open_table(definition)?;
+
+        let mut results = Vec::new();
+        for item in table.iter()? {
+            let (k_access, v_access) = item?;
+            let (k, _): (K, usize) =
+                bincode::serde::decode_from_slice(k_access.value(), BINCODE_CONFIG)?;
+            let (v, _): (V, usize) =
+                bincode::serde::decode_from_slice(v_access.value(), BINCODE_CONFIG)?;
+            results.push((k, v));
+        }
+        Ok(results)
     }
 }

@@ -9,10 +9,14 @@ use tracing::trace;
 
 const MODEL_NAME: &str = "gemini-3-pro-image-preview";
 
-pub async fn generate_image(mut chat_message: Vec<ChatMessage>) -> Result<ImageFile> {
-    chat_message.push(ChatMessage::system(
-        "请根据用户的描述生成一张图片，图片应符合描述内容。",
-    ));
+pub async fn generate_image(chat_message: Vec<ChatMessage>) -> Result<ImageFile> {
+    let chat_message = [
+        chat_message,
+        vec![ChatMessage::system(
+            "请根据用户的描述生成一张图片，图片应符合描述内容。",
+        )],
+    ]
+    .concat();
 
     let chat_req = genai::chat::ChatRequest::new(chat_message);
 

@@ -21,7 +21,7 @@ use crate::{
     config::LLM_AUDIT_DURATION_SECS,
 };
 use anyhow::Result;
-use futures::{SinkExt, StreamExt, channel::mpsc};
+use futures::{SinkExt, StreamExt, channel::mpsc, future::join_all};
 use genai::chat::ChatMessage;
 use helper::LlmPrompt;
 use serde::{Deserialize, Serialize};
@@ -32,7 +32,6 @@ use std::{
 };
 use tokio::time::{Instant, sleep_until};
 use tracing::{error, trace};
-use uuid::Uuid;
 
 static AUDIT_TASK: LazyLock<AuditTask> = LazyLock::new(|| AuditTask::new("llm_chat_audit_task"));
 
@@ -51,7 +50,7 @@ pub struct AuditTestRequest {
     pub timestamp: u64,
     pub group_id: i64,
     pub fast_key: Option<MessageAbstract>,
-    pub search_key: Option<Vec<Uuid>>,
+    pub search_key: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -137,11 +136,7 @@ impl AuditTask {
             .into_iter()
             .unzip::<String, ChatMessage, Vec<String>, Vec<ChatMessage>>();
         let after_notice = NoticeStorage::get_range(ts, ts + LLM_AUDIT_DURATION_SECS).await;
-        let mut msg = Vec::with_capacity(
-            before_msg.len() + before_notice.len() + after_msg.len() + after_notice.len() + 10,
-        );
-
-        msg.push(ChatMessage::system(
+        let msg = [vec![ChatMessage::system(
             r#"# Role
 你是一名具备深刻洞察力的对话分析专家与社会心理学家。你的任务是穿透表层文字，审视 AI 在复杂群聊环境中的表现，判断其行为是否真正融入了人类的语境。
 
@@ -180,16 +175,7 @@ impl AuditTask {
 - **关于记忆**：是否建议系统将此回复作为“黄金样板”学习？还是仅仅作为过眼云烟？
 - **关于警示**：如果此回复具有毒性或误导性，建议如何实施“惩罚”？（请给出你认为合理的惩罚力度，如轻微警告、短期隔离或长期封禁）。
 - **关于进化**：如果时间倒流，Bot 应该如何组织语言才能更像一个有血有肉的个体？"#,
-        ));
-
-        msg.push(ChatMessage::system("助手回复消息"));
-        msg.extend(src_msg);
-        msg.push(ChatMessage::system("前60s的消息和提示"));
-        msg.extend(before_msg);
-        msg.extend(before_notice);
-        msg.push(ChatMessage::system("后60s的消息和提示"));
-        msg.extend(after_msg);
-        msg.extend(after_notice);
+        ),ChatMessage::system("助手回复消息")],src_msg,vec![ChatMessage::system("前60s的消息和提示")],before_msg,before_notice,vec![ChatMessage::system("后60s的消息和提示")],after_msg,after_notice].concat();
 
         let audit_response = ask_llm(msg).await?;
 
@@ -199,26 +185,52 @@ impl AuditTask {
         ])
         .await?;
 
-        if *audit_data.is_penalty
-            && let Some(fast_key) = &task.fast_key
-        {
-            let bad_detail = audit_data.bad_detail.clone().unwrap_or_default();
-            let bad_reason = audit_data.bad_reason.clone().unwrap_or_default();
-            let suggestions = audit_data.suggestions.clone().unwrap_or_default().to_vec();
-            let entry = Arc::new(BlacklistEntry {
-                bad_detail,
-                bad_reason,
-                suggestions,
-                fail_count: 1,
-                penalty_end: VecDeque::from(vec![
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs()
-                        + 86400,
-                ]),
-            });
-            Backlist::insert(fast_key.clone(), entry).await?;
+        if *audit_data.is_penalty {
+            if let Some(fast_key) = &task.fast_key {
+                let bad_detail = audit_data.bad_detail.clone().unwrap_or_default();
+                let bad_reason = audit_data.bad_reason.clone().unwrap_or_default();
+                let suggestions = audit_data.suggestions.clone().unwrap_or_default().to_vec();
+                let entry = Arc::new(BlacklistEntry {
+                    bad_detail,
+                    bad_reason,
+                    suggestions,
+                    fail_count: 1,
+                    penalty_end: VecDeque::from(vec![
+                        SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs()
+                            + 86400,
+                    ]),
+                });
+                Backlist::insert(fast_key.clone(), entry).await?;
+            }
+            if let Some(search_key) = &task.search_key {
+                let bad_detail = audit_data.bad_detail.clone().unwrap_or_default();
+                let bad_reason = audit_data.bad_reason.clone().unwrap_or_default();
+                let suggestions = audit_data.suggestions.clone().unwrap_or_default().to_vec();
+                let entry = Arc::new(BlacklistEntry {
+                    bad_detail,
+                    bad_reason,
+                    suggestions,
+                    fail_count: 1,
+                    penalty_end: VecDeque::from(vec![
+                        SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs()
+                            + 86400,
+                    ]),
+                });
+                let msg = search_key.iter().map(|x| MessageStorage::get(x.clone()));
+                let msg = join_all(msg)
+                    .await
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>();
+
+                Backlist::insert_just_search(msg, entry).await?;
+            }
         }
 
         if *audit_data.is_value {
@@ -293,7 +305,7 @@ impl AuditTask {
     }
 
     async fn rebuild_task(&self) -> Result<()> {
-        let all_tasks = self.data.get_all().await?;
+        let all_tasks = self.data.get_all_async().await?;
         for (ts, task) in all_tasks {
             if task.status != AuditStatus::Completed {
                 trace!("重建审计任务 {ts}");
@@ -323,6 +335,30 @@ pub async fn audit_test_fast(
             group_id,
             fast_key: Some(id),
             search_key: None,
+        })
+        .await?;
+
+    Ok(())
+}
+
+pub async fn audit_test_search(
+    message: &MessageSend,
+    group_id: i64,
+    search_key: Vec<String>,
+) -> Result<()> {
+    let ts = time::SystemTime::now()
+        .duration_since(time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let src_msg: Vec<ChatMessage> = llm_msg_from_message(message).await;
+    AUDIT_TASK
+        .send_audit_task(AuditTestRequest {
+            message: src_msg,
+            audit_type: AuditType::Search,
+            timestamp: ts,
+            group_id,
+            fast_key: None,
+            search_key: Some(search_key),
         })
         .await?;
 

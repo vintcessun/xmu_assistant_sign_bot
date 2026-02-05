@@ -35,7 +35,7 @@ impl FileShortId {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct LlmFile {
     pub id: FileShortId, // 8位 SHA-256
     pub file: Arc<File>, // 你原有的文件抽象
@@ -47,10 +47,33 @@ pub struct LlmFile {
 impl LlmPrompt for LlmFile {
     fn get_prompt_schema() -> &'static str {
         // 给 LLM 的 Schema 只展示 ID 和 别名，隐藏复杂的物理路径
-        "File { id: 8-char-hex, name: String }"
+        "<id> 文件的8位 SHA-256短ID</id> \n<alias> 文件的别名（如“大笑.gif”）</alias>"
     }
     fn root_name() -> &'static str {
         "file"
+    }
+}
+
+impl<'de> Deserialize<'de> for LlmFile {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct LlmFileHelper {
+            id: String,
+            //alias: String,
+        }
+
+        let helper = LlmFileHelper::deserialize(deserializer)?;
+        let id = FileShortId::from_llm(&helper.id).map_err(serde::de::Error::custom)?;
+
+        let file = Self::get_by_id(id)
+            .map_err(|e| serde::de::Error::custom(format!("Get File by id error {e}")))?
+            .ok_or(serde::de::Error::custom("The file is not found"))?;
+        let file = (*file).clone();
+
+        Ok(file)
     }
 }
 
@@ -98,7 +121,7 @@ impl LlmFile {
         Ok(())
     }
 
-    pub async fn get_by_id(id: FileShortId) -> Result<Option<Arc<Self>>> {
-        FILE_DB.get(id).await
+    pub fn get_by_id(id: FileShortId) -> Result<Option<Arc<Self>>> {
+        FILE_DB.get(id)
     }
 }

@@ -58,16 +58,17 @@ impl ChatSegment {
             }
         }
 
-        let mut message = vec![
-            ChatMessage::system(
+        let message = [
+            vec![
+                ChatMessage::system(
                 "你是一个专业的将消息进行总结的助手，请提取以下对话的关键信息，生成简洁的摘要和关键词",
-            ),
-            ChatMessage::user("请根据以下模型输出的要求和细节进行总结："),
-            ChatMessage::user(request),
-            ChatMessage::user("请根据以下对话内容生成摘要和关键词："),
-        ];
-
-        message.extend(messages);
+                ),
+                ChatMessage::user("请根据以下模型输出的要求和细节进行总结："),
+                ChatMessage::user(request),
+                ChatMessage::user("请根据以下对话内容生成摘要和关键词："),
+            ],
+            messages
+        ].concat();
 
         let response = ask_as::<ChatSegmentLlmResponse>(message).await?;
 

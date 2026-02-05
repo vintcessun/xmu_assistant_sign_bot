@@ -776,9 +776,9 @@ pub fn derive_llm_prompt(input: TokenStream) -> TokenStream {
             let mut variants_schemas = Vec::new();
             for variant in &data.variants {
                 let v_ident = &variant.ident;
-                let v_name = v_ident.to_string().to_lowercase(); // 实际应考虑 serde rename
+                let v_name = v_ident.to_string();
 
-                // 提取变体的说明
+                // 提取变体上的 #[prompt("...")] 说明
                 let mut v_desc = String::new();
                 for attr in &variant.attrs {
                     if attr.path().is_ident("prompt") {
@@ -791,30 +791,53 @@ pub fn derive_llm_prompt(input: TokenStream) -> TokenStream {
                     }
                 }
 
-                // 核心改动：解析变体内部的字段
+                // 处理变体内部的字段
                 let fields_prompt = match &variant.fields {
                     syn::Fields::Named(fields) => {
                         let mut f_parts = Vec::new();
                         for field in &fields.named {
                             let f_ident = field.ident.as_ref().unwrap();
+                            let f_name = f_ident.to_string(); // 字段名
                             let f_ty = &field.ty;
+
+                            // 字段生成的格式：<field_name>schema</field_name>
                             f_parts.push(quote! {
                                 format!("<{}>{}</{}>",
-                                    stringify!(#f_ident),
+                                    #f_name,
                                     <#f_ty as LlmPrompt>::get_prompt_schema(),
-                                    stringify!(#f_ident)
+                                    #f_name
                                 )
                             });
                         }
-                        quote! { vec![#(#f_parts),*].join("") }
+                        // 使用换行符连接多个字段，方便后续缩进
+                        quote! { vec![#(#f_parts),*].join("\n") }
                     }
-                    syn::Fields::Unit => quote! { "".to_string() },
-                    _ => quote! { "...".to_string() },
+                    syn::Fields::Unit => quote! { String::new() },
+                    _ => quote! { String::new() },
                 };
 
+                // 生成最终的 XML 片段
                 variants_schemas.push(quote! {
-                    format!("<segment type=\"{}\"> \n  <data>{}</data>\n</segment> <!-- {} -->",
-                        #v_name, #v_desc, #fields_prompt)
+                    {
+                        let inner_xml = #fields_prompt;
+                        let desc = #v_desc;
+
+                        // 这是一个纯标签变体（无字段），还是带内容的变体？
+                        if inner_xml.is_empty() {
+                             format!("<{name}/> ", name = #v_name)
+                        } else {
+                            // 对内部字段进行缩进处理，美化输出
+                            let indented_inner = inner_xml.lines()
+                                .map(|line| format!("  {}", line))
+                                .collect::<Vec<_>>()
+                                .join("\n");
+
+                            format!("<{name}>\n{inner}\n</{name}> ",
+                                name = #v_name,
+                                inner = indented_inner,
+                            )
+                        }
+                    }
                 });
             }
 
@@ -824,12 +847,13 @@ pub fn derive_llm_prompt(input: TokenStream) -> TokenStream {
                         use std::sync::OnceLock;
                         static SCHEMA_CACHE: OnceLock<String> = OnceLock::new();
                         SCHEMA_CACHE.get_or_init(|| {
-                            let mut parts = Vec::new();
+                            let mut parts = vec!["以下是当前枚举类型可能的 XML 结构:".to_string()];
                             #( parts.push(#variants_schemas); )*
-                            format!("可用消息段类型:\n{}", parts.join("\n"))
+                            // 这里不再包裹 <segment>，而是直接列出所有可能的 XML 结构
+                            parts.join("\n")
                         })
                     }
-                    fn root_name() -> &'static str { "segment" }
+                    fn root_name() -> &'static str { "xml_root" } // Enum 本身通常不需要 Root 名，或者由调用者决定
                 }
             }
         }
@@ -1274,9 +1298,11 @@ pub fn castgc_client_helper(_args: TokenStream, input: TokenStream) -> TokenStre
                 if last_seg.ident == "Arc" {
                     let mut valid_inner = false;
                     if let syn::PathArguments::AngleBracketed(args) = &last_seg.arguments {
+                        // 进一步校验泛型参数是否为 SessionClient
                         if let Some(syn::GenericArgument::Type(syn::Type::Path(inner_tp))) =
                             args.args.first()
                         {
+                            // 检查内部类型是否为 SessionClient
                             if inner_tp.path.segments.last().map(|s| &s.ident)
                                 == Some(&format_ident!("SessionClient"))
                             {
@@ -1317,6 +1343,7 @@ pub fn castgc_client_helper(_args: TokenStream, input: TokenStream) -> TokenStre
         .iter()
         .map(|arg| {
             if let FnArg::Typed(pat_type) = arg {
+                // 提取参数标识符
                 if let Pat::Ident(pat_ident) = &*pat_type.pat {
                     let id = &pat_ident.ident;
                     return quote! { #id };

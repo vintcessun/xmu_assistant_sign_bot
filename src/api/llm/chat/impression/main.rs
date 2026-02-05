@@ -111,7 +111,7 @@ pub async fn push_message(user_id: i32, message: ChatMessage) -> Result<()> {
 
 /// 实际执行印象生成或更新的逻辑
 async fn update_impression(user_id: i32, history: Vec<ChatMessage>) -> Result<()> {
-    let old_impression: Option<Impression> = IMPRESSION_DB.get(user_id).await?;
+    let old_impression: Option<Impression> = IMPRESSION_DB.get_async(user_id).await?;
 
     let prompt_content = if let Some(old) = &old_impression {
         [vec![ChatMessage::system(format!(
@@ -144,5 +144,5 @@ async fn update_impression(user_id: i32, history: Vec<ChatMessage>) -> Result<()
 }
 
 pub async fn get_impression(user_id: i32) -> Option<Impression> {
-    IMPRESSION_DB.get(user_id).await.ok().flatten()
+    IMPRESSION_DB.get_async(user_id).await.ok().flatten()
 }

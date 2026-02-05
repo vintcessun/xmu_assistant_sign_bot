@@ -18,7 +18,6 @@ use helper::{LlmPrompt, box_new};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, LlmPrompt, Serialize, Deserialize)]
-#[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum SegmentSendLlmResponse {
     #[prompt("纯文本内容")]
     Text {
@@ -57,10 +56,16 @@ impl IntoMessageSend {
     pub async fn get(msg: ChatResponse) -> Result<MessageSendLlmResponse> {
         let messages: Vec<ChatMessage> = vec![
             ChatMessage::system(
-                "你是一个专业的将消息进行转写的助手，请根据用户提供的信息和所有上下文进行转写为规范格式",
+                "你是一个专业的将消息进行转写的助手，请根据用户提供的信息和所有上下文进行转写为规范格式\
+            ### 核心规则：\n\
+             1. 严禁直接在 <item> 标签下书写任何文字。\n\
+             2. 所有的文本内容必须包裹在 <Text><text>...</text></Text> 结构中。\n\
+             3. 即使只有一段话，也要拆分为 <item><Text><text>...</text></Text></item>。\n\
+             4. 严格遵守提供的符号体系，不要发挥，不要输出 XML 以外的文字。",
             ),
             get_face_reference_message(),
-            ChatMessage::user(msg.content),
+            ChatMessage::assistant(msg.texts().join("\n")),
+            ChatMessage::user("请将上述消息转写为规范的消息格式，不要添加任何额外的说明。"),
         ];
 
         let response = ask_as::<MessageSendLlmResponse>(messages).await?;
@@ -87,5 +92,31 @@ impl IntoMessageSend {
             })
         }
         Ok(MessageSend::Array(ret))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use genai::chat::ChatRequest;
+
+    use crate::api::llm::chat::llm::CLIENT;
+
+    use super::*;
+
+    #[tokio::test]
+    pub async fn test_message_into() -> Result<()> {
+        println!("{}", SegmentSendLlmResponse::get_prompt_schema());
+
+        let msg = CLIENT
+            .exec_chat(
+                "gemini-flash-latest",
+                ChatRequest::default().append_message(ChatMessage::user("请你写一句诗")),
+                None,
+            )
+            .await?;
+        println!("LLM 原始回复: {:?}", msg);
+        let msg = IntoMessageSend::get_message_send(msg).await?;
+        println!("转写结果: {:?}", msg);
+        Ok(())
     }
 }

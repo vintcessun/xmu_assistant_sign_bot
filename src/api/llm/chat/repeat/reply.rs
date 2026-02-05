@@ -24,7 +24,7 @@ impl RepeatReply {
                 info!("消息命中黑名单，拒绝回复: {:?}", e);
                 None
             }
-            None => MESSAGE_FAST_DB.get(key).await.unwrap_or_default(),
+            None => MESSAGE_FAST_DB.get_async(key).await.unwrap_or_default(),
         }
     }
 

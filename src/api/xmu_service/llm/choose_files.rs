@@ -38,13 +38,6 @@ impl ChooseFiles {
         prompt: P,
         course_id: i64,
     ) -> Result<FilesChoiceResponse> {
-        let mut messages = vec![
-            ChatMessage::system(
-                "你是一个专业的理解用户需求的客服，请根据用户的需求字符串和现有信息推测用户最可能选择的文件并且按照要求返回，注意如果用户没有提到文件的范围，一个默认值是用户想要所有的文件，也就是说设置all为true",
-            ),
-            ChatMessage::user(prompt.into()),
-        ];
-
         let activities = Activities::get_from_client(client, course_id).await?;
 
         let mut activities_map = HashMap::new();
@@ -55,8 +48,14 @@ impl ChooseFiles {
             }
         }
 
-        messages.push(ChatMessage::system("获取到这门课的相关的活动如下："));
-        messages.push(ChatMessage::system(quick_xml::se::to_string(&activities)?));
+        let messages = vec![
+            ChatMessage::system(
+                "你是一个专业的理解用户需求的客服，请根据用户的需求字符串和现有信息推测用户最可能选择的文件并且按照要求返回，注意如果用户没有提到文件的范围，一个默认值是用户想要所有的文件，也就是说设置all为true",
+            ),
+            ChatMessage::user(prompt.into()),
+            ChatMessage::system("获取到这门课的相关的活动如下："),
+            ChatMessage::system(quick_xml::se::to_string(&activities)?),
+        ];
 
         let response = ask_as::<FilesChoiceResponseLlm>(messages).await?;
 

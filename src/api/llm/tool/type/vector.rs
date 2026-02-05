@@ -67,19 +67,30 @@ where
         D: Deserializer<'de>,
     {
         // 1. 定义一个代理结构体
+
+        // 1. 定义一个内部包装类
+        #[derive(Deserialize)]
+        struct ItemWrapper<T> {
+            // $value 表示：取当前标签内部的“值”或“子标签”进行解析
+            #[serde(rename = "$value")]
+            content: T,
+        }
+
         #[derive(Deserialize)]
         // 关键：拒绝未知字段。这样 <file> 标签就会触发报错
         #[serde(deny_unknown_fields)]
         struct XmlSeq<T> {
             // 关键：rename 捕获子标签
             #[serde(rename = "item", default = "Vec::new")]
-            items: Vec<T>,
+            items: Vec<ItemWrapper<T>>,
         }
 
         // 2. 直接解析，不再使用 untagged enum
         // quick-xml 会自动处理单/多标签
         match XmlSeq::<T>::deserialize(deserializer) {
-            Ok(wrapper) => Ok(LlmVec(wrapper.items)),
+            Ok(wrapper) => Ok(LlmVec(
+                wrapper.items.into_iter().map(|w| w.content).collect(),
+            )),
             Err(e) => {
                 // 如果解析失败，说明不是 item 标签，也不是空
                 Err(serde::de::Error::custom(format!(

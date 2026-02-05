@@ -101,12 +101,13 @@ pub struct ChatSemanticSnapshot {
 }
 
 pub async fn get_chat_embedding(messages: Vec<ChatMessage>) -> Result<Vec<f32>> {
-    let mut msgs = vec![ChatMessage::system(
-        "你是一个聊天消息分析专家。请分析以下聊天内容并提取关键信息。",
-    )];
-    for msg in messages {
-        msgs.push(msg);
-    }
+    let msgs = [
+        vec![ChatMessage::system(
+            "你是一个聊天消息分析专家。请分析以下聊天内容并提取关键信息。",
+        )],
+        messages,
+    ]
+    .concat();
 
     let response = ask_as::<ChatSemanticSnapshot>(msgs).await?;
     let combined_text = format!(

@@ -22,24 +22,18 @@ impl ChooseCourse {
         client: &SessionClient,
         prompt: P,
     ) -> Result<CourseChoiceResponse> {
-        let mut messages = vec![
-            ChatMessage::system(
-                "你是一个专业的理解用户需求的客服，请根据用户的需求字符串和现有信息推测用户最可能选择的信息并且按照要求返回课程ID或者None",
-            ),
-            ChatMessage::user(prompt.into()),
-        ];
-
         let recent_course = RecentlyVisitedCourses::get_from_client(client).await?;
-
-        messages.push(ChatMessage::system("获取到用户最近的课程访问信息如下："));
-        messages.push(ChatMessage::system(quick_xml::se::to_string(
-            &recent_course,
-        )?));
 
         let course_data = MyCourses::get_from_client(client).await?;
 
-        messages.push(ChatMessage::system("获取到用户的所有课程信息如下："));
-        messages.push(ChatMessage::system(quick_xml::se::to_string(&course_data)?));
+        let messages = [vec![
+            ChatMessage::system(
+                "你是一个专业的理解用户需求的客服，请根据用户的需求字符串和现有信息推测用户最可能选择的信息并且按照要求返回课程ID或者None",
+            ),
+            ChatMessage::user(prompt.into()),ChatMessage::system("获取到用户最近的课程访问信息如下："),ChatMessage::system(quick_xml::se::to_string(
+            &recent_course,
+        )?),ChatMessage::system("获取到用户的所有课程信息如下："),ChatMessage::system(quick_xml::se::to_string(&course_data)?)
+        ]].concat();
 
         let response = ask_as::<CourseChoiceResponse>(messages).await?;
         Ok(response)

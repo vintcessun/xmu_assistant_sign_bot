@@ -31,7 +31,7 @@ impl FileUrl {
         id: i64,
         filename: &str,
     ) -> Result<Arc<File>> {
-        if let Some(file) = FILE_DATA.get(id).await? {
+        if let Some(file) = FILE_DATA.get_async(id).await? {
             return Ok(file);
         }
 

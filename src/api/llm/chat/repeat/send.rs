@@ -11,6 +11,7 @@ use crate::{
     },
 };
 use anyhow::{Result, anyhow};
+use tracing::debug;
 
 pub async fn send_message_from_hot<T, M>(ctx: &mut Context<T, M>) -> Result<()>
 where
@@ -37,6 +38,8 @@ where
         Target::Private(id) => -id,
     };
     audit_test_fast(&message_send, message, group_id).await?;
+
+    debug!("Hot reply generated: {:?}", message_send);
 
     ctx.send_message(message_send).await?;
 

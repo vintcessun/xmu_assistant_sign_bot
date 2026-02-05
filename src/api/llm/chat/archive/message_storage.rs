@@ -19,7 +19,7 @@ pub struct MessageStorage;
 
 impl MessageStorage {
     pub async fn get(key: String) -> Option<ChatMessage> {
-        let msg = MESSAGE_DB.get(key).await.unwrap_or_default();
+        let msg = MESSAGE_DB.get_async(key).await.unwrap_or_default();
         msg.map(|m| m.msg)
     }
 
@@ -43,7 +43,7 @@ impl MessageStorage {
     }
 
     pub async fn get_range(start_time: u64, end_time: u64) -> Vec<(String, ChatMessage)> {
-        let segments = MESSAGE_DB.get_all().await.unwrap_or_default();
+        let segments = MESSAGE_DB.get_all_async().await.unwrap_or_default();
         let start_idx = segments.partition_point(|s| s.1.timestamp < start_time);
 
         // 2. 找到第一个时间戳 > end_time 的索引 (上界)
@@ -60,7 +60,7 @@ pub struct NoticeStorage;
 
 impl NoticeStorage {
     pub async fn get(key: i64) -> Option<ChatMessage> {
-        let msg = NOTICE_DB.get(key).await.unwrap_or_default();
+        let msg = NOTICE_DB.get_async(key).await.unwrap_or_default();
         msg.map(|m| m.msg)
     }
 
@@ -80,7 +80,7 @@ impl NoticeStorage {
     }
 
     pub async fn get_range(start_time: u64, end_time: u64) -> Vec<ChatMessage> {
-        let segments = NOTICE_DB.get_all().await.unwrap_or_default();
+        let segments = NOTICE_DB.get_all_async().await.unwrap_or_default();
         let start_idx = segments.partition_point(|s| s.1.timestamp < start_time);
 
         // 2. 找到第一个时间戳 > end_time 的索引 (上界)

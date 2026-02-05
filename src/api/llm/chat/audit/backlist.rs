@@ -6,11 +6,15 @@ use std::{
 
 use anyhow::Result;
 use futures::{SinkExt, StreamExt, channel::mpsc};
+use genai::chat::ChatMessage;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::api::{
-    llm::chat::{llm::get_single_text_embedding, repeat::reply::MessageAbstract},
+    llm::chat::{
+        llm::{get_chat_embedding, get_single_text_embedding},
+        repeat::reply::MessageAbstract,
+    },
     storage::{ColdTable, HasEmbedding, VectorSearchEngine},
 };
 
@@ -50,7 +54,7 @@ pub struct BacklistRemove {
 
 impl BacklistRemove {
     async fn try_remove(key: MessageAbstract) {
-        if let Some(uuid) = BACKLIST_DB.get(key).await.unwrap_or_default()
+        if let Some(uuid) = BACKLIST_DB.get_async(key).await.unwrap_or_default()
             && let Some(ret_search) = BACKLIST_SEARCH.get(uuid).await
             && let Some(top) = ret_search.entry.penalty_end.front()
         {
@@ -90,23 +94,15 @@ impl BacklistRemove {
 pub struct Backlist;
 
 impl Backlist {
-    pub async fn get(key: MessageAbstract) -> Option<Arc<BlacklistEntry>> {
-        let ret = if let Some(uuid) = BACKLIST_DB.get(key.clone()).await.unwrap_or_default()
-            && let Some(ret_search) = BACKLIST_SEARCH.get(uuid).await
-            && ret_search.entry.fail_count > 0
-        {
-            Some(ret_search.entry.clone())
-        } else {
-            None
-        };
-
-        BacklistRemove::send(key).await;
-
-        ret
+    pub async fn search(
+        key: Vec<f32>,
+        top_k: usize,
+    ) -> anyhow::Result<Vec<(Uuid, Arc<BlacklistSearch>)>> {
+        BACKLIST_SEARCH.search(key, top_k).await
     }
 
     pub async fn insert(key: MessageAbstract, entry: Arc<BlacklistEntry>) -> Result<()> {
-        if let Some(uuid) = BACKLIST_DB.get(key.clone()).await.unwrap_or_default()
+        if let Some(uuid) = BACKLIST_DB.get_async(key.clone()).await.unwrap_or_default()
             && let Some(old_search) = BACKLIST_SEARCH.get(uuid).await
         {
             let mut new_entry = old_search.entry.as_ref().clone();
@@ -138,10 +134,45 @@ impl Backlist {
         Ok(())
     }
 
-    pub async fn search(
-        key: Vec<f32>,
-        top_k: usize,
-    ) -> anyhow::Result<Vec<(Uuid, Arc<BlacklistSearch>)>> {
-        BACKLIST_SEARCH.search(key, top_k).await
+    pub async fn get(key: MessageAbstract) -> Option<Arc<BlacklistEntry>> {
+        let ret = if let Some(uuid) = BACKLIST_DB.get_async(key.clone()).await.unwrap_or_default()
+            && let Some(ret_search) = BACKLIST_SEARCH.get(uuid).await
+            && ret_search.entry.fail_count > 0
+        {
+            Some(ret_search.entry.clone())
+        } else {
+            None
+        };
+
+        BacklistRemove::send(key).await;
+
+        ret
+    }
+
+    pub async fn insert_just_search(
+        key: Vec<ChatMessage>,
+        entry: Arc<BlacklistEntry>,
+    ) -> Result<()> {
+        let _ = BACKLIST_SEARCH
+            .insert(Arc::new(BlacklistSearch {
+                embedding: get_chat_embedding(
+                    [
+                        vec![
+                            ChatMessage::system(format!(
+                                "不良内容详情: {}\n不良内容原因: {}\n改进建议: {:?}",
+                                entry.bad_detail, entry.bad_reason, entry.suggestions
+                            )),
+                            ChatMessage::system("以下是相关消息内容:"),
+                        ],
+                        key,
+                    ]
+                    .concat(),
+                )
+                .await?,
+                entry,
+            }))
+            .await?;
+
+        Ok(())
     }
 }
