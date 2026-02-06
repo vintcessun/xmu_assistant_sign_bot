@@ -20,7 +20,7 @@ async fn llm_msg_from_segment_receive(segment: &SegmentSend) -> ChatMessage {
             let gif_data = get_gif_from_exe(id);
             match gif_data {
                 Some(data) => {
-                    let (content_type, content, name) = data;
+                    let (content_type, content, _id, name) = data;
                     let parts = vec![
                         ContentPart::Text(format!("[face: {}]", id)),
                         ContentPart::Binary(Binary::from_base64(

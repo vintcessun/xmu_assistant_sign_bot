@@ -1,4 +1,6 @@
+use crate::abi::message::Target;
 use crate::api::llm::chat::archive::bridge::llm_msg_from_message_without_archive;
+use crate::api::llm::chat::audit::audit_test_search;
 use crate::api::llm::chat::audit::backlist::Backlist;
 use crate::api::llm::chat::llm::ask_llm;
 use crate::api::llm::chat::message::bridge::IntoMessageSend;
@@ -15,9 +17,7 @@ use tracing::{debug, error, trace};
 
 #[derive(Debug, Serialize, Deserialize, LlmPrompt, Clone)]
 struct SearchMessageReply {
-    #[prompt(
-        "当前是否需要对用户进行回复，如果用户提示@我要回复或者搜索结果非常相关则回复 true，否则回复 false"
-    )]
+    #[prompt("当前是否需要对用户进行回复，如果搜索结果非常相关则回复 true，否则回复 false")]
     is_match: LlmBool,
     #[prompt("基于搜索的结果生成一个简短的回复，回复要简洁明了")]
     reply: String,
@@ -28,6 +28,11 @@ where
     T: BotClient + BotHandler + std::fmt::Debug + 'static,
 {
     let message = ctx.get_message();
+
+    let group_id = match ctx.get_target() {
+        Target::Group(id) => id,
+        Target::Private(id) => -id,
+    };
 
     let msg_src = llm_msg_from_message_without_archive(&message).await;
     let msg = get_chat_embedding(msg_src.clone()).await?;
@@ -97,6 +102,13 @@ where
             return Err(anyhow!("搜索回复消息转换失败"));
         }
     };
+
+    audit_test_search(
+        &msg,
+        group_id,
+        result.iter().map(|x| x.0.to_owned()).collect::<Vec<_>>(),
+    )
+    .await?;
 
     debug!("LLM Search Reply: {:?}", msg);
 

@@ -204,8 +204,7 @@ impl AuditTask {
                     ]),
                 });
                 Backlist::insert(fast_key.clone(), entry).await?;
-            }
-            if let Some(search_key) = &task.search_key {
+            } else if let Some(search_key) = &task.search_key {
                 let bad_detail = audit_data.bad_detail.clone().unwrap_or_default();
                 let bad_reason = audit_data.bad_reason.clone().unwrap_or_default();
                 let suggestions = audit_data.suggestions.clone().unwrap_or_default().to_vec();
@@ -359,6 +358,26 @@ pub async fn audit_test_search(
             group_id,
             fast_key: None,
             search_key: Some(search_key),
+        })
+        .await?;
+
+    Ok(())
+}
+
+pub async fn audit_test_deep(message: &MessageSend, group_id: i64) -> Result<()> {
+    let ts = time::SystemTime::now()
+        .duration_since(time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let src_msg: Vec<ChatMessage> = llm_msg_from_message(message).await;
+    AUDIT_TASK
+        .send_audit_task(AuditTestRequest {
+            message: src_msg,
+            audit_type: AuditType::Deep,
+            timestamp: ts,
+            group_id,
+            fast_key: None,
+            search_key: None,
         })
         .await?;
 

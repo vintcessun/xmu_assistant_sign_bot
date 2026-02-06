@@ -61,7 +61,8 @@ impl IntoMessageSend {
              1. 严禁直接在 <item> 标签下书写任何文字。\n\
              2. 所有的文本内容必须包裹在 <Text><text>...</text></Text> 结构中。\n\
              3. 即使只有一段话，也要拆分为 <item><Text><text>...</text></Text></item>。\n\
-             4. 严格遵守提供的符号体系，不要发挥，不要输出 XML 以外的文字。",
+             4. 严格遵守提供的符号体系，不要发挥，不要输出 XML 以外的文字。\
+             5. 如果需要表达表情，请使用 <item><Face><id>表情ID</id></Face></item>，其中表情ID必须是提供的参考图中的ID。\n",
             ),
             get_face_reference_message(),
             ChatMessage::assistant(msg.texts().join("\n")),
@@ -117,6 +118,23 @@ mod tests {
         println!("LLM 原始回复: {:?}", msg);
         let msg = IntoMessageSend::get_message_send(msg).await?;
         println!("转写结果: {:?}", msg);
+        Ok(())
+    }
+
+    #[tokio::test]
+    pub async fn test_message_face() -> Result<()> {
+        let msg = CLIENT
+            .exec_chat(
+                "gemini-flash-latest",
+                ChatRequest::default().append_message(ChatMessage::user(
+                    "请描述大笑表情并让AI选择表情库中的大小的表情ID进行回复，要求AI必须从face参考图中选择一个表情ID进行回复",
+                )),
+                None,
+            )
+            .await?;
+        println!("LLM 原始回复: {:?}", msg);
+        let msg = IntoMessageSend::get_message_send(msg).await?;
+        println!("转写结果: {}", serde_json::to_string(&msg)?);
         Ok(())
     }
 }

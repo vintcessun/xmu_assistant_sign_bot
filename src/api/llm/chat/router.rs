@@ -11,6 +11,7 @@ use crate::{
         archive::{
             identity_group_archive, identity_person_archive, message_archive, notice_archive,
         },
+        deep::send_message_from_llm,
         repeat::send_message_from_hot,
         search::send::send_message_from_store,
     },
@@ -31,6 +32,11 @@ where
 
     //L1: 搜索回复
     if send_message_from_store(ctx).await.is_ok() {
+        return;
+    }
+
+    //L2: 深度回复
+    if send_message_from_llm(ctx).await.is_ok() {
         return;
     }
 

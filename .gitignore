@@ -7,3 +7,6 @@
 cargo-flamegraph.stacks
 src/api/llm/chat/config.rs
 /.vscode
+src/logic/mod.rs
+update_qqface.py
+/logs

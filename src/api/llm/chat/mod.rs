@@ -1,6 +1,7 @@
 pub mod archive;
 pub mod audit;
 pub mod config;
+pub mod deep;
 pub mod file;
 pub mod impression;
 pub mod llm;

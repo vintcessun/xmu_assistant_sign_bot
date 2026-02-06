@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use crate::{
     abi::{
         logic_import::{Message, Notice},
@@ -20,22 +22,38 @@ use tracing::error;
 
 include!(concat!(env!("OUT_DIR"), "/face_data.rs"));
 
-pub fn get_gif_from_exe(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
+pub fn get_gif_from_exe(
+    id: &str,
+) -> Option<(&'static str, &'static str, &'static str, &'static str)> {
     FACES.get(id).copied()
 }
 
+static FACE_REFERENCE_MESSAGE: LazyLock<ChatMessage> =
+    LazyLock::new(get_face_reference_message_inner);
+
 pub fn get_face_reference_message() -> ChatMessage {
+    FACE_REFERENCE_MESSAGE.clone()
+}
+
+pub fn get_face_reference_message_inner() -> ChatMessage {
     let mut parts = vec![ContentPart::Text(
-        "以下是你可以使用的表情参考图：".to_string(),
+        "以下是你可以使用的表情参考列表：".to_string(),
     )];
 
-    for (ct, content, name) in FACES.values() {
-        parts.push(ContentPart::Text(format!("\n表情名: {}\n", name)));
+    for (_ct, _content, id, name) in FACES.values() {
+        parts.push(ContentPart::Text(format!(
+            "\n表情ID:{}\n表情名: {}\n",
+            id, name
+        )))
+        // NOTICE: due to the limitation of the context length, we do not provide the actual image content in the prompt, instead, we provide the content type and name as a reference, and the actual image content can be retrieved from the provided API when needed.
+        // if you want to provide the actual image content in the prompt, you can uncomment the following code, but please be aware of the context length limitation and adjust the prompt accordingly.
+        /*
         parts.push(ContentPart::Binary(Binary::from_base64(
-            *ct,
-            *content,
+            *_ct,
+            *_content,
             Some(name.to_string()),
         )));
+         */
     }
 
     ChatMessage::system(parts) // 作为系统上下文发送
@@ -49,7 +67,7 @@ async fn llm_msg_from_segment_receive(segment: &SegmentReceive) -> ChatMessage {
             let gif_data = get_gif_from_exe(id);
             match gif_data {
                 Some(data) => {
-                    let (content_type, content, name) = data;
+                    let (content_type, content, _id, name) = data;
                     let parts = vec![
                         ContentPart::Text(format!("[face: {}]", id)),
                         ContentPart::Binary(Binary::from_base64(

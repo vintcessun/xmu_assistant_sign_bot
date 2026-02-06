@@ -1,4 +1,5 @@
 use base64::{Engine as _, engine::general_purpose};
+use core::panic;
 use serde::Deserialize;
 use std::env;
 use std::fs;
@@ -37,12 +38,23 @@ fn generate_face_data(out_dir: &str) {
             let path = entry.path();
             if path.extension().is_some_and(|e| e == "gif") {
                 let face_id = path.file_stem().unwrap().to_str().unwrap().to_string();
+                //读取face_id.txt作为name
+                let txt_path = path.with_extension("txt");
+                let name = if txt_path.exists() {
+                    fs::read_to_string(&txt_path)
+                        .unwrap_or_else(|_| face_id.clone()) // 读取失败则回退
+                        .trim() // 去掉前后换行和空格
+                        .replace('"', "\\\"") // 防止内容里有引号导致代码报错
+                        .to_string()
+                } else {
+                    panic!("表情 {} 缺失对应的描述文件 {}", face_id, txt_path.display());
+                };
                 let bytes = fs::read(&path).expect("无法读取表情文件");
                 let b64_content = general_purpose::STANDARD.encode(bytes);
 
                 let val_expr = format!(
-                    "(r#\"image/gif\"#, r#\"{}\"# , r#\"{}.gif\"#)",
-                    b64_content, face_id
+                    "(r#\"image/gif\"#, r#\"{}\"# , r#\"{}\"#, r#\"{}\"#)",
+                    b64_content, face_id, name
                 );
                 builder.entry(face_id, val_expr);
             }
@@ -50,7 +62,7 @@ fn generate_face_data(out_dir: &str) {
     }
 
     let code = format!(
-        "static FACES: phf::Map<&'static str, (&'static str, &'static str, &'static str)> = {};\n",
+        "static FACES: phf::Map<&'static str, (&'static str, &'static str, &'static str, &'static str)> = {};\n",
         builder.build()
     );
     fs::write(dest_path, code).unwrap();
