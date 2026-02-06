@@ -1,8 +1,0 @@
-2025-12-25T14:35:59.318084Z  WARN xmu_assistant_bot: 不存在配置文件，已创建默认配置: config.toml
-2025-12-25T14:35:59.318181Z TRACE xmu_assistant_bot: default_config=Config { napcat: NapcatConfig { host: "127.0.0.1:3030", port: 3010, access_token: None, reconnect_interval_secs: 10 }, bot: BotConfig { qq: 123456789, command_prefix: "/", admin_qqs: [] } }
-2025-12-25T14:36:45.761033Z  INFO xmu_assistant_bot: 配置文件加载成功: config.toml
-2025-12-25T14:36:45.761147Z DEBUG xmu_assistant_bot: config=Config { napcat: NapcatConfig { host: "127.0.0.1:3030", port: 3010, access_token: None, reconnect_interval_secs: 10 }, bot: BotConfig { qq: 123456789, command_prefix: "/", admin_qqs: [] } }
-2025-12-25T14:37:25.339464Z  WARN xmu_assistant_bot: 不存在配置文件，已创建默认配置: config.toml
-2025-12-25T14:37:25.339651Z TRACE xmu_assistant_bot: default_config=Config { napcat: NapcatConfig { host: "127.0.0.1", port: 3001, access_token: Some("xmu_assistant_bot"), reconnect_interval_secs: 10 }, bot: BotConfig { qq: 123456789, command_prefix: "/", admin_qqs: [] } }
-2025-12-25T14:37:40.422343Z  INFO xmu_assistant_bot: 配置文件加载成功: config.toml
-2025-12-25T14:37:40.422497Z DEBUG xmu_assistant_bot: config=Config { napcat: NapcatConfig { host: "127.0.0.1", port: 3001, access_token: Some("xmu_assistant_bot"), reconnect_interval_secs: 10 }, bot: BotConfig { qq: 123456789, command_prefix: "/", admin_qqs: [] } }
