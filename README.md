@@ -211,9 +211,10 @@
 | **`/testans** | 获取小测答案 | 查阅指定考试/作业的正确答案（如果已公布）。 |
 | **`/class`** | 获取课堂小测列表 | 使用LLM进行课程分析，查询课堂互动信息列表。 |
 | **`/getclass`** | 获取课堂小测内容 | 查阅指定课堂互动小测的试题内容。 |
-| **`/timetable`** | 课表查询 -> 图片生成 | **新增**。自动登录并调用 LLM 工具 `ChooseTimetable` 精确定位课表，并使用 `ScheduleRenderer` 生成图片返回。 |
-| **`/fate`** | 求签 -> 人物画像 -> LLM 解签 | **新增**。集成了**双源签文**（浅草寺/阮一峰语录）和**用户画像** (`impression`)，通过 LLM 模型进行 AI 命理分析和解签，具有娱乐性和互动性。|
-| **`/image`** | LLM 生图 -> ImageFile 存储 -> 返回链接 | **新增**。调用 **Gemini-3-Pro Image API** 生成图片，并利用 `ImageFile` 抽象实现 Base64 懒加载存储，确保文件高效发送。|
+| **`/timetable`** | 课表查询 -> 图片生成 | 自动登录并调用 LLM 工具 `ChooseTimetable` 精确定位课表，并使用 `ScheduleRenderer` 生成图片返回。 |
+| **`/fate`** | 求签 -> 人物画像 -> LLM 解签 | 集成了**双源签文**（浅草寺/阮一峰语录）和**用户画像** (`impression`)，通过 LLM 模型进行 AI 命理分析和解签，具有娱乐性和互动性。|
+| **`/image`** | LLM 生图 -> ImageFile 存储 -> 返回链接 | 调用 **Gemini-3-Pro Image API** 生成图片，并利用 `ImageFile` 抽象实现 Base64 懒加载存储，确保文件高效发送。|
+| **`/github`** | 输出github地址 | 获取当前项目github地址。 |
 
 ------
 
