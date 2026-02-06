@@ -8,7 +8,8 @@ use genai::{
     resolver::{AuthData, AuthResolver, Endpoint, ServiceTargetResolver},
 };
 use quick_xml::de::from_str;
-use serde::de::DeserializeOwned; // 重新导出宏
+use serde::de::DeserializeOwned;
+use tracing::error;
 
 const MODEL_NAME: &str = "gemini-2.0-flash";
 
@@ -60,6 +61,24 @@ pub async fn ask(message: Vec<ChatMessage>) -> Result<ChatResponse> {
 }
 
 pub async fn ask_as<T>(message: Vec<ChatMessage>) -> Result<T>
+where
+    T: DeserializeOwned + LlmPrompt,
+{
+    let mut err = anyhow!("未知错误");
+    for _ in 0..3 {
+        match ask_as_once::<T>(message.clone()).await {
+            Ok(data) => return Ok(data),
+            Err(e) => {
+                error!("LLM 解析失败，重试中... 错误：{}", e);
+                err = e;
+                continue;
+            }
+        }
+    }
+    Err(anyhow!("LLM 解析多次失败 {err}"))
+}
+
+pub async fn ask_as_once<T>(message: Vec<ChatMessage>) -> Result<T>
 where
     T: DeserializeOwned + LlmPrompt,
 {

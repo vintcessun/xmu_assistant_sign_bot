@@ -64,6 +64,8 @@ where
     ]
     .concat();
 
+    trace!(?chat_message, "LLM Deep 分析提示词");
+
     let message = ask_as::<LlmMessageReply>(chat_message).await?;
 
     trace!("Llm Reply Analysis: {:?}", message);
@@ -98,6 +100,8 @@ where
         msg_src,
     ]
     .concat();
+
+    trace!(?chat_message, "LLM Deep 提示词");
 
     let resp = ask_llm(chat_message).await?;
 

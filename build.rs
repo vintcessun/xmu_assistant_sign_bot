@@ -13,6 +13,8 @@ fn main() {
     println!("cargo:rerun-if-changed=qqdata/theme");
     println!("cargo:rerun-if-changed=src/logic");
 
+    println!("cargo:rerun-if-changed=build.rs");
+
     let out_dir = env::var("OUT_DIR").unwrap();
 
     // --- 逻辑 A: 生成表情包 PHF Map ---

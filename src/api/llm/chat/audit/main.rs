@@ -99,7 +99,7 @@ pub struct AuditLlmResponse {
     #[prompt("如果该回复具有记忆价值，请简要描述其包含的知识点、幽默感或见解")]
     pub value_detail: LlmOption<String>,
     #[prompt("该回复是否触犯了群聊的潜规则，是否需要进行惩罚？")]
-    pub is_penalty: LlmBool,
+    pub is_penalty: LlmOption<LlmBool>,
     #[prompt("如果该回答具有惩罚性，请描述具体的惩罚细节")]
     pub bad_detail: LlmOption<String>,
     #[prompt("如果该回答具有惩罚性，请描述该回复触犯群聊潜规则的具体原因是什么？")]
@@ -123,7 +123,6 @@ impl AuditTask {
         )
         .await?;
 
-        let ts = task.timestamp;
         sleep_until_unix_timestamp(ts + LLM_AUDIT_DURATION_SECS + 3).await;
         let src_msg = task.message.clone();
         let before_msg_all = MessageStorage::get_range(ts - LLM_AUDIT_DURATION_SECS, ts).await;
@@ -175,7 +174,21 @@ impl AuditTask {
 - **关于记忆**：是否建议系统将此回复作为“黄金样板”学习？还是仅仅作为过眼云烟？
 - **关于警示**：如果此回复具有毒性或误导性，建议如何实施“惩罚”？（请给出你认为合理的惩罚力度，如轻微警告、短期隔离或长期封禁）。
 - **关于进化**：如果时间倒流，Bot 应该如何组织语言才能更像一个有血有肉的个体？"#,
-        ),ChatMessage::system("助手回复消息")],src_msg,vec![ChatMessage::system("前60s的消息和提示")],before_msg,before_notice,vec![ChatMessage::system("后60s的消息和提示")],after_msg,after_notice].concat();
+        ),
+            ChatMessage::system("助手回复消息")],src_msg,
+            if before_msg.is_empty(){
+                vec![ChatMessage::system("前没有消息记录")]
+            }else{ 
+                [vec![ChatMessage::system("前消息和提示")],before_msg].concat()
+            },before_notice,
+            vec![ChatMessage::system("后消息和提示")],
+            if after_msg.is_empty(){
+                vec![ChatMessage::system("后没有消息记录")]
+            } else {
+                [vec![ChatMessage::system("后消息和提示")], after_msg].concat()
+            },after_notice
+        ].concat();
+        trace!(?msg, "审计提示词");
 
         let audit_response = ask_llm(msg).await?;
 
@@ -185,7 +198,7 @@ impl AuditTask {
         ])
         .await?;
 
-        if *audit_data.is_penalty {
+        if let Some(is_penalty) = *audit_data.is_penalty && *is_penalty {
             if let Some(fast_key) = &task.fast_key {
                 let bad_detail = audit_data.bad_detail.clone().unwrap_or_default();
                 let bad_reason = audit_data.bad_reason.clone().unwrap_or_default();
@@ -279,12 +292,7 @@ impl AuditTask {
             data: data_clone,
         };
 
-        let handle =
-            tokio::runtime::Handle::try_current().expect("AuditTask 必须在 Tokio 运行时内初始化");
-
-        handle
-            .block_on(async { ret.rebuild_task().await })
-            .expect("重启audit任务失败");
+        ret.rebuild_task().expect("重启audit任务失败");
 
         ret
     }
@@ -303,13 +311,25 @@ impl AuditTask {
         tx.send(task).await.map_err(|e| anyhow::anyhow!(e))
     }
 
-    async fn rebuild_task(&self) -> Result<()> {
-        let all_tasks = self.data.get_all_async().await?;
+    fn rebuild_task(&self) -> Result<()> {
+        let all_tasks = match self.data.get_all() {
+            Ok(e) => e,
+            Err(e) => {
+                error!("获取所有审计任务失败: {:?}", e);
+                vec![]
+            }
+        };
         for (ts, task) in all_tasks {
             if task.status != AuditStatus::Completed {
                 trace!("重建审计任务 {ts}");
                 trace!(?task);
-                self.send_audit_task(task.task).await?;
+
+                tokio::spawn(async move {
+                    AUDIT_TASK
+                        .send_audit_task(task.task)
+                        .await
+                        .expect("重建审计任务失败")
+                });
             }
         }
         Ok(())

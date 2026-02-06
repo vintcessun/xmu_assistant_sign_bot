@@ -66,8 +66,6 @@ where
     where
         D: Deserializer<'de>,
     {
-        // 1. 定义一个代理结构体
-
         // 1. 定义一个内部包装类
         #[derive(Deserialize)]
         struct ItemWrapper<T> {
@@ -77,8 +75,7 @@ where
         }
 
         #[derive(Deserialize)]
-        // 关键：拒绝未知字段。这样 <file> 标签就会触发报错
-        #[serde(deny_unknown_fields)]
+        #[serde(deny_unknown_fields)] // 严格禁止未知字段，确保输入完全符合预期结构
         struct XmlSeq<T> {
             // 关键：rename 捕获子标签
             #[serde(rename = "item", default = "Vec::new")]
@@ -108,7 +105,7 @@ impl<T: LlmPrompt> LlmPrompt for LlmVec<T> {
         static SCHEMA_CACHE: OnceLock<String> = OnceLock::new();
         SCHEMA_CACHE.get_or_init(|| {
             format!(
-                "一个由零个或多个元素组成的列表，每个元素的格式为: <item>{}</item>",
+                "一个由零个或多个元素组成的列表，每个元素的格式为: <item>{}</item>，请注意即使是单个item也**必须**用<item></item>标签包括内容",
                 sub_schema
             )
         })
@@ -134,6 +131,11 @@ mod tests {
     <item>3036843</item>
     <item>3036840</item>
   </files>
+</FilesChoiceResponseLlm>"#;
+
+    const CORRECT_DATA_SINGLE: &str = r#"<FilesChoiceResponseLlm>
+  <all>false</all>
+  <files>3052935</files>
 </FilesChoiceResponseLlm>"#;
     const CORRECT_EMPTY_DATA: &str = r#"<FilesChoiceResponseLlm>
   <all>true</all>
@@ -163,6 +165,8 @@ mod tests {
     #[test]
     fn test() {
         let data = from_str::<FilesChoiceResponseLlm>(CORRECT_DATA);
+        println!("Parsed data: {:?}", data);
+        let data = from_str::<FilesChoiceResponseLlm>(CORRECT_DATA_SINGLE);
         println!("Parsed data: {:?}", data);
         let data = from_str::<FilesChoiceResponseLlm>(CORRECT_EMPTY_DATA);
         println!("Parsed data: {:?}", data);

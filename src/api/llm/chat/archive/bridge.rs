@@ -249,8 +249,9 @@ pub async fn llm_msg_from_message_without_archive(message: &Message) -> Vec<Chat
 }
 
 pub async fn llm_msg_from_message(message: &Message) -> Vec<ChatMessage> {
+    let ret = llm_msg_from_message_without_archive(message).await;
     archive_message_files(message).await;
-    llm_msg_from_message_without_archive(message).await
+    ret
 }
 
 pub async fn llm_msg_from_notice(notice: &Notice) -> ChatMessage {

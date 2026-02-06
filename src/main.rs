@@ -14,7 +14,7 @@ async fn main() -> Result<()> {
     config::ensure_dir(LOG_PATH);
     config::ensure_dir(config::DATA_DIR);
 
-    let _guard = logger::init_logger(LOG_PATH, LevelFilter::INFO);
+    let _guard = logger::init_logger(LOG_PATH, LevelFilter::TRACE);
 
     let mut router = abi::run(config::get_napcat_config())
         .await

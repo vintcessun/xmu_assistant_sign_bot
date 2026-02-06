@@ -8,7 +8,7 @@ use crate::api::{
 use std::sync::{Arc, LazyLock};
 
 static FILE_EMBEDDING_DB: LazyLock<VectorSearchEngine<LlmFile>> =
-    LazyLock::new(|| VectorSearchEngine::new("llm_chat_file_embedding_search_storage"));
+    LazyLock::new(|| VectorSearchEngine::new("llm_chat_file_embedding_storage"));
 
 impl HasEmbedding for LlmFile {
     fn get_embedding(&self) -> &[f32] {

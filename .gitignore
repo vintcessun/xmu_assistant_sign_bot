@@ -5,8 +5,8 @@
 /napcat
 /frpc
 cargo-flamegraph.stacks
-src/api/llm/chat/config.rs
+/src/api/llm/chat/config.rs
 /.vscode
 update_qqface.py
 /logs
-src/logic/mod.rs
+/src/logic/mod.rs
