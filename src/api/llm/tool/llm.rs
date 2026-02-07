@@ -11,7 +11,7 @@ use quick_xml::de::from_str;
 use serde::de::DeserializeOwned;
 use tracing::error;
 
-const MODEL_NAME: &str = "gemini-2.0-flash";
+const MODEL_NAME: &str = "gemini-2.5-flash";
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
     // 1. AuthResolver

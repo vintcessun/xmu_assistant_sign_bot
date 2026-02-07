@@ -8,7 +8,7 @@ from pathlib import Path
 # 你的原始编译输出文件
 SOURCE_EXE = Path("target/release/xmu_assistant_bot.exe")
 # 实际运行的副本文件
-RUN_EXE = Path("target/run.exe")
+RUN_EXE = Path("run.exe")
 # 检测间隔（秒）
 CHECK_INTERVAL = 1.0
 # 等待编译完全写入的缓冲时间（秒）

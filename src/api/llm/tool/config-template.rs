@@ -13,7 +13,7 @@ pub struct ModelConfig {
 pub static MODEL_MAP: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| {
     let mut m = HashMap::new();
     m.insert(
-        "gemini-2.0-flash",
+        "gemini-2.5-flash",
         ModelConfig {
             kind: AdapterKind::Gemini,
             base_url: "your_base_url_here",
