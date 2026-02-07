@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{
     abi::message::{
         MessageSend,
@@ -6,16 +8,33 @@ use crate::{
     },
     api::{
         llm::{
-            chat::{archive::bridge::get_face_reference_message, file::LlmFile},
+            chat::{
+                archive::bridge::get_face_reference_message,
+                file::{FileShortId, LlmFile},
+            },
             tool::{LlmPrompt, LlmVec, ask_as},
         },
         storage::FileStorage,
     },
 };
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use genai::chat::{ChatMessage, ChatResponse};
 use helper::{LlmPrompt, box_new};
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, LlmPrompt, Serialize, Deserialize)]
+pub struct LlmFileWithIdOrOptionAlias {
+    #[prompt("文件ID，8位SHA-256短ID")]
+    pub id: String,
+}
+
+impl LlmFileWithIdOrOptionAlias {
+    pub async fn to_llm_file(&self) -> Result<Arc<LlmFile>> {
+        let id = FileShortId::from_llm(&self.id)?;
+        let file = LlmFile::get_by_id(id)?.ok_or(anyhow!("文件ID:{}未找到", id))?;
+        Ok(file)
+    }
+}
 
 #[derive(Debug, LlmPrompt, Serialize, Deserialize)]
 pub enum SegmentSendLlmResponse {
@@ -28,7 +47,7 @@ pub enum SegmentSendLlmResponse {
     #[prompt("图片内容")]
     Image {
         #[prompt("图片文件")]
-        file: LlmFile,
+        file: LlmFileWithIdOrOptionAlias,
     },
 
     #[prompt("QQ表情")]
@@ -82,7 +101,7 @@ impl IntoMessageSend {
                 SegmentSendLlmResponse::Face { id } => SegmentSend::Face(face::DataSend { id }),
                 SegmentSendLlmResponse::Image { file } => {
                     SegmentSend::Image(box_new!(image::DataSend, {
-                        file: FileUrl::from_path(file.file.get_path())?,
+                        file: FileUrl::from_path(file.to_llm_file().await?.file.get_path())?,
                         r#type: None,
                         cache: Cache::default(),
                         proxy: Proxy::default(),

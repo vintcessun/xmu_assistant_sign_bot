@@ -8,9 +8,7 @@ use futures_util::StreamExt;
 use std::{path::PathBuf, sync::Arc};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
-/// 根据 2026-01-09 最新 Bench 结果（详见 session.rs 的 test）：
-/// 11 个分块在 87MB 大文件上表现最优 (5.09s)，在小文件上也能维持在 500ms 左右。
-const OPTIMAL_CHUNKS: u64 = 11;
+const OPTIMAL_CHUNKS: u64 = 1; //为了稳定性，先固定为1，后续可以根据实际情况调整
 
 pub async fn download_to_file(
     client: Arc<SessionClient>,
@@ -86,20 +84,34 @@ async fn download_parallel_benchmarked(
     path: &std::path::Path,
     total_size: u64,
 ) -> Result<()> {
+    if total_size == 0 {
+        // 确保文件存在且长度为 0
+        let _ = tokio::fs::File::create(path).await?;
+        return Ok(());
+    }
+
     // 预分配磁盘空间，减少 metadata 更新频率
     let f_placeholder = tokio::fs::File::create(path).await?;
     f_placeholder.set_len(total_size).await?;
     drop(f_placeholder);
 
-    let chunk_size = total_size / OPTIMAL_CHUNKS;
-    let mut tasks = Vec::with_capacity(OPTIMAL_CHUNKS as usize);
+    let base_chunk_size = total_size / OPTIMAL_CHUNKS;
 
-    for i in 0..OPTIMAL_CHUNKS {
-        let start = i * chunk_size;
-        let end = if i == OPTIMAL_CHUNKS - 1 {
+    let (num_chunks, chunk_size_for_loop) = if base_chunk_size == 0 {
+        // 如果 total_size 小于 OPTIMAL_CHUNKS，只使用一个 chunk 以避免 0 - 1 溢出。
+        (1, total_size)
+    } else {
+        (OPTIMAL_CHUNKS, base_chunk_size)
+    };
+
+    let mut tasks = Vec::with_capacity(num_chunks as usize);
+
+    for i in 0..num_chunks {
+        let start = i * chunk_size_for_loop;
+        let end = if i == num_chunks - 1 {
             total_size - 1
         } else {
-            (i + 1) * chunk_size - 1
+            (i + 1) * chunk_size_for_loop - 1
         };
 
         let c = client.clone();
@@ -127,4 +139,19 @@ async fn download_parallel_benchmarked(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_download() -> Result<()> {
+        let client = Arc::new(SessionClient::new());
+        let url = "https://download.samplelib.com/png/sample-boat-400x300.png";
+        let filename = "sample-boat-400x300.png";
+        let file = download_to_file(client, url, filename).await?;
+        println!("Downloaded file at path: {:?}", file.path);
+        Ok(())
+    }
 }

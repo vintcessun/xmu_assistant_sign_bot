@@ -13,7 +13,7 @@ pub async fn image(ctx: Context) -> Result<()> {
     let msg = ctx.get_message();
 
     trace!("收到生成图片消息: {:?}", msg);
-    let msg = llm_msg_from_message_without_archive(&msg).await;
+    let msg = llm_msg_from_message_without_archive(ctx.client.clone(), &msg).await;
     trace!("转化为 LLM 消息: {:?}", msg);
 
     let img = generate_image(msg).await?;

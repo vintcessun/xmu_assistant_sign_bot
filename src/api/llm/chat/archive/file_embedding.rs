@@ -8,7 +8,7 @@ use crate::api::{
 use std::sync::{Arc, LazyLock};
 
 static FILE_EMBEDDING_DB: LazyLock<VectorSearchEngine<LlmFile>> =
-    LazyLock::new(|| VectorSearchEngine::new("llm_chat_file_embedding_storage"));
+    LazyLock::new(|| VectorSearchEngine::new("llm_chat_file_embedding_database"));
 
 impl HasEmbedding for LlmFile {
     fn get_embedding(&self) -> &[f32] {
@@ -32,7 +32,7 @@ pub async fn search_llm_file(key: Vec<f32>, top_k: usize) -> Result<Vec<(Uuid, A
 mod tests {
     use super::*;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_file_embedding() -> Result<()> {
         let mut file = LlmFile::from_url("https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=EhSxkb2veUyr4m_-dy2fsPv9hIl4NRiPuwIg_woojYKrkv3EkgMyBHByb2RQgL2jAVoQ1a6ygbvSFAzdVDPPqyDFsXoC5LKCAQJneg&rkey=CAESMIEslqobKMl_19QcqkL8Buyx96vGvI3WxtwpRlDFl9TXj0BNUjA9kXdVpfgaKfuxkw", "A1A1EA9F31371A1935416E6746F4212A.jpg".to_string()).await?;
 

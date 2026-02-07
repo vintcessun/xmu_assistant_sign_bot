@@ -1,4 +1,7 @@
-use crate::abi::message::api::{ApiResponse, Data};
+use crate::abi::message::{
+    MessageReceive,
+    api::{ApiResponse, Data},
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -19,3 +22,13 @@ pub struct ForwardMsgData {
 impl Data for ForwardMsgData {}
 
 pub type ForwardMsgResponse = ApiResponse<ForwardMsgData>;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PrivateForwardMsgData {
+    #[serde(alias = "message")]
+    pub messages: MessageReceive,
+}
+
+impl Data for PrivateForwardMsgData {}
+
+pub type PrivateForwardMsgResponse = ApiResponse<PrivateForwardMsgData>;

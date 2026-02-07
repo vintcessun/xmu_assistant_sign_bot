@@ -1,18 +1,18 @@
 use crate::api::{
-    llm::tool::LlmPrompt,
+    llm::chat::archive::file_embedding::embedding_llm_file,
     network::{SessionClient, download_to_file},
     storage::{ColdTable, File},
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
-use std::sync::{Arc, LazyLock};
+use std::{
+    fmt::Display,
+    sync::{Arc, LazyLock},
+};
 
 static FILE_DB: LazyLock<ColdTable<FileShortId, Arc<LlmFile>>> =
     LazyLock::new(|| ColdTable::new("llm_chat_file_storage"));
-
-static CLIENT: LazyLock<Arc<SessionClient>> = LazyLock::new(|| Arc::new(SessionClient::new()));
-
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct FileShortId(u32);
@@ -35,7 +35,13 @@ impl FileShortId {
     }
 }
 
-#[derive(Debug, Serialize, Clone)]
+impl Display for FileShortId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_hex())
+    }
+}
+
+#[derive(Debug, Serialize, Clone, Deserialize)]
 pub struct LlmFile {
     pub id: FileShortId, // 8位 SHA-256
     pub file: Arc<File>, // 你原有的文件抽象
@@ -44,43 +50,10 @@ pub struct LlmFile {
     pub embedding: Option<Vec<f32>>, // 可选的向量嵌入
 }
 
-impl LlmPrompt for LlmFile {
-    fn get_prompt_schema() -> &'static str {
-        // 给 LLM 的 Schema 只展示 ID 和 别名，隐藏复杂的物理路径
-        "<id> 文件的8位 SHA-256短ID</id> \n<alias> 文件的别名（如“大笑.gif”）</alias>"
-    }
-    fn root_name() -> &'static str {
-        "file"
-    }
-}
-
-impl<'de> Deserialize<'de> for LlmFile {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct LlmFileHelper {
-            id: String,
-            //alias: String,
-        }
-
-        let helper = LlmFileHelper::deserialize(deserializer)?;
-        let id = FileShortId::from_llm(&helper.id).map_err(serde::de::Error::custom)?;
-
-        let file = Self::get_by_id(id)
-            .map_err(|e| serde::de::Error::custom(format!("Get File by id error {e}")))?
-            .ok_or(serde::de::Error::custom("The file is not found"))?;
-        let file = (*file).clone();
-
-        Ok(file)
-    }
-}
-
 impl LlmFile {
     /// 从现有的 File 对象创建一个 LlmFile
     pub async fn attach(mut file: File, alias: String) -> Result<Self> {
-        let p: std::path::PathBuf = file.path.clone();
+        let p = file.path.clone();
         let short_id = tokio::task::spawn_blocking(move || {
             let mut hasher = sha2::Sha256::new();
             let mut f = std::fs::File::open(&p)?;
@@ -109,10 +82,28 @@ impl LlmFile {
     }
 }
 
+static FILE_URL_FILTER_DB: LazyLock<ColdTable<String, FileShortId>> =
+    LazyLock::new(|| ColdTable::new("llm_chat_file_url_filter"));
+
 impl LlmFile {
     pub async fn from_url(url: &str, alias: String) -> Result<Self> {
-        let file = download_to_file(CLIENT.clone(), url, &alias).await?;
+        // 1. 先检查 URL 是否已经下载过（通过 URL 过滤）
+        if let Some(id) = FILE_URL_FILTER_DB.get_async(url.to_string()).await?
+            && let Some(file) = Self::get_by_id(id)?
+        {
+            return Ok((*file).clone());
+        }
+        let file = download_to_file(Arc::new(SessionClient::new()), url, &alias).await?;
         let file = Self::attach(file, alias).await?;
+        FILE_URL_FILTER_DB.insert(url.to_string(), file.id).await?;
+        #[cfg(test)]
+        {
+            println!(
+                "Downloaded and attached file from URL: {}, assigned ID: {}",
+                url, file.id
+            );
+            println!("文件已写入");
+        }
         Ok(file)
     }
 
@@ -123,5 +114,37 @@ impl LlmFile {
 
     pub fn get_by_id(id: FileShortId) -> Result<Option<Arc<Self>>> {
         FILE_DB.get(id)
+    }
+
+    pub async fn embedded(self) -> Result<Arc<Self>> {
+        if self.embedding.is_none() {
+            let file = embedding_llm_file(self).await?;
+            Self::insert(file.clone()).await?;
+            Ok(file)
+        } else {
+            Ok(Arc::new(self))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const URL: &str = r#"https://samplelib.com/lib/preview/png/sample-hut-400x300.png"#;
+    const ALIAS: &str = "sample-hut-400x300.png";
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_llm_file_from_url() -> Result<()> {
+        let file = LlmFile::from_url(URL, ALIAS.to_string()).await?;
+        let file = file.embedded().await?;
+        println!("Downloaded LlmFile: {:?}", file.alias);
+        let file = FILE_URL_FILTER_DB
+            .get(URL.to_string())?
+            .and_then(|id| LlmFile::get_by_id(id).ok()?)
+            .unwrap();
+
+        println!("Retrieved from DB: {:?}", file.alias);
+        Ok(())
     }
 }

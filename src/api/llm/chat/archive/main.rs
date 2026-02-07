@@ -33,7 +33,7 @@ where
         Message::Private(p) => p.message_id,
     };
 
-    let msg_content = llm_msg_from_message(&message).await;
+    let msg_content = llm_msg_from_message(ctx.client.clone(), &message).await;
     let msg_single = msg_content
         .iter()
         .map(|x| x.content.parts().clone())

@@ -10,3 +10,4 @@ cargo-flamegraph.stacks
 update_qqface.py
 /logs
 /src/logic/mod.rs
+line_data.py

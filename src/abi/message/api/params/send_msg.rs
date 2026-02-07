@@ -76,7 +76,7 @@ impl SendPrivateMessageParams {
     }
 }
 
-#[api("/send_private_forward_msg", data::GetForwardMsgResponse)]
+#[api("/send_private_forward_msg", data::PrivateForwardMsgResponse)]
 pub struct SendPrivateForwardMessageParams {
     pub user_id: i64,
     pub messages: MessageSend,

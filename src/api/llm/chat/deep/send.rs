@@ -37,7 +37,7 @@ where
         Target::Private(id) => -id,
     };
 
-    let msg_src = llm_msg_from_message_without_archive(&message).await;
+    let msg_src = llm_msg_from_message_without_archive(ctx.client.clone(), &message).await;
     let msg = get_chat_embedding(msg_src.clone()).await?;
 
     let ts = std::time::SystemTime::now()

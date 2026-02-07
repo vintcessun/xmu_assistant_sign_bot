@@ -45,7 +45,7 @@ where
         let table_name = self.table_name;
 
         // 将阻塞的磁盘操作移交给外部线程池
-        task::spawn_blocking(move || {
+        block_in_place(move || {
             let key_vec = bincode::serde::encode_to_vec(&key, BINCODE_CONFIG)?;
             let val_vec = bincode::serde::encode_to_vec(&value, BINCODE_CONFIG)?;
 
@@ -58,8 +58,7 @@ where
             }
             txn.commit()?; // 这里的 fsync 会在后台线程执行
             Ok(())
-        })
-        .await? // 等待后台线程完成
+        }) // 等待后台线程完成
     }
 
     pub async fn get_async(&self, key: K) -> Result<Option<V>> {

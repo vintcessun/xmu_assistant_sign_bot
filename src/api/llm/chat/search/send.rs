@@ -1,5 +1,7 @@
 use crate::abi::message::Target;
 use crate::api::llm::chat::archive::bridge::llm_msg_from_message_without_archive;
+use crate::api::llm::chat::archive::file_embedding::search_llm_file;
+use crate::api::llm::chat::archive::memo_fragment::MemoFragment;
 use crate::api::llm::chat::audit::audit_test_search;
 use crate::api::llm::chat::audit::backlist::Backlist;
 use crate::api::llm::chat::llm::ask_llm;
@@ -10,13 +12,13 @@ use crate::{
     api::llm::chat::{llm::get_chat_embedding, search::store::MessageSearchStore},
 };
 use anyhow::{Result, anyhow};
-use genai::chat::ChatMessage;
+use genai::chat::{Binary, ChatMessage, ContentPart};
 use helper::LlmPrompt;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, trace};
 
 #[derive(Debug, Serialize, Deserialize, LlmPrompt, Clone)]
-struct SearchMessageReply {
+pub struct SearchMessageReply {
     #[prompt("当前是否需要对用户进行回复，如果搜索结果非常相关则回复 true，否则回复 false")]
     is_match: LlmBool,
     #[prompt("基于搜索的结果生成一个简短的回复，回复要简洁明了")]
@@ -34,10 +36,28 @@ where
         Target::Private(id) => -id,
     };
 
-    let msg_src = llm_msg_from_message_without_archive(&message).await;
+    let msg_src = llm_msg_from_message_without_archive(ctx.client.clone(), &message).await;
     let msg = get_chat_embedding(msg_src.clone()).await?;
 
     let result = MessageSearchStore::search(msg.clone(), 5).await?;
+    let files = search_llm_file(msg.clone(), 5).await?;
+
+    let file_chat = {
+        let mut ret = Vec::with_capacity(files.len() * 3 + 3);
+        for (_, file) in files {
+            let mut parts = Vec::with_capacity(3);
+            parts.push(ContentPart::Text(format!(
+                "文件名称: {} 文件ID: {}",
+                file.alias, file.id
+            )));
+            let binary_file = Binary::from_file(&file.file.path)?;
+            parts.push(ContentPart::Binary(binary_file));
+            ret.push(ChatMessage::assistant(parts));
+        }
+        ret
+    };
+
+    let memo_segment = MemoFragment::search(msg.clone(), 5).await?;
 
     let chat_message = [
     vec![ChatMessage::system(
@@ -48,6 +68,17 @@ where
         result
             .iter()
             .map(|r| format!("内容: {:?}", r.1))
+            .collect::<Vec<String>>()
+    ))],
+    vec![ChatMessage::system(
+        "以下是根据用户提问搜索到的相关文件: ")],
+    file_chat,
+    vec![
+    ChatMessage::system(format!(
+        "以下是根据用户提问搜索到的相关聊天记录片段: {:?}",
+        memo_segment
+            .iter()
+            .map(|r| format!("聊天片段内容: {:?}", r.1))
             .collect::<Vec<String>>()
     )),
     ChatMessage::system("用户的提问:")],

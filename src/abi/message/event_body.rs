@@ -39,7 +39,7 @@ pub mod message {
 
     use super::*;
 
-    #[derive(Deserialize, Debug)]
+    #[derive(Deserialize, Debug, Serialize)]
     #[serde(tag = "message_type", rename_all = "snake_case")]
     pub enum Message {
         Private(Private),
@@ -71,9 +71,10 @@ pub mod message {
                     user_id: p.sender.user_id,
                     card: p.sender.card.clone(),
                     role: match p.sender.role {
-                        Role::Admin => Some(SenderRole::GroupAdmin),
-                        Role::Owner => Some(SenderRole::GroupOwner),
-                        Role::Member => Some(SenderRole::GroupMember),
+                        Some(Role::Admin) => Some(SenderRole::GroupAdmin),
+                        Some(Role::Owner) => Some(SenderRole::GroupOwner),
+                        Some(Role::Member) => Some(SenderRole::GroupMember),
+                        None => None,
                     },
                 },
                 Message::Private(p) => Sender {

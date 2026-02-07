@@ -82,7 +82,14 @@ pub async fn get_single_file_embedding(file: &LlmFile) -> Result<Vec<f32>> {
         )?)]),
     ];
 
+    #[cfg(test)]
+    println!("文件分析提示词: {:?}", prompt);
+
     let response = ask_as::<FileSemanticSnapshot>(prompt).await?;
+
+    #[cfg(test)]
+    println!("文件分析结果: {:?}", response);
+
     get_single_text_embedding(format!(
         "文件名: {}\n文件摘要: {}\n详细信息: {}\n关键词: {:?}",
         filename, response.summary, response.details, response.keywords
@@ -128,10 +135,22 @@ pub async fn ask_llm(chat_message: Vec<ChatMessage>) -> Result<ChatResponse> {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    pub async fn test_embedding() -> Result<()> {
+    #[tokio::test(flavor = "multi_thread")]
+    pub async fn test_text_embedding() -> Result<()> {
         let embedding = get_single_text_embedding("Hello, world!".to_string()).await?;
         println!("Embedding: {:?}", embedding);
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_file_embedding() -> Result<()> {
+        let file = LlmFile::from_url(
+            "https://samplelib.com/lib/preview/png/sample-boat-400x300.png",
+            "sample-boat-400x300.png".to_string(),
+        )
+        .await?;
+        let file = file.embedded().await?;
+        println!("File embedding result: {:?}", file);
         Ok(())
     }
 }

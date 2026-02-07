@@ -4,7 +4,7 @@ use crate::{
         message_body::{SegmentSend, contact, music, node},
     },
     api::llm::chat::archive::{
-        bridge::get_gif_from_exe,
+        bridge::{get_gif_from_exe, get_mime_type},
         identity::{IdentityGroup, IdentityPerson},
         message_storage::MessageStorage,
     },
@@ -35,27 +35,30 @@ async fn llm_msg_from_segment_receive(segment: &SegmentSend) -> ChatMessage {
             }
         }
         SegmentSend::Image(e) => {
-            let content_type = match &e.r#type {
-                Some(t) => t,
-                None => "image/jpeg",
-            };
             let url = e.file.get_url();
+            let content_type = get_mime_type(url);
             ChatMessage::user(ContentPart::Binary(Binary::from_url(
                 content_type,
                 url,
                 None,
             )))
         }
-        SegmentSend::Record(e) => ChatMessage::user(ContentPart::Binary(Binary::from_url(
-            "audio/amr",
-            e.file.get_url(),
-            None,
-        ))),
-        SegmentSend::Video(e) => ChatMessage::user(ContentPart::Binary(Binary::from_url(
-            "video/mp4",
-            e.file.get_url(),
-            None,
-        ))),
+        SegmentSend::Record(e) => {
+            let url = e.file.get_url();
+            ChatMessage::user(ContentPart::Binary(Binary::from_url(
+                get_mime_type(url),
+                url,
+                None,
+            )))
+        }
+        SegmentSend::Video(e) => {
+            let url = e.file.get_url();
+            ChatMessage::user(ContentPart::Binary(Binary::from_url(
+                get_mime_type(url),
+                url,
+                None,
+            )))
+        }
         SegmentSend::At(e) => {
             let user_id = &e.qq;
             let qq_i64 = user_id.parse::<i64>().unwrap_or(0);
@@ -81,7 +84,7 @@ async fn llm_msg_from_segment_receive(segment: &SegmentSend) -> ChatMessage {
             ))];
             if let Some(image) = &e.image {
                 content.push(ContentPart::Binary(Binary::from_url(
-                    "image/jpeg",
+                    get_mime_type(image),
                     image,
                     Some(e.title.clone()),
                 )));
@@ -167,11 +170,14 @@ async fn llm_msg_from_segment_receive(segment: &SegmentSend) -> ChatMessage {
         },
         SegmentSend::Xml(e) => ChatMessage::user(format!("[XML消息 {}]", e.data)),
         SegmentSend::Json(e) => ChatMessage::user(format!("[JSON消息 {}]", e.data)),
-        SegmentSend::File(e) => ChatMessage::user(ContentPart::Binary(Binary::from_url(
-            "application/octet-stream",
-            e.file.get_url(),
-            None,
-        ))),
+        SegmentSend::File(e) => {
+            let url = e.file.get_url();
+            ChatMessage::user(ContentPart::Binary(Binary::from_url(
+                get_mime_type(url),
+                url,
+                None,
+            )))
+        }
         SegmentSend::Shake(_) => ChatMessage::user("[窗口抖动]"),
         SegmentSend::Anonymous(_) => ChatMessage::user("[匿名消息]"),
         SegmentSend::Music(e) => match &**e {
@@ -192,12 +198,16 @@ async fn llm_msg_from_segment_receive(segment: &SegmentSend) -> ChatMessage {
                         "[自定义音乐 链接: {} 标题: {} 内容: {:?}]",
                         url, title, content,
                     )),
-                    ContentPart::Binary(Binary::from_url("audio/mpeg", audio, Some(title.clone()))),
+                    ContentPart::Binary(Binary::from_url(
+                        get_mime_type(url),
+                        audio,
+                        Some(title.clone()),
+                    )),
                 ];
 
                 if let Some(image) = image {
                     parts.push(ContentPart::Binary(Binary::from_url(
-                        "image/jpeg",
+                        get_mime_type(image),
                         image,
                         Some(title.clone()),
                     )));

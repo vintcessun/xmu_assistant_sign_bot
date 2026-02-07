@@ -82,7 +82,7 @@ fn create_mock_context(text: &str) -> Context<MockClient, Message> {
             age: None,
             area: None,
             level: None,
-            role: Role::Member,
+            role: Some(Role::Member),
             title: None,
         },
         message: MessageReceive::Array(vec![SegmentReceive::Text(DataReceive {

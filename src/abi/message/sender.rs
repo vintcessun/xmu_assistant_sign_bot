@@ -34,7 +34,7 @@ pub struct SenderGroup {
     pub age: Option<i32>,
     pub area: Option<String>,
     pub level: Option<String>,
-    pub role: Role,
+    pub role: Option<Role>,
     pub title: Option<String>,
 }
 
