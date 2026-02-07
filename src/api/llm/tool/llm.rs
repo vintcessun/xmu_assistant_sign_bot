@@ -65,13 +65,14 @@ where
     T: DeserializeOwned + LlmPrompt,
 {
     // 1. 自动注入 Schema 指令
-    let schema = T::get_prompt_schema();
-
     let mut chat_message = [
         message,
         vec![
-            ChatMessage::system("你必须直接返回 XML 格式的数据，禁止任何开场白。格式规范如下："),
-            ChatMessage::system(schema),
+            ChatMessage::system(format!(
+                "你必须直接返回 XML 格式的数据，禁止任何开场白。当前root_name为 {}，格式规范如下：",
+                T::root_name()
+            )),
+            ChatMessage::system(T::get_prompt_schema()),
         ],
     ]
     .concat();

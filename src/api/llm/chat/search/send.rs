@@ -97,7 +97,7 @@ where
     let chat_message = [
         vec![
             ChatMessage::system(
-                "你是一个智能的助手，请根据用户的提问和搜索到的相关内容，阐述回复的要点等。",
+                "你是一个智能的助手，请根据用户的提问和搜索到的相关内容，完成回复文本的生成。",
             ),
             ChatMessage::system(format!(
                 "以下是根据用户提问搜索到的相关内容: {:?}",

@@ -81,7 +81,10 @@ impl IntoMessageSend {
              2. 所有的文本内容必须包裹在 <Text><text>...</text></Text> 结构中。\n\
              3. 即使只有一段话，也要拆分为 <item><Text><text>...</text></Text></item>。\n\
              4. 严格遵守提供的符号体系，不要发挥，不要输出 XML 以外的文字。\
-             5. 如果需要表达表情，请使用 <item><Face><id>表情ID</id></Face></item>，其中表情ID必须是提供的参考图中的ID。\n",
+             5. 如果需要表达表情，请使用 <item><Face><id>表情ID</id></Face></item>，其中表情ID必须是提供的参考图中的ID。\n\
+             6. 每个消息段后会自动加上换行符，无需在文本内容中添加换行符。
+             7. 如果需要提及某人，请使用 <item><At><qq>QQ号</qq></At></item>。
+             8. 不需要使用markdown语法进行转写。",
             ),
             get_face_reference_message(),
             ChatMessage::assistant(msg.texts().join("\n")),
@@ -109,7 +112,10 @@ impl IntoMessageSend {
                     }))
                 }
                 SegmentSendLlmResponse::Text { text } => SegmentSend::Text(text::DataSend { text }),
-            })
+            });
+            ret.push(SegmentSend::Text(text::DataSend {
+                text: "\n".to_string(),
+            }));
         }
         Ok(MessageSend::Array(ret))
     }
