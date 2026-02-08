@@ -29,7 +29,7 @@ jobs:
 
                   # 2. 尝试合并
                   # 使用 -m 确保 Commit Message 包含 [skip ci]，防止挤占 Action 额度
-                  if git merge upstream/master --no-edit -m "chore: sync upstream [skip ci]"; then
+                  if git merge upstream/master --allow-unrelated-histories --no-edit -m "chore: sync upstream [skip ci]"; then
                     echo "Merge successful, pushing to private..."
                     git push origin main
                   else
