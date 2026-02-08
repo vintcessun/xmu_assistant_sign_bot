@@ -1,0 +1,38 @@
+name: Auto Sync from Upstream
+
+on:
+    schedule:
+        - cron: "0 2 * * *" # 每天凌晨2点执行
+    workflow_dispatch: # 支持手动点击按钮触发
+
+jobs:
+    sync:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout Private Repo
+              uses: actions/checkout@v4
+              with:
+                  # 注意：需在 Settings > Secrets 中配置名为 PAT_TOKEN 的个人访问令牌
+                  token: ${{ secrets.PAT_TOKEN }}
+                  fetch-depth: 0
+
+            - name: Configure Git
+              run: |
+                  git config --global user.name "Sync Bot"
+                  git config --global user.email "bot@github.com"
+
+            - name: Sync and Skip CI
+              run: |
+                  # 1. 添加上游并拉取
+                  git remote add upstream https://github.com/vintcessun/xmu_assistant_bot.git
+                  git fetch upstream main
+
+                  # 2. 尝试合并
+                  # 使用 -m 确保 Commit Message 包含 [skip ci]，防止挤占 Action 额度
+                  if git merge upstream/main --no-edit -m "chore: sync upstream [skip ci]"; then
+                    echo "Merge successful, pushing to private..."
+                    git push origin main
+                  else
+                    echo "Error: Conflict detected. Manual intervention required."
+                    exit 1
+                  fi
