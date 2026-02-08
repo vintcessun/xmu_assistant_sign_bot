@@ -1,0 +1,14 @@
+/target
+/data
+/src/api/llm/tool/config.rs
+/helper/target
+/napcat
+/frpc
+cargo-flamegraph.stacks
+/src/api/llm/chat/config.rs
+/.vscode
+update_qqface.py
+/logs
+/src/logic/mod.rs
+line_data.py
+run.exe

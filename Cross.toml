@@ -1,0 +1,26 @@
+[target.x86_64-unknown-linux-gnu]
+pre-build = [
+    "apt-get update",
+    "apt-get install -y pkg-config libssl-dev mold clang",
+]
+
+[target.i686-unknown-linux-gnu]
+pre-build = [
+    "dpkg --add-architecture i386",
+    "apt-get update",
+    "apt-get install -y pkg-config libssl-dev:i386",
+]
+
+[target.aarch64-unknown-linux-gnu]
+pre-build = [
+    "dpkg --add-architecture arm64",
+    "apt-get update",
+    "apt-get install -y pkg-config libssl-dev:arm64",
+]
+
+[target.armv7-unknown-linux-gnueabihf]
+pre-build = [
+    "dpkg --add-architecture armhf",
+    "apt-get update",
+    "apt-get install -y pkg-config libssl-dev:armhf",
+]

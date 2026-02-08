@@ -1,0 +1,32 @@
+# --- 全平台通用极致优化 ---
+[build]
+rustflags = [
+    "-C",
+    "target-cpu=native",
+
+    # 极致内联阈值：强制编译器将 Handler 和中间层彻底打碎并嵌入调用点
+    "-C",
+    "llvm-args=-inline-threshold=500",
+
+    # 激进优化开关
+    "-C",
+    "llvm-args=-vectorize-loops",  # 开启循环向量化 (SIMD)
+    "-C",
+    "llvm-args=-enable-gvn-hoist", # 全局值编号提升（减少冗余计算）
+    "-C",
+    "llvm-args=-enable-load-pre",  # 激进的负载预取
+
+    # 针对代码段的性能优化
+    "-C",
+    "link-arg=-s", # 链接时剔除不必要的符号（减小体积提升 I-Cache 友好度）
+]
+
+# --- Windows (MSVC 链) ---
+# LLD 对全量 LTO 的支持非常出色，且链接速度极快
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+# --- Linux (GNU 链) ---
+# mold 是 Linux 下性能的物理极限，设计初衷就是解决 ld 的单线程瓶颈
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]

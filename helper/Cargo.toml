@@ -1,0 +1,16 @@
+[package]
+name = "helper"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2.0.111", features = ["full"] }
+quote = "1.0.42"
+proc-macro2 = "1.0.104"
+heck = "0.5.0"
+const_format = "0.2.35"
+darling = "0.23.0"

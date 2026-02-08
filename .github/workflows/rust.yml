@@ -1,0 +1,267 @@
+name: Build multi-platform releases
+
+on:
+    push:
+        branches: ["master", "main"]
+    pull_request:
+        branches: ["master", "main"]
+    workflow_dispatch:
+
+jobs:
+    # Linux cross-compilation jobs (using cross for Linux targets)
+    build-linux-cross:
+        name: Linux cross builds
+        runs-on: ubuntu-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                target:
+                    [
+                        i686-unknown-linux-gnu,
+                        aarch64-unknown-linux-gnu,
+                        armv7-unknown-linux-gnueabihf,
+                    ]
+        steps:
+            - name: Checkout source
+              uses: actions/checkout@v4
+
+            - name: Prepare LLM tool config
+              run: |
+                  cp src/api/llm/tool/config-template.rs src/api/llm/tool/config.rs
+                  cp src/api/llm/chat/config-template.rs src/api/llm/chat/config.rs
+
+            - name: Set up Rust
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  targets: ${{ matrix.target }}
+                  components: rustfmt, clippy
+
+            - name: Install cross
+              run: cargo install cross --force
+
+            - name: Build release binary using cross
+              run: cross build --release --target ${{ matrix.target }} --verbose
+
+            - name: Rename artifact
+              shell: bash
+              run: |
+                  mkdir -p artifacts  # 确保 artifacts 目录存在
+                  BIN_NAME="xmu_assistant_bot-${{ matrix.target }}"
+                  if [ -f "target/${{ matrix.target }}/release/xmu_assistant_bot" ]; then
+                      cp target/${{ matrix.target }}/release/xmu_assistant_bot artifacts/${BIN_NAME}
+                  else
+                      echo "Warning: No binary found for ${{ matrix.target }} (maybe cross failed)"
+                      ls -R target/${{ matrix.target }}/release || true
+                  fi
+
+            - name: Upload artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: xmu_assistant_bot-${{ matrix.target }}
+                  path: artifacts/**
+                  if-no-files-found: warn
+                  compression-level: 6
+                  overwrite: false
+                  include-hidden-files: false
+              env:
+                  CARGO_HOME: /home/runner/.cargo
+                  CARGO_INCREMENTAL: 0
+                  CARGO_TERM_COLOR: always
+
+    build-linux-native:
+        name: Linux native builds
+        runs-on: ubuntu-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                target: [x86_64-unknown-linux-gnu]
+        steps:
+            - name: Checkout source
+              uses: actions/checkout@v4
+
+            - name: Prepare LLM tool config
+              run: |
+                  cp src/api/llm/tool/config-template.rs src/api/llm/tool/config.rs
+                  cp src/api/llm/chat/config-template.rs src/api/llm/chat/config.rs
+
+            - name: Install Dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y mold clang pkg-config libssl-dev
+
+            - name: Set up Rust
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  targets: ${{ matrix.target }}
+                  components: rustfmt, clippy
+
+            - name: Rust Cache
+              uses: Swatinem/rust-cache@v2
+
+            - name: Build release binary
+              run: cargo build --release --target ${{ matrix.target }} --verbose
+              env:
+                  RUSTFLAGS: >-
+                      -C link-arg=-fuse-ld=mold
+                      ${{ contains(matrix.target, 'x86_64') && '-C target-cpu=x86-64-v3' || '' }}
+                  OPENSSL_STATIC: 1
+
+            - name: Rename artifact
+              shell: bash
+              run: |
+                  mkdir -p artifacts
+                  BIN_NAME="xmu_assistant_bot-${{ matrix.target }}"
+                  if [ -f "target/${{ matrix.target }}/release/xmu_assistant_bot" ]; then
+                      cp "target/${{ matrix.target }}/release/xmu_assistant_bot" "artifacts/${BIN_NAME}"
+                  elif [ -f "target/release/xmu_assistant_bot" ]; then
+                      cp "target/release/xmu_assistant_bot" "artifacts/${BIN_NAME}"
+                  else
+                      echo "Error: Binary not found!"
+                      find target -name "xmu_assistant_bot"
+                      exit 1
+                  fi
+
+            - name: Upload artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: xmu_assistant_bot-${{ matrix.target }}
+                  path: artifacts/**
+                  if-no-files-found: warn
+                  compression-level: 6
+                  overwrite: false
+                  include-hidden-files: false
+              env:
+                  CARGO_HOME: /home/runner/.cargo
+                  CARGO_INCREMENTAL: 0
+                  CARGO_TERM_COLOR: always
+
+    # Windows MSVC builds (using Windows runner)
+    build-windows-msvc:
+        name: Windows MSVC builds
+        runs-on: windows-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                target:
+                    [
+                        x86_64-pc-windows-msvc,
+                        i686-pc-windows-msvc,
+                        aarch64-pc-windows-msvc,
+                    ]
+        steps:
+            - name: Checkout source
+              uses: actions/checkout@v4
+
+            - name: Prepare LLM tool config
+              run: |
+                  Copy-Item src/api/llm/tool/config-template.rs src/api/llm/tool/config.rs
+                  Copy-Item src/api/llm/chat/config-template.rs src/api/llm/chat/config.rs
+
+            - name: Set up Rust
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  targets: ${{ matrix.target }}
+                  components: rustfmt, clippy
+
+            - name: Install Windows MSVC toolchain
+              run: |
+                  rustup target add ${{ matrix.target }}
+                  rustc -V
+                  cargo -V
+
+            - name: Build release binary
+              run: cargo build --release --target ${{ matrix.target }} --verbose
+              env:
+                  RUSTFLAGS: >-
+                      -C link-arg=-fuse-ld=lld-link 
+                      ${{ contains(matrix.target, 'x86_64') && '-C target-cpu=x86-64-v3' || '' }}
+                      ${{ contains(matrix.target, 'aarch64') && '-C target-cpu=generic' || '' }}
+
+            - name: Rename artifact
+              shell: powershell
+              run: |
+                  New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+                  $BIN_NAME = "xmu_assistant_bot-${{ matrix.target }}"
+                  if (Test-Path "target/${{ matrix.target }}/release/*.exe") {
+                      Copy-Item "target/${{ matrix.target }}/release/*.exe" "artifacts/$BIN_NAME.exe"
+                      Write-Host "Successfully copied artifacts for $BIN_NAME"
+                  } else {
+                      Write-Warning "No .exe binary found for $BIN_NAME (maybe build failed)"
+                      Get-ChildItem -Recurse "target/${{ matrix.target }}/release"
+                  }
+
+            - name: Upload artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: xmu_assistant_bot-${{ matrix.target }}
+                  path: artifacts/**
+                  if-no-files-found: warn
+                  compression-level: 6
+                  overwrite: false
+                  include-hidden-files: false
+
+    # macOS builds (using macOS runner)
+    build-macos:
+        name: macOS builds
+        runs-on: macos-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                target: [x86_64-apple-darwin, aarch64-apple-darwin]
+        steps:
+            - name: Checkout source
+              uses: actions/checkout@v4
+
+            - name: Prepare LLM tool config
+              run: |
+                  cp src/api/llm/tool/config-template.rs src/api/llm/tool/config.rs
+                  cp src/api/llm/chat/config-template.rs src/api/llm/chat/config.rs
+
+            - name: Set up Rust
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  targets: ${{ matrix.target }}
+                  components: rustfmt, clippy
+
+            - name: Install macOS target
+              run: rustup target add ${{ matrix.target }}
+
+            - name: Install and configure dependencies for native crates
+              # Ensure openssl is installed and configure environment variables for native crates
+              run: |
+                  # Check if openssl is installed before attempting installation to avoid warnings about already being installed.
+                  if ! brew list openssl &>/dev/null; then
+                      brew install openssl
+                  fi
+                  OPENSSL_DIR=$(brew --prefix openssl)
+                  echo "OPENSSL_INCLUDE_DIR=$OPENSSL_DIR/include" >> $GITHUB_ENV
+                  echo "OPENSSL_LIB_DIR=$OPENSSL_DIR/lib" >> $GITHUB_ENV
+                  echo "PKG_CONFIG_PATH=$OPENSSL_DIR/lib/pkgconfig" >> $GITHUB_ENV
+
+            - name: Build release binary
+              run: cargo build --release --target ${{ matrix.target }} --verbose
+              env:
+                  RUSTFLAGS: >-
+                      ${{ matrix.target == 'aarch64-apple-darwin' && '-C target-cpu=apple-m1' || '-C target-cpu=x86-64-v3' }}
+
+            - name: Rename artifact
+              shell: bash
+              run: |
+                  mkdir -p artifacts
+                  BIN_NAME="xmu_assistant_bot-${{ matrix.target }}"
+                  # 尝试两个可能的路径
+                  if [ -f "target/${{ matrix.target }}/release/xmu_assistant_bot" ]; then
+                      cp target/${{ matrix.target }}/release/xmu_assistant_bot artifacts/${BIN_NAME}
+                  elif [ -f "target/release/xmu_assistant_bot" ]; then
+                      cp target/release/xmu_assistant_bot artifacts/${BIN_NAME}
+                  else
+                      echo "Error: Binary not found!"
+                      find target -name "xmu_assistant_bot"
+                      exit 1
+                  fi
+
+            - name: Upload artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: xmu_assistant_bot-${{ matrix.target }}
+                  path: artifacts/
