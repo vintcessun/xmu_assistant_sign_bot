@@ -300,9 +300,9 @@ where
             e.title, e.content, e.lon, e.lat,
         )),
         SegmentReceive::Reply(e) => {
-            let msg_id = e.id.clone();
+            let msg_id = &e.id;
             let content = vec![ContentPart::Text(format!("[回复消息 ID: {}]", msg_id))];
-            let msg_content = match MessageStorage::get(msg_id.clone()).await {
+            let msg_content = match MessageStorage::get(msg_id).await {
                 Some(c) => {
                     debug!(msg_id = ?msg_id, "找到回复消息原文");
                     let mut content = MessageContent::from(content);
@@ -317,10 +317,10 @@ where
             ChatMessage::user(msg_content)
         }
         SegmentReceive::Forward(e) => {
-            let id = e.id.clone();
+            let id = &e.id;
             let content = vec![ContentPart::Text(format!("[转发消息 id: {id}]"))];
 
-            let msg = MessageStorage::get(id.clone()).await;
+            let msg = MessageStorage::get(id).await;
 
             if msg.is_none() {
                 info!(message_id = ?id, "本地缓存未命中，尝试通过 API 获取转发消息");
@@ -328,7 +328,7 @@ where
                     let call = client
                         .call_api(
                             &GetForwardMsgParams {
-                                message_id: id.clone(),
+                                message_id: id.to_string(),
                             },
                             Echo::new(),
                         )
@@ -347,7 +347,7 @@ where
                         msg.extend(segment_msgs);
                     }
 
-                    MessageStorage::save(id.clone(), msg).await;
+                    MessageStorage::save(id, msg).await;
                     info!(message_id = ?id, "转发消息获取并存储成功");
                     Ok::<(), anyhow::Error>(())
                 }
@@ -360,7 +360,7 @@ where
                 }
             }
 
-            let msg = MessageStorage::get(id.clone()).await;
+            let msg = MessageStorage::get(id).await; // 使用引用
 
             let msg_content = match msg {
                 Some(e) => {
@@ -472,7 +472,7 @@ pub async fn llm_msg_from_notice(notice: &Notice) -> ChatMessage {
     ChatMessage::user(quick_xml::se::to_string(notice).unwrap_or("未知提示".to_string()))
 }
 
-async fn archive_message_file_inner(url: &str, name: String) {
+async fn archive_message_file_inner(url: &String, name: String) {
     match async move {
         let file = LlmFile::from_url(url, name).await?;
         info!(file_name = ?file.alias, "文件下载成功，开始生成嵌入");

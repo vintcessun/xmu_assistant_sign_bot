@@ -26,7 +26,7 @@ impl RepeatReply {
                 None
             }
             None => MESSAGE_FAST_DB
-                .get_async(key)
+                .get_async(&key)
                 .await
                 .map_err(|e| {
                     error!(error = ?e, "查询热回复数据库失败，返回 None");
@@ -36,14 +36,14 @@ impl RepeatReply {
         }
     }
 
-    pub async fn insert(key: MessageAbstract, message: MessageSend) {
+    pub async fn insert(key: &MessageAbstract, message: &MessageSend) {
         debug!(message_abstract = ?key, "插入热回复到数据库");
         if let Err(e) = MESSAGE_FAST_DB.insert(key, message).await {
             error!(error = ?e, "插入热回复到数据库失败");
         }
     }
 
-    pub async fn remove(key: MessageAbstract) {
+    pub async fn remove(key: &MessageAbstract) {
         debug!(message_abstract = ?key, "从数据库移除热回复");
         if let Err(e) = MESSAGE_FAST_DB.remove(key).await {
             error!(error = ?e, "从数据库移除热回复失败");

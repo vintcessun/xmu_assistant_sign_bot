@@ -43,7 +43,7 @@ pub async fn search_file(query_response: ChatResponse) -> Result<Vec<(Uuid, Arc<
         })?;
 
     trace!("开始文件向量搜索");
-    let results = search_llm_file(query_embedding, *request.top_k)
+    let results = search_llm_file(&query_embedding, *request.top_k)
         .await
         .map_err(|e| {
             error!(error = ?e, "执行文件向量搜索失败");
@@ -76,7 +76,7 @@ pub async fn search_memo(query_response: ChatResponse) -> Result<Vec<(Uuid, Arc<
         })?;
 
     trace!("开始记忆片段向量搜索");
-    let results = MemoFragment::search(query_embedding, *request.top_k)
+    let results = MemoFragment::search(&query_embedding, *request.top_k)
         .await
         .map_err(|e| {
             error!(error = ?e, "执行记忆片段向量搜索失败");

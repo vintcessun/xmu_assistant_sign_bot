@@ -87,9 +87,9 @@ impl MdTask {
 
         // 2. 生成 PDF
         // 创建 File 结构体来分配路径并管理文件
-        let mut pdf_file = File::prepare(&format!("{}.pdf", self.id));
-        let pdf_path = pdf_file.get_path().clone();
-        trace!(task_id = %self.id, path = %pdf_path.display(), "准备 PDF 文件路径");
+        let pdf_file = File::prepare(&format!("{}.pdf", self.id));
+        let pdf_path_ref = pdf_file.get_path();
+        trace!(task_id = %self.id, path = %pdf_path_ref.display(), "准备 PDF 文件路径");
 
         // 必须在阻塞任务中运行 headless_chrome
         let pdf_bytes = task::spawn_blocking(move || {
@@ -168,17 +168,17 @@ impl MdTask {
         let pdf_bytes = pdf_bytes.context("Markdown PDF 渲染任务内部执行失败")?;
 
         // 写入 PDF 文件
-        fs::write(&pdf_path, pdf_bytes).context("写入 PDF 文件失败")?;
-        debug!(path = %pdf_path.display(), "PDF 文件写入磁盘成功");
+        fs::write(pdf_path_ref, pdf_bytes).context("写入 PDF 文件失败")?;
+        debug!(path = %pdf_path_ref.display(), "PDF 文件写入磁盘成功");
 
         // 终结文件，设置只读权限并预读
         pdf_file.finish().await?;
-        debug!(path = %pdf_path.display(), "文件终结完成");
+        debug!(path = %pdf_path_ref.display(), "文件终结完成");
 
         // 3. 构造并存储结果
         let expose_result = MdTaskResult {
             html_content: html_content.clone(),
-            pdf_path,
+            pdf_path: pdf_path_ref.to_path_buf(),
             expire_at: MdTaskResult::get_expire_at(),
         };
 

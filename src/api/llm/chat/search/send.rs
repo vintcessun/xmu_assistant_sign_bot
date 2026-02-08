@@ -44,13 +44,11 @@ where
     })?;
     debug!(group_id = ?group_id, "消息嵌入向量计算完成");
 
-    let result = MessageSearchStore::search(msg.clone(), 5)
-        .await
-        .map_err(|e| {
-            warn!(group_id = ?group_id, error = ?e, "在消息搜索存储中搜索失败");
-            e
-        })?;
-    let files = search_llm_file(msg.clone(), 5).await.map_err(|e| {
+    let result = MessageSearchStore::search(&msg, 5).await.map_err(|e| {
+        warn!(group_id = ?group_id, error = ?e, "在消息搜索存储中搜索失败");
+        e
+    })?;
+    let files = search_llm_file(&msg, 5).await.map_err(|e| {
         warn!(group_id = ?group_id, error = ?e, "在文件搜索存储中搜索失败");
         e
     })?;
@@ -76,7 +74,7 @@ where
         ret
     };
 
-    let memo_segment = MemoFragment::search(msg.clone(), 5).await.map_err(|e| {
+    let memo_segment = MemoFragment::search(&msg, 5).await.map_err(|e| {
         warn!(group_id = ?group_id, error = ?e, "在记忆片段存储中搜索失败");
         e
     })?;
@@ -130,7 +128,7 @@ where
 
     info!(group_id = ?group_id, "LLM 分析认为搜索结果匹配度高，继续生成回复");
 
-    let backlist = Backlist::search(msg.clone(), 5)
+    let backlist = Backlist::search(&msg, 5)
         .await
         .map_err(|e| {
             warn!(group_id = ?group_id, error = ?e, "在黑名单搜索存储中搜索失败");

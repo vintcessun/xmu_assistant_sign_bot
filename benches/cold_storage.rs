@@ -28,7 +28,7 @@ fn bench_cold_storage(c: &mut Criterion) {
             }
 
             async move {
-                t.insert(key, value).await.unwrap();
+                t.insert(&key, &value).await.unwrap();
             }
         });
     });
@@ -39,7 +39,7 @@ fn bench_cold_storage(c: &mut Criterion) {
         for j in 0..10000 {
             let key = format!("key_{}", j);
             let value = format!("value_data_long_enough_to_test_bincode_{}", j);
-            table.insert(key, value).await.unwrap();
+            table.insert(&key, &value).await.unwrap();
         }
     });
 
@@ -51,7 +51,7 @@ fn bench_cold_storage(c: &mut Criterion) {
             i = (i + 1) % 10000;
 
             async move {
-                t.get_async(key).await.unwrap();
+                t.get_async(&key).await.unwrap();
             }
         });
     });

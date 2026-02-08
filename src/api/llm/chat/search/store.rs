@@ -32,7 +32,7 @@ impl HasEmbedding for MessageSearchStore {
 impl MessageSearchStore {
     async fn new(msg_id: String, reply_msg: MessageSend) -> Result<Self> {
         debug!(msg_id = %msg_id, "开始创建 MessageSearchStore 实例");
-        let msg = MessageStorage::get(msg_id.clone()).await.ok_or_else(|| {
+        let msg = MessageStorage::get(&msg_id).await.ok_or_else(|| {
             warn!(msg_id = %msg_id, "原始消息在 MessageStorage 中不存在");
             anyhow!("消息不存在")
         })?;
@@ -74,7 +74,7 @@ impl MessageSearchStore {
         Ok(())
     }
 
-    pub async fn search(key: Vec<f32>, top_k: usize) -> Result<Vec<(String, MessageSend)>> {
+    pub async fn search(key: &[f32], top_k: usize) -> Result<Vec<(String, MessageSend)>> {
         debug!(top_k = ?top_k, "开始在向量数据库中搜索");
         let results = MESSAGE_SEARCH_DB.search(key, top_k).await.map_err(|e| {
             error!(top_k = ?top_k, error = ?e, "向量数据库搜索失败");

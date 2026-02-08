@@ -19,15 +19,15 @@ pub struct MessageStore {
 pub struct MessageStorage;
 
 impl MessageStorage {
-    pub async fn get(key: String) -> Option<ChatMessage> {
-        let msg = MESSAGE_DB.get_async(key.clone()).await.unwrap_or_else(|e| {
+    pub async fn get(key: &String) -> Option<ChatMessage> {
+        let msg = MESSAGE_DB.get_async(key).await.unwrap_or_else(|e| {
             error!(key = ?key, error = ?e, "获取消息记录失败");
             None
         });
         msg.map(|m| m.msg)
     }
 
-    pub async fn save(key: String, message: Vec<ChatMessage>) {
+    pub async fn save(key: &String, message: Vec<ChatMessage>) {
         trace!(key = ?key, message = ?message, "正在尝试保存消息");
 
         let mut msg_contents = vec![];
@@ -38,8 +38,8 @@ impl MessageStorage {
         match async {
             MESSAGE_DB
                 .insert(
-                    key.clone(),
-                    MessageStore {
+                    key,
+                    &MessageStore {
                         msg: ChatMessage::user(msg_contents),
                         timestamp: time::SystemTime::now()
                             .duration_since(time::UNIX_EPOCH)?
@@ -83,7 +83,7 @@ pub struct NoticeStorage;
 
 impl NoticeStorage {
     pub async fn get(key: i64) -> Option<ChatMessage> {
-        let msg = NOTICE_DB.get_async(key).await.unwrap_or_else(|e| {
+        let msg = NOTICE_DB.get_async(&key).await.unwrap_or_else(|e| {
             error!(key = ?key, error = ?e, "获取通知记录失败");
             None
         });
@@ -93,8 +93,8 @@ impl NoticeStorage {
     pub async fn save(key: i64, message: ChatMessage) {
         let ret = NOTICE_DB
             .insert(
-                key,
-                MessageStore {
+                &key,
+                &MessageStore {
                     msg: message,
                     timestamp: time::SystemTime::now()
                         .duration_since(time::UNIX_EPOCH)

@@ -44,7 +44,7 @@ pub enum AuditType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuditTestRequest {
+pub struct AuditTestRequest {  
     pub message: Vec<ChatMessage>,
     pub audit_type: AuditType,
     pub timestamp: u64,
@@ -63,12 +63,12 @@ pub enum AuditStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditTestTask {
-    pub task: AuditTestRequest,
+    pub task: Arc<AuditTestRequest>,
     pub status: AuditStatus,
 }
 
 pub struct AuditTask {
-    pub tx: mpsc::UnboundedSender<AuditTestRequest>,
+    pub tx: mpsc::UnboundedSender<Arc<AuditTestRequest>>,
     pub data: Arc<ColdTable<u64, AuditTestTask>>,
 }
 
@@ -113,7 +113,7 @@ pub struct AuditLlmResponse {
 
 impl AuditTask {
     async fn process_task(
-        task: AuditTestRequest,
+        task: Arc<AuditTestRequest>,
         data: Arc<ColdTable<u64, AuditTestTask>>,
     ) -> Result<()> {
         let ts = task.timestamp;
@@ -122,8 +122,8 @@ impl AuditTask {
         // 1. 记录任务状态为处理中
         if let Err(e) = data
             .insert(
-                ts,
-                AuditTestTask {
+                &ts,
+                & AuditTestTask {
                     task: task.clone(),
                     status: AuditStatus::Processing,
                 },
@@ -271,7 +271,7 @@ impl AuditTask {
                 });
                 
                 // 收集消息内容
-                let msg_futures = search_key.iter().map(|x| MessageStorage::get(x.clone()));
+                let msg_futures = search_key.iter().map(MessageStorage::get);
                 let msg = join_all(msg_futures)
                     .await
                     .into_iter()
@@ -314,8 +314,8 @@ impl AuditTask {
 
         // 9. 标记任务完成
         data.insert(
-            ts,
-            AuditTestTask {
+            &ts,
+            & AuditTestTask {
                 task,
                 status: AuditStatus::Completed,
             },
@@ -331,7 +331,7 @@ impl AuditTask {
 
     pub fn new(table_name: &'static str) -> Self {
         info!(table_name = table_name, "初始化审计任务调度器");
-        let (tx, mut rx) = mpsc::unbounded::<AuditTestRequest>();
+        let (tx, mut rx) = mpsc::unbounded::<Arc<AuditTestRequest>>();
         let data_clone = Arc::new(ColdTable::new(table_name));
         let data = data_clone.clone();
 
@@ -344,7 +344,7 @@ impl AuditTask {
                     Err(e) => {
                         error!(error = ?e, "审计任务处理失败，将在 60 秒后重试");
                         sleep(Duration::from_secs(60)).await;
-                        let res = tx_clone.send(task.clone()).await; // Need task.clone() if task is moved
+                        let res = tx_clone.send(task.clone()).await;
                         if res.is_err() {
                             error!(error = ?res.err(), "审计任务重新入队失败，通道可能已关闭");
                         } else {
@@ -371,12 +371,12 @@ impl AuditTask {
         ret
     }
 
-    pub async fn send_audit_task(&self, task: AuditTestRequest) -> Result<()> {
+    pub async fn send_audit_task(&self, task: Arc<AuditTestRequest>) -> Result<()> {
         info!(timestamp = ?task.timestamp, audit_type = ?task.audit_type, "发送新的审计任务");
         if let Err(e) = self.data
             .insert(
-                task.timestamp,
-                AuditTestTask {
+                &task.timestamp,
+                &AuditTestTask {
                     task: task.clone(),
                     status: AuditStatus::Pending,
                 },
@@ -436,14 +436,14 @@ pub async fn audit_test_fast(
     info!(group_id = ?group_id, id = ?id, "接收到快速审计请求");
     let src_msg: Vec<ChatMessage> = llm_msg_from_message(message).await;
     AUDIT_TASK
-        .send_audit_task(AuditTestRequest {
+        .send_audit_task(Arc::new(AuditTestRequest {
             message: src_msg,
             audit_type: AuditType::Fast,
             timestamp: ts,
             group_id,
             fast_key: Some(id),
             search_key: None,
-        })
+        }))
         .await
         .map_err(|e| {
             error!(group_id = ?group_id, error = ?e, "发送快速审计任务失败");
@@ -465,14 +465,14 @@ pub async fn audit_test_search(
     info!(group_id = ?group_id, search_key_count = ?search_key.len(), "接收到搜索审计请求");
     let src_msg: Vec<ChatMessage> = llm_msg_from_message(message).await;
     AUDIT_TASK
-        .send_audit_task(AuditTestRequest {
+        .send_audit_task(Arc::new(AuditTestRequest {
             message: src_msg,
             audit_type: AuditType::Search,
             timestamp: ts,
             group_id,
             fast_key: None,
             search_key: Some(search_key),
-        })
+        }))
         .await
         .map_err(|e| {
             error!(group_id = ?group_id, error = ?e, "发送搜索审计任务失败");
@@ -490,14 +490,14 @@ pub async fn audit_test_deep(message: &MessageSend, group_id: i64) -> Result<()>
     info!(group_id = ?group_id, "接收到深度审计请求");
     let src_msg: Vec<ChatMessage> = llm_msg_from_message(message).await;
     AUDIT_TASK
-        .send_audit_task(AuditTestRequest {
+        .send_audit_task(Arc::new(AuditTestRequest {
             message: src_msg,
             audit_type: AuditType::Deep,
             timestamp: ts,
             group_id,
             fast_key: None,
             search_key: None,
-        })
+        }))
         .await
         .map_err(|e| {
             error!(group_id = ?group_id, error = ?e, "发送深度审计任务失败");

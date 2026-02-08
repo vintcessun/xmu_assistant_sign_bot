@@ -212,7 +212,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_file_embedding() -> Result<()> {
         let file = LlmFile::from_url(
-            "https://samplelib.com/lib/preview/png/sample-boat-400x300.png",
+            &"https://samplelib.com/lib/preview/png/sample-boat-400x300.png".to_string(),
             "sample-boat-400x300.png".to_string(),
         )
         .await?;

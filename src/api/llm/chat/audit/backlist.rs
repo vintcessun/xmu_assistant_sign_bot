@@ -55,13 +55,10 @@ pub struct BacklistRemove {
 
 impl BacklistRemove {
     async fn try_remove(key: MessageAbstract) {
-        let uuid = BACKLIST_DB
-            .get_async(key.clone())
-            .await
-            .unwrap_or_else(|e| {
-                error!(key = ?key, error = ?e, "获取黑名单键对应的 UUID 失败");
-                None
-            });
+        let uuid = BACKLIST_DB.get_async(&key).await.unwrap_or_else(|e| {
+            error!(key = ?key, error = ?e, "获取黑名单键对应的 UUID 失败");
+            None
+        });
 
         if let Some(uuid) = uuid
             && let Some(ret_search) = BACKLIST_SEARCH.get(uuid).await
@@ -122,7 +119,7 @@ pub struct Backlist;
 
 impl Backlist {
     pub async fn search(
-        key: Vec<f32>,
+        key: &[f32],
         top_k: usize,
     ) -> anyhow::Result<Vec<(Uuid, Arc<BlacklistSearch>)>> {
         info!(key_len = ?key.len(), top_k = ?top_k, "开始搜索黑名单");
@@ -137,13 +134,10 @@ impl Backlist {
     pub async fn insert(key: MessageAbstract, entry: Arc<BlacklistEntry>) -> Result<()> {
         info!(key = ?key, "开始插入黑名单记录");
 
-        let existing_uuid = BACKLIST_DB
-            .get_async(key.clone())
-            .await
-            .unwrap_or_else(|e| {
-                error!(key = ?key, error = ?e, "获取现有黑名单 UUID 失败");
-                None
-            });
+        let existing_uuid = BACKLIST_DB.get_async(&key).await.unwrap_or_else(|e| {
+            error!(key = ?key, error = ?e, "获取现有黑名单 UUID 失败");
+            None
+        });
 
         if let Some(uuid) = existing_uuid
             && let Some(old_search) = BACKLIST_SEARCH.get(uuid).await
@@ -188,7 +182,7 @@ impl Backlist {
                 e
             })?;
 
-        BACKLIST_DB.insert(key.clone(), uuid).await.map_err(|e| {
+        BACKLIST_DB.insert(&key, &uuid).await.map_err(|e| {
             error!(key = ?key, error = ?e, "插入黑名单键值数据库失败");
             e
         })?;
@@ -199,13 +193,10 @@ impl Backlist {
 
     pub async fn get(key: MessageAbstract) -> Option<Arc<BlacklistEntry>> {
         trace!(key = ?key, "尝试获取黑名单记录");
-        let uuid = BACKLIST_DB
-            .get_async(key.clone())
-            .await
-            .unwrap_or_else(|e| {
-                error!(key = ?key, error = ?e, "获取黑名单键对应的 UUID 失败");
-                None
-            });
+        let uuid = BACKLIST_DB.get_async(&key).await.unwrap_or_else(|e| {
+            error!(key = ?key, error = ?e, "获取黑名单键对应的 UUID 失败");
+            None
+        });
 
         let ret = if let Some(uuid) = uuid
             && let Some(ret_search) = BACKLIST_SEARCH.get(uuid).await

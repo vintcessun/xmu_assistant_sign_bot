@@ -33,7 +33,7 @@ pub async fn embedding_llm_file(mut file: LlmFile) -> Result<Arc<LlmFile>> {
     Ok(file)
 }
 
-pub async fn search_llm_file(key: Vec<f32>, top_k: usize) -> Result<Vec<(Uuid, Arc<LlmFile>)>> {
+pub async fn search_llm_file(key: &[f32], top_k: usize) -> Result<Vec<(Uuid, Arc<LlmFile>)>> {
     info!(key_len = ?key.len(), top_k = ?top_k, "开始在向量数据库中搜索文件");
     let result = FILE_EMBEDDING_DB.search(key, top_k).await.map_err(|e| {
         error!(error = ?e, "向量数据库搜索文件失败");
@@ -49,7 +49,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_file_embedding() -> Result<()> {
-        let mut file = LlmFile::from_url("https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=EhSxkb2veUyr4m_-dy2fsPv9hIl4NRiPuwIg_woojYKrkv3EkgMyBHByb2RQgL2jAVoQ1a6ygbvSFAzdVDPPqyDFsXoC5LKCAQJneg&rkey=CAESMIEslqobKMl_19QcqkL8Buyx96vGvI3WxtwpRlDFl9TXj0BNUjA9kXdVpfgaKfuxkw", "A1A1EA9F31371A1935416E6746F4212A.jpg".to_string()).await?;
+        let mut file = LlmFile::from_url(&"https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=EhSxkb2veUyr4m_-dy2fsPv9hIl4NRiPuwIg_woojYKrkv3EkgMyBHByb2RQgL2jAVoQ1a6ygbvSFAzdVDPPqyDFsXoC5LKCAQJneg&rkey=CAESMIEslqobKMl_19QcqkL8Buyx96vGvI3WxtwpRlDFl9TXj0BNUjA9kXdVpfgaKfuxkw".to_string(), "A1A1EA9F31371A1935416E6746F4212A.jpg".to_string()).await?;
 
         //let embedded_file = embedding_llm_file(file).await?;
 

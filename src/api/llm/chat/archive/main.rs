@@ -43,7 +43,7 @@ where
         .collect::<Vec<_>>();
 
     //消息记录
-    MessageStorage::save(id.to_string(), msg_content).await;
+    MessageStorage::save(&id.to_string(), msg_content).await;
     trace!(message_id = ?id, "消息内容存储完成");
 
     //印象记录

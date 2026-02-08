@@ -383,7 +383,7 @@ pub mod notice {
 
     #[derive(Serialize, Deserialize, Debug)]
     pub struct GroupMsgEmojiLikeItem {
-        pub emoji_id: i64,
+        pub emoji_id: String,
         pub count: i64,
     }
 

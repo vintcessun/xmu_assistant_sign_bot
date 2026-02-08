@@ -87,7 +87,7 @@ where
 
     info!(group_id = ?group_id, reply = ?message.reply, "LLM 决定回复，开始搜索黑名单");
 
-    let backlist_result = Backlist::search(msg.clone(), 5).await;
+    let backlist_result = Backlist::search(&msg, 5).await;
     let backlist = backlist_result.unwrap_or_else(|e| {
         warn!(group_id = ?group_id, error = ?e, "黑名单搜索失败，使用空列表");
         vec![]

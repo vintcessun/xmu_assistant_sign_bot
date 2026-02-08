@@ -11,7 +11,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{
-        Arc, LazyLock,
+        Arc, LazyLock, OnceLock,
         atomic::{AtomicUsize, Ordering},
     },
 };
@@ -100,7 +100,7 @@ pub struct File {
     pub path: PathBuf,
     // 异步读取状态同步
     #[serde(skip)]
-    read_rx: Option<watch::Receiver<Option<Arc<Vec<u8>>>>>,
+    read_rx: OnceLock<watch::Receiver<Option<Arc<Vec<u8>>>>>,
 }
 
 impl File {
@@ -112,12 +112,17 @@ impl File {
         }
         Self {
             path,
-            read_rx: None,
+            read_rx: OnceLock::new(),
         }
     }
 
     /// 下载完成后调用，开启后台预读
-    pub fn freeze(&mut self) {
+    pub fn freeze(&self) {
+        if self.read_rx.get().is_some() {
+            // 已经启动预读，直接返回
+            debug!(path = ?self.path, "文件预读任务已启动，跳过重复调用");
+            return;
+        }
         debug!(path = ?self.path, "启动文件后台预读任务");
         let (tx, rx) = watch::channel(None);
         let p = self.path.clone();
@@ -147,12 +152,12 @@ impl File {
                 }
             }
         });
-        self.read_rx = Some(rx);
+        let _ = self.read_rx.set(rx);
     }
 
     pub async fn wait_for_data(&self) -> Result<Arc<Vec<u8>>> {
         // 文件必须已经调用 freeze()，否则是逻辑错误
-        let mut rx = self.read_rx.as_ref().unwrap().clone();
+        let mut rx = self.read_rx.get().unwrap().clone();
 
         if rx.borrow().is_none() {
             trace!(path = ?self.path, "等待文件预读完成...");
@@ -178,9 +183,9 @@ impl<'de> Deserialize<'de> for File {
             path: PathBuf,
         }
         let f = Field::deserialize(deserializer)?;
-        let mut file = Self {
+        let file = Self {
             path: f.path,
-            read_rx: None,
+            read_rx: OnceLock::new(),
         };
         file.freeze(); // 恢复即加载
         Ok(file)
@@ -220,7 +225,7 @@ impl FileBackend for File {
 
 impl File {
     /// 业务层调用的终结方法：将文件锁定为只读并预读
-    pub async fn finish(&mut self) -> Result<()> {
+    pub async fn finish(&self) -> Result<()> {
         debug!(path = ?self.path, "开始终结文件下载/创建过程");
         let p = self.path.clone();
 
@@ -286,7 +291,7 @@ impl File {
 }
 
 impl File {
-    pub async fn to_fileurl(mut self) -> Result<FileUrl> {
+    pub async fn to_fileurl(self) -> Result<FileUrl> {
         self.finish().await?;
         let url = self.get_url().await;
         debug!(url = url, "文件终结并获取 FileUrl 成功");

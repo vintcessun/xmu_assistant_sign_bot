@@ -5,6 +5,7 @@ use dashmap::DashMap;
 use hnsw_rs::prelude::*;
 use serde::{Serialize, de::DeserializeOwned};
 use std::sync::Arc;
+use tokio::task::block_in_place;
 use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
 
@@ -80,7 +81,7 @@ where
         debug!(uuid = ?uuid, "开始插入新向量数据");
 
         // A. 写入持久化数据库 (ColdTable)
-        self.kv_table.insert(uuid, value).await?;
+        self.kv_table.insert(&uuid, &value).await?;
         debug!(uuid = ?uuid, "持久化数据写入 ColdTable 成功");
 
         // B. 更新内存索引
@@ -107,29 +108,24 @@ where
     }
 
     /// 3. 向量搜索 (语义搜索)
-    pub async fn search(&self, query_vec: Vec<f32>, top_k: usize) -> Result<Vec<(Uuid, Arc<V>)>> {
+    pub async fn search(&self, query_vec: &[f32], top_k: usize) -> Result<Vec<(Uuid, Arc<V>)>> {
         debug!(top_k = top_k, "开始向量搜索");
         let index = self.index.load();
         let id_map = self.id_map.load();
 
-        let neighbor_ids = tokio::task::spawn_blocking(move || {
-            trace!("在阻塞线程中执行 HNSW 搜索");
+        let neighbor_ids = block_in_place(move || {
+            trace!("执行 HNSW 搜索");
             // search 参数：查询向量，返回数量，ef_search（搜索精度）
-            index.search(&query_vec, top_k, 32)
-        })
-        .await
-        .map_err(|e| {
-            error!(error = ?e, "HNSW 搜索任务执行失败");
-            anyhow::anyhow!("HNSW 搜索任务执行失败: {}", e)
-        })?;
+            index.search(query_vec, top_k, 32)
+        });
 
-        let mut results = Vec::new();
+        let mut results: Vec<(Uuid, Arc<V>)> = Vec::new();
         for neighbor in neighbor_ids {
             trace!(internal_id = neighbor.d_id, "发现邻近 ID");
             // 从 DashMap 获取 UUID
             if let Some(uuid) = id_map.get(&neighbor.d_id) {
                 // 从 ColdTable 获取完整磁盘数据
-                match self.kv_table.get_async(*uuid).await {
+                match self.kv_table.get_async(&uuid).await {
                     Ok(Some(data)) => {
                         results.push((*uuid, data));
                         debug!(uuid = ?uuid, "成功检索到匹配的向量数据");
@@ -164,7 +160,7 @@ where
 
         // 1. 从持久化数据库删除
         for uuid in uuids {
-            self.kv_table.remove(uuid).await.map_err(|e| {
+            self.kv_table.remove(&uuid).await.map_err(|e| {
                 error!(uuid = ?uuid, error = ?e, "从 ColdTable 删除数据失败");
                 e
             })?;
@@ -202,7 +198,7 @@ where
     /// 获取消息记录通过Uuid
     pub async fn get(&self, uuid: Uuid) -> Option<Arc<V>> {
         trace!(uuid = ?uuid, "尝试从 ColdTable 获取向量记录");
-        match self.kv_table.get_async(uuid).await {
+        match self.kv_table.get_async(&uuid).await {
             Ok(Some(data)) => {
                 debug!(uuid = ?uuid, "成功获取向量记录");
                 Some(data)

@@ -11,7 +11,6 @@ use redb::TableDefinition;
 use serde::{Serialize, de::DeserializeOwned};
 use std::sync::LazyLock;
 use std::{path::Path, sync::Arc};
-use tokio::task;
 use tokio::task::block_in_place;
 use tracing::{debug, error, info, trace, warn};
 
@@ -47,17 +46,17 @@ where
     }
 
     /// 异步插入：不阻塞主事件循环，保证磁盘同步性
-    pub async fn insert(&self, key: K, value: V) -> Result<()> {
+    pub async fn insert(&self, key: &K, value: &V) -> Result<()> {
         let table_name = self.table_name;
         trace!(table = table_name, "Cold 存储开始插入数据");
 
-        // 将阻塞的磁盘操作移交给外部线程池
+        // 将阻塞的磁盘操作移交给外部线程池 (恢复为 block_in_place 以提升性能)
         block_in_place(move || {
-            let key_vec = bincode::serde::encode_to_vec(&key, BINCODE_CONFIG).map_err(|e| {
+            let key_vec = bincode::serde::encode_to_vec(key, BINCODE_CONFIG).map_err(|e| {
                 error!(error = ?e, "Cold 存储键序列化失败");
                 e
             })?;
-            let val_vec = bincode::serde::encode_to_vec(&value, BINCODE_CONFIG).map_err(|e| {
+            let val_vec = bincode::serde::encode_to_vec(value, BINCODE_CONFIG).map_err(|e| {
                 error!(error = ?e, "Cold 存储值序列化失败");
                 e
             })?;
@@ -89,16 +88,16 @@ where
         }) // 等待后台线程完成
     }
 
-    pub async fn get_async(&self, key: K) -> Result<Option<V>> {
+    pub async fn get_async(&self, key: &K) -> Result<Option<V>> {
         block_in_place(|| self.get(key))
     }
 
     /// 异步查询
-    pub fn get(&self, key: K) -> Result<Option<V>> {
+    pub fn get(&self, key: &K) -> Result<Option<V>> {
         let table_name = self.table_name;
         trace!(table = table_name, "Cold 存储开始查询数据");
 
-        let key_vec = bincode::serde::encode_to_vec(&key, BINCODE_CONFIG).map_err(|e| {
+        let key_vec = bincode::serde::encode_to_vec(key, BINCODE_CONFIG).map_err(|e| {
             error!(error = ?e, "Cold 存储键序列化失败 (get)");
             e
         })?;
@@ -141,11 +140,11 @@ where
     }
 
     /// 异步删除
-    pub async fn remove(&self, key: K) -> Result<()> {
+    pub async fn remove(&self, key: &K) -> Result<()> {
         let table_name = self.table_name;
         trace!(table = table_name, "Cold 存储开始删除数据");
-        task::spawn_blocking(move || {
-            let key_vec = bincode::serde::encode_to_vec(&key, BINCODE_CONFIG).map_err(|e| {
+        block_in_place(move || {
+            let key_vec = bincode::serde::encode_to_vec(key, BINCODE_CONFIG).map_err(|e| {
                 error!(error = ?e, "Cold 存储键序列化失败 (remove)");
                 e
             })?;
@@ -173,11 +172,6 @@ where
             trace!(table = table_name, "Cold 存储删除数据并提交成功");
             Ok(())
         })
-        .await
-        .map_err(|e| {
-            error!(table = table_name, error = ?e, "Cold 存储删除任务执行失败");
-            e
-        })?
     }
 
     pub async fn get_all_async(&self) -> Result<Vec<(K, V)>> {

@@ -117,7 +117,7 @@ pub async fn push_message(user_id: i32, message: ChatMessage) -> Result<()> {
 /// 实际执行印象生成或更新的逻辑
 async fn update_impression(user_id: i32, history: Vec<ChatMessage>) -> Result<()> {
     let old_impression: Option<Impression> =
-        IMPRESSION_DB.get_async(user_id).await.map_err(|e| {
+        IMPRESSION_DB.get_async(&user_id).await.map_err(|e| {
             error!(user_id = ?user_id, error = ?e, "获取旧的用户印象失败");
             e
         })?;
@@ -155,7 +155,7 @@ async fn update_impression(user_id: i32, history: Vec<ChatMessage>) -> Result<()
     })?;
 
     IMPRESSION_DB
-        .insert(user_id, new_impression)
+        .insert(&user_id, &new_impression)
         .await
         .map_err(|e| {
             error!(user_id = ?user_id, error = ?e, "保存新印象到数据库失败");
@@ -170,7 +170,7 @@ async fn update_impression(user_id: i32, history: Vec<ChatMessage>) -> Result<()
 pub async fn get_impression(user_id: i32) -> Option<Impression> {
     debug!(user_id = ?user_id, "尝试获取用户印象");
     IMPRESSION_DB
-        .get_async(user_id)
+        .get_async(&user_id)
         .await
         .map_err(|e| {
             warn!(user_id = ?user_id, error = ?e, "获取用户印象失败");

@@ -55,7 +55,7 @@ impl ChatSegment {
         info!(group_id = ?group_id, message_count = ?message_id.len(), "开始生成记忆片段");
         let mut messages = Vec::with_capacity(message_id.len());
         for msg in &message_id {
-            if let Some(m) = MessageStorage::get(msg.clone()).await {
+            if let Some(m) = MessageStorage::get(msg).await {
                 messages.push(m)
             } else {
                 warn!(message_id = ?msg, "对话消息片段缺失，无法添加到记忆生成上下文");
@@ -116,7 +116,7 @@ pub struct MemoFragment;
 
 impl MemoFragment {
     pub async fn search(
-        key: Vec<f32>,
+        key: &[f32],
         top_k: usize,
     ) -> anyhow::Result<Vec<(Uuid, Arc<ChatSegment>)>> {
         info!(key_len = ?key.len(), top_k = ?top_k, "开始搜索记忆片段");

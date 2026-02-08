@@ -53,7 +53,7 @@ pub struct LlmFile {
 
 impl LlmFile {
     /// 从现有的 File 对象创建一个 LlmFile
-    pub async fn attach(mut file: File, alias: String) -> Result<Self> {
+    pub async fn attach(file: File, alias: String) -> Result<Self> {
         debug!(path = %file.path.display(), alias = %alias, "开始新建文件并生成短 ID");
         let p = file.path.clone();
         let short_id = tokio::task::spawn_blocking(move || {
@@ -109,17 +109,14 @@ static FILE_URL_FILTER_DB: LazyLock<ColdTable<String, FileShortId>> =
     LazyLock::new(|| ColdTable::new("llm_chat_file_url_filter"));
 
 impl LlmFile {
-    pub async fn from_url(url: &str, alias: String) -> Result<Self> {
+    pub async fn from_url(url: &String, alias: String) -> Result<Self> {
         debug!(url = %url, alias = %alias, "尝试从 URL 获取 LlmFile");
 
         // 1. 先检查 URL 是否已经下载过（通过 URL 过滤）
-        let id_result = FILE_URL_FILTER_DB
-            .get_async(url.to_string())
-            .await
-            .map_err(|e| {
-                error!(url = %url, error = ?e, "查询 URL 过滤数据库失败");
-                e
-            })?;
+        let id_result = FILE_URL_FILTER_DB.get_async(url).await.map_err(|e| {
+            error!(url = %url, error = ?e, "查询 URL 过滤数据库失败");
+            e
+        })?;
 
         if let Some(id) = id_result
             && let Some(file) = Self::get_by_id(id).map_err(|e| {
@@ -146,7 +143,7 @@ impl LlmFile {
         })?;
 
         FILE_URL_FILTER_DB
-            .insert(url.to_string(), file.id)
+            .insert(url, &file.id)
             .await
             .map_err(|e| {
                 warn!(url = %url, file_id = %file.id, error = ?e, "插入 URL 过滤数据库失败");
@@ -167,7 +164,7 @@ impl LlmFile {
 
     pub async fn insert(file: Arc<Self>) -> Result<()> {
         debug!(file_id = %file.id, alias = %file.alias, "插入 LlmFile 到数据库");
-        FILE_DB.insert(file.id, file.clone()).await.map_err(|e| {
+        FILE_DB.insert(&file.id, &file).await.map_err(|e| {
             error!(file_id = %file.id, error = ?e, "插入 LlmFile 到数据库失败");
             e
         })?;
@@ -177,7 +174,7 @@ impl LlmFile {
 
     pub fn get_by_id(id: FileShortId) -> Result<Option<Arc<Self>>> {
         trace!(file_id = %id, "尝试从数据库获取 LlmFile");
-        FILE_DB.get(id).map_err(|e| {
+        FILE_DB.get(&id).map_err(|e| {
             error!(file_id = %id, error = ?e, "从数据库获取 LlmFile 失败");
             e
         })
@@ -213,11 +210,11 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_llm_file_from_url() -> Result<()> {
-        let file = LlmFile::from_url(URL, ALIAS.to_string()).await?;
+        let file = LlmFile::from_url(&URL.to_string(), ALIAS.to_string()).await?;
         let file = file.embedded().await?;
         println!("Downloaded LlmFile: {:?}", file.alias);
         let file = FILE_URL_FILTER_DB
-            .get(URL.to_string())?
+            .get(&URL.to_string())?
             .and_then(|id| LlmFile::get_by_id(id).ok()?)
             .unwrap();
 
