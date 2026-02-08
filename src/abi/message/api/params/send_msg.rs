@@ -16,7 +16,7 @@ use core::panic;
 use helper::{api, box_new};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::{debug, trace};
+use tracing::{debug, error, trace};
 
 #[derive(Serialize, Debug)]
 pub struct ApiSend<'a, T: Params + Serialize> {
@@ -53,7 +53,10 @@ impl SendGroupForwardMessageParams {
     ) -> Self {
         let group_id = match target {
             Target::Group(group_id) => group_id,
-            _ => panic!("SendGroupForwardMessageParams 只能用于群聊消息"),
+            _ => {
+                error!(target = ?target, "尝试将私聊消息目标用于群聊转发 API");
+                panic!("SendGroupForwardMessageParams 只能用于群聊消息")
+            }
         };
         let message = get_msg(is_echo, message_list, sender, msg, target);
 
@@ -92,7 +95,10 @@ impl SendPrivateForwardMessageParams {
     ) -> Self {
         let user_id = match target {
             Target::Private(user_id) => user_id,
-            _ => panic!("SendPrivateForwardMessageParams 只能用于私聊消息"),
+            _ => {
+                error!(target = ?target, "尝试将群聊消息目标用于私聊转发 API");
+                panic!("SendPrivateForwardMessageParams 只能用于私聊消息")
+            }
         };
         let msg = get_msg(is_echo, message_list, sender, msg, target);
         Self {
@@ -146,8 +152,8 @@ fn get_msg(
     };
 
     let messages = message_list;
-    debug!("发送转发消息共{}条", messages.len());
-    trace!(?messages);
+    debug!(count = %messages.len(), "发送转发消息");
+    trace!(messages = ?messages, "待发送的转发消息列表");
     for msg in messages {
         message.push(message_body::SegmentSend::Node(
             message_body::node::DataSend::Content(message_body::node::DataSend2 {

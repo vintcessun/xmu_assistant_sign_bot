@@ -127,7 +127,7 @@ async fn llm_msg_from_segment_receive(segment: &SegmentSend) -> ChatMessage {
         SegmentSend::Reply(e) => {
             let msg_id = e.id.clone();
             let content = vec![ContentPart::Text(format!("[回复消息 ID: {}]", msg_id))];
-            let msg_content = match MessageStorage::get(msg_id).await {
+            let msg_content = match MessageStorage::get(&msg_id).await {
                 Some(c) => {
                     let mut content = MessageContent::from(content);
                     content.extend(c.content);
@@ -139,7 +139,7 @@ async fn llm_msg_from_segment_receive(segment: &SegmentSend) -> ChatMessage {
         }
         SegmentSend::Node(e) => match e {
             node::DataSend::Id(d) => {
-                let id = d.id.clone();
+                let id = &d.id;
                 let content = vec![ContentPart::Text(format!("[转发消息 id: {id}]"))];
 
                 let msg = MessageStorage::get(id).await;

@@ -1,6 +1,7 @@
 use std::fs;
 
 use serde::Serialize;
+use tracing::{error, info};
 
 const CONFIG: Config = Config {
     napcat: ServerConfig {
@@ -16,7 +17,11 @@ const CONFIG: Config = Config {
 };
 
 pub fn ensure_dir(path: &'static str) -> &'static str {
-    fs::create_dir_all(path).expect("Failed to create necessary directory");
+    if let Err(e) = fs::create_dir_all(path) {
+        error!(path = ?path, error = ?e, "创建必要的目录失败，程序将退出");
+        panic!("创建必要的目录失败");
+    }
+    info!(path = ?path, "已确保目录存在");
     path
 }
 

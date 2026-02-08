@@ -11,6 +11,7 @@ use serde::Deserialize;
 use std::sync::LazyLock;
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
+use tracing::{debug, trace, warn};
 
 // 用于追踪正在处理的任务
 pub static ON_QUEUE: LazyLock<DashSet<String>> = LazyLock::new(DashSet::new);
@@ -28,7 +29,9 @@ pub struct ContentParams {
 
 /// 任务状态处理器：返回带有预览和下载按钮的页面
 async fn task_status_handler(Path(params): Path<TaskParams>) -> impl IntoResponse {
+    trace!(task_id = params.id, "收到 Markdown 任务状态查询请求");
     if ON_QUEUE.contains(&params.id) {
+        debug!(task_id = params.id, "任务仍在队列中");
         return (StatusCode::OK, "任务正在处理中，请稍后刷新页面").into_response();
     }
 
@@ -61,13 +64,25 @@ async fn task_status_handler(Path(params): Path<TaskParams>) -> impl IntoRespons
 
 /// 内容处理器：返回 HTML 或 PDF
 async fn content_handler(Path(params): Path<ContentParams>) -> impl IntoResponse {
+    trace!(
+        task_id = params.id,
+        content_type = params.content_type,
+        "收到 Markdown 内容请求"
+    );
     let task_result = match query(&params.id) {
         Some(r) => r,
-        None => return StatusCode::NOT_FOUND.into_response(),
+        None => {
+            warn!(
+                task_id = params.id,
+                "尝试获取不存在或已过期 Markdown 任务的内容"
+            );
+            return StatusCode::NOT_FOUND.into_response();
+        }
     };
 
     match params.content_type.as_str() {
         "html" => {
+            debug!(task_id = params.id, "返回 HTML 内容");
             // 返回 HTML 内容供预览
             Response::builder()
                 .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
@@ -81,13 +96,17 @@ async fn content_handler(Path(params): Path<ContentParams>) -> impl IntoResponse
             // 使用 tokio::fs::File::open 打开文件
             let file = match File::open(&pdf_path).await {
                 Ok(f) => f,
-                // 如果文件不存在或无法打开，可能是已过期或已被清理
-                Err(_) => return StatusCode::GONE.into_response(),
+                Err(e) => {
+                    // 如果文件不存在或无法打开，可能是已过期或已被清理
+                    warn!(path = ?pdf_path, error = ?e, "Markdown 生成的 PDF 文件无法打开，文件可能已过期或被清理");
+                    return StatusCode::GONE.into_response();
+                }
             };
 
             let filename = pdf_path.file_name().unwrap_or_default().to_string_lossy();
             let stream = ReaderStream::new(file);
             let body = axum::body::Body::from_stream(stream);
+            trace!(filename = %filename, "开始流式传输 PDF 文件");
 
             Response::builder()
                 .header(header::CONTENT_TYPE, "application/pdf")
@@ -98,7 +117,10 @@ async fn content_handler(Path(params): Path<ContentParams>) -> impl IntoResponse
                 .body(body)
                 .unwrap()
         }
-        _ => StatusCode::NOT_FOUND.into_response(),
+        _ => {
+            warn!(content_type = params.content_type, "请求了未知的内容类型");
+            StatusCode::NOT_FOUND.into_response()
+        }
     }
 }
 

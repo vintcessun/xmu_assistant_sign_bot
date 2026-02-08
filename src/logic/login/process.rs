@@ -8,39 +8,49 @@ use crate::api::xmu_service::login::{
 use crate::{abi::logic_import::*, api::network::SessionClient};
 use anyhow::Result;
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{debug, error, info, trace, warn};
 
 pub async fn update_and_login(
     session: &SessionClient,
     data: LoginRequest,
     id: i64,
 ) -> Result<Arc<LoginData>> {
+    debug!(user_id = id, "开始请求二维码登录凭证");
     let login_data = Arc::new(request_qrcode(session, data).await?);
+    info!(user_id = id, "成功获取二维码登录凭证");
 
     let login_data_insert = login_data.clone();
 
-    DATA.insert(id, login_data_insert)?;
+    DATA.insert(id, login_data_insert).map_err(|e| {
+        error!(user_id = id, error = ?e, "存储用户登录数据失败");
+        e
+    })?;
+    info!(user_id = id, "用户登录数据存储成功");
 
     Ok(login_data)
 }
 
 #[inline(never)]
 pub async fn login_base(login_data: Arc<LoginData>) -> Result<ZzyProfile> {
+    debug!("开始获取用户基础信息");
     let user_id = match Profile::get(&login_data.lnt).await {
-        Ok(p) => p.user_no.clone(),
+        Ok(p) => {
+            debug!(user_no = p.user_no, "通过 LNT 成功获取用户学号");
+            p.user_no.clone()
+        }
         Err(e) => {
-            warn!(
-                "获取 LNT 用户信息失败，尝试使用 JW 用户信息登录，错误信息: {}",
-                e
-            );
+            warn!(error = ?e, "获取 LNT 用户信息失败，尝试使用 JW 用户信息登录");
             let userinfo = UserInfo::get(&login_data.castgc).await?;
+            debug!(user_id = userinfo.user_id, "通过 JW 成功获取用户学号");
             userinfo.user_id
         }
     };
 
+    trace!(user_id = user_id, "开始获取正方系统用户信息");
     let data = Zzy::get(&login_data.castgc, &user_id).await?;
 
     let zzy_profile = data.get_profile()?;
+    debug!("成功解析正方系统用户信息");
 
     Ok(zzy_profile)
 }
@@ -51,7 +61,9 @@ pub async fn send_msg_and_wait<T: BotClient + BotHandler + fmt::Debug>(
     session: &SessionClient,
     id: i64,
 ) -> Result<LoginRequest> {
+    info!(user_id = id, "开始获取二维码 ID 和登录请求数据");
     let (qrcode_id, data) = get_qrcode_id(session).await?;
+    debug!(qrcode_id = qrcode_id, "成功获取二维码 ID");
 
     {
         let qrcode_url =
@@ -60,6 +72,7 @@ pub async fn send_msg_and_wait<T: BotClient + BotHandler + fmt::Debug>(
         let qrcode_login =
             format!("https://ids.xmu.edu.cn/authserver/qrCode/qrCodeLogin.do?uuid={qrcode_id}");
 
+        info!(user_id = id, "向用户发送扫码登录信息");
         ctx.send_message(
             MessageSend::new_message()
                 .at(id.to_string())
@@ -70,10 +83,16 @@ pub async fn send_msg_and_wait<T: BotClient + BotHandler + fmt::Debug>(
                 .text(qrcode_login)
                 .build(),
         )
-        .await?;
+        .await
+        .map_err(|e| {
+            error!(user_id = id, error = ?e, "发送二维码消息失败");
+            e
+        })?;
     }
 
+    debug!(qrcode_id = qrcode_id, "等待用户扫码确认");
     wait_qrcode(session, &qrcode_id).await?;
+    info!(user_id = id, "用户已扫码并确认登录");
 
     Ok(data)
 }
@@ -82,7 +101,9 @@ pub async fn process_login<T: BotClient + BotHandler + fmt::Debug>(
     ctx: &mut Context<T, Message>,
     id: i64,
 ) -> Result<Arc<LoginData>> {
+    info!(user_id = id, "开始执行登录流程");
     let session = SessionClient::new();
+    debug!(user_id = id, "创建新的 SessionClient");
 
     let data = send_msg_and_wait(ctx, &session, id).await?;
 
@@ -90,7 +111,14 @@ pub async fn process_login<T: BotClient + BotHandler + fmt::Debug>(
 
     let login_data = update_and_login(&session, data, id).await?;
 
+    info!(user_id = id, "开始获取并处理用户身份信息");
     let zzy_profile = login_base(login_data.clone()).await?;
+    info!(
+        user_id = id,
+        entry_year = zzy_profile.entry_year,
+        trans_dept = ?zzy_profile.trans_dept,
+        "成功获取用户身份信息"
+    );
 
     ctx.send_message_async(message::from_str(format!(
         "信息:{} 转入学院:{:?}",
@@ -102,7 +130,9 @@ pub async fn process_login<T: BotClient + BotHandler + fmt::Debug>(
 
     let dept = zzy_profile.trans_dept.join(",");
 
+    info!(user_id = id, year = year, dept = dept, "更新群头衔");
     ctx.set_title(format!("{}转{}", year, dept)).await?;
+    info!(user_id = id, "登录流程执行完毕");
 
     Ok(login_data)
 }

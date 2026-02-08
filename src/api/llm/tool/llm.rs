@@ -9,13 +9,18 @@ use genai::{
 };
 use quick_xml::de::from_str;
 use serde::de::DeserializeOwned;
-use tracing::error;
+use tracing::{debug, error, info, trace, warn};
 
 const MODEL_NAME: &str = "gemini-2.5-flash";
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
+    info!(model = MODEL_NAME, "初始化 LLM 客户端");
     // 1. AuthResolver
     let auth_resolver = AuthResolver::from_resolver_fn(|model_id: ModelIden| {
+        trace!(
+            adapter_kind = ?model_id.adapter_kind,
+            "尝试为模型适配器寻找认证配置"
+        );
         // 关键：我们要找的是匹配当前 adapter_kind 的配置
         let config = MODEL_MAP
             .values()
@@ -24,13 +29,22 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
         if let Some(cfg) = config {
             // 尝试从环境变量读取
             if let Ok(key) = std::env::var(cfg.api_key_env) {
+                info!(
+                    api_key_env = %cfg.api_key_env,
+                    "成功从环境变量加载 API 密钥"
+                );
                 return Ok(Some(AuthData::from_single(key)));
             }
             // 如果环境变量不存在，直接把 api_key_env 字符串本身当作 Key (兼容你目前的写法)
             if cfg.api_key_env.starts_with("sk-") {
+                info!(
+                    api_key_env = %cfg.api_key_env,
+                    "成功从硬编码配置加载 API 密钥"
+                );
                 return Ok(Some(AuthData::from_single(cfg.api_key_env.to_string())));
             }
         }
+        warn!(adapter_kind = ?model_id.adapter_kind, "未找到有效的 API 密钥");
         Ok(None)
     });
 
@@ -38,7 +52,17 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
     let target_resolver = ServiceTargetResolver::from_resolver_fn(|mut target: ServiceTarget| {
         // 注意：genai 的 model_name 可能是全称，这里用 get 匹配
         if let Some(cfg) = MODEL_MAP.get(&*target.model.model_name) {
+            debug!(
+                model_name = %target.model.model_name,
+                base_url = %cfg.base_url,
+                "为模型设置自定义 Base URL"
+            );
             target.endpoint = Endpoint::from_static(cfg.base_url);
+        } else {
+            debug!(
+                model_name = %target.model.model_name,
+                "使用默认 Base URL"
+            );
         }
         Ok(target)
     });
@@ -55,8 +79,16 @@ pub trait LlmPrompt {
 }
 
 pub async fn ask(message: Vec<ChatMessage>) -> Result<ChatResponse> {
+    trace!("开始调用 LLM: {}", MODEL_NAME);
     let chat_req = genai::chat::ChatRequest::new(message);
-    let res = CLIENT.exec_chat(MODEL_NAME, chat_req, None).await?;
+    let res = CLIENT
+        .exec_chat(MODEL_NAME, chat_req, None)
+        .await
+        .map_err(|e| {
+            error!(model_name = MODEL_NAME, error = ?e, "LLM 调用失败");
+            e
+        })?;
+    trace!(response = ?res, "LLM 调用成功");
     Ok(res)
 }
 
@@ -79,25 +111,67 @@ where
 
     let mut err = anyhow!("未知原因解析失败");
 
-    for _ in 0..3 {
+    for attempt in 1..=3 {
+        debug!(attempt = attempt, "尝试调用 LLM 获取结构化回复");
         // 2. 调用 genai
         let chat_req = genai::chat::ChatRequest::new(chat_message.clone());
-        let res = CLIENT.exec_chat(MODEL_NAME, chat_req, None).await?;
-        let text = res
-            .first_text()
-            .ok_or_else(|| anyhow::anyhow!("No response"))?;
+        let res = CLIENT
+            .exec_chat(MODEL_NAME, chat_req, None)
+            .await
+            .map_err(|e| {
+                error!(model_name = MODEL_NAME, error = ?e, "LLM 结构化调用失败");
+                e
+            })?;
+        let text = res.first_text().ok_or_else(|| {
+            error!(model_name = MODEL_NAME, "LLM 返回空响应，无法获取文本内容");
+            anyhow::anyhow!("No response")
+        })?;
 
-        // 3. XML 清洗与反序列化
-        let xml_start = text.find('<').unwrap_or(0);
-        let xml_end = text.rfind('>').map(|i| i + 1).unwrap_or(text.len());
-        let xml_content = &text[xml_start..xml_end];
-        let data: Result<T> = from_str(xml_content)
-            .map_err(|e| anyhow!("错误为：{e}\n模型返回的内容为：\n{xml_content}"));
+        // 3. XML 清洗与反序列化 (根据 root_name 精确截取)
+        let root_name = T::root_name();
+        let start_tag = format!("<{}>", root_name);
+        let end_tag = format!("</{}>", root_name);
+
+        let xml_content: &str;
+        let data: Result<T>;
+
+        if let (Some(xml_start), Some(xml_end_tag_start)) =
+            (text.find(&start_tag), text.rfind(&end_tag))
+        {
+            let xml_end = xml_end_tag_start + end_tag.len();
+            xml_content = &text[xml_start..xml_end];
+            data = from_str(xml_content)
+                .map_err(|e| anyhow!("XML反序列化错误：{e}\n模型返回的内容为：\n{xml_content}"));
+        } else {
+            // 无法找到根标签，直接进入错误处理逻辑
+            let tag_error = anyhow!(
+                "XML提取失败：无法找到完整的根标签 <{}>...</{}>。模型返回的内容为：\n{}",
+                root_name,
+                root_name,
+                text
+            );
+            warn!(error = ?tag_error, root_name = root_name, "LLM XML 标签解析失败，准备重试");
+
+            // 构造重试消息，这里使用完整的文本作为 '之前回复'
+            chat_message.push(ChatMessage::assistant(format!(
+                "之前回复:{}\n报错:{}\n",
+                text, tag_error
+            )));
+            chat_message.push(ChatMessage::system(
+                "你上次返回的内容格式有误，请严格按照要求的 XML 格式返回。",
+            ));
+
+            err = tag_error;
+            continue;
+        };
 
         match data {
-            Ok(v) => return Ok(v),
+            Ok(v) => {
+                info!(root_name = T::root_name(), "LLM 结构化回复解析成功");
+                return Ok(v);
+            }
             Err(e) => {
-                error!("LLM 解析失败，准备重试：{}", e);
+                warn!(error = ?e, root_name = T::root_name(), "LLM XML 数据反序列化失败，准备重试");
 
                 chat_message.push(ChatMessage::assistant(format!(
                     "之前回复:{}\n报错:{}\n",
@@ -111,15 +185,28 @@ where
             }
         }
     }
+    error!(error = ?err, "LLM 结构化回复多次重试解析失败");
     Err(anyhow!("LLM 解析多次失败{err}"))
 }
 
 pub async fn ask_str(chat_message: Vec<ChatMessage>) -> Result<String> {
+    trace!("开始调用 LLM (字符串模式): {}", MODEL_NAME);
     let chat_req = genai::chat::ChatRequest::new(chat_message);
-    let res = CLIENT.exec_chat(MODEL_NAME, chat_req, None).await?;
-    let text = res
-        .first_text()
-        .ok_or_else(|| anyhow::anyhow!("No response"))?;
+    let res = CLIENT
+        .exec_chat(MODEL_NAME, chat_req, None)
+        .await
+        .map_err(|e| {
+            error!(model_name = MODEL_NAME, error = ?e, "LLM 字符串调用失败");
+            e
+        })?;
+    let text = res.first_text().ok_or_else(|| {
+        error!(
+            model_name = MODEL_NAME,
+            "LLM 返回空响应，无法获取文本内容 (字符串模式)"
+        );
+        anyhow::anyhow!("No response")
+    })?;
+    trace!(response = %text, "LLM 字符串调用成功");
     Ok(text.to_string())
 }
 

@@ -8,7 +8,7 @@ use helper::LlmPrompt;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
-use tracing::debug;
+use tracing::{debug, error, info, warn};
 
 static IMPRESSION_DB: LazyLock<ColdTable<i32, Impression>> =
     LazyLock::new(|| ColdTable::new("llm_impression_storage"));
@@ -89,20 +89,25 @@ pub async fn push_message(user_id: i32, message: ChatMessage) -> Result<()> {
     state.message_history.push(message);
 
     if state.message_count >= state.update_threshold {
-        debug!(
-            "Impression update triggered for user {} at count {}",
-            user_id, state.message_count
+        info!(
+            user_id = ?user_id,
+            count = ?state.message_count,
+            threshold = ?state.update_threshold,
+            "用户印象更新已触发，历史消息数达到阈值"
         );
 
         // 提取历史记录并重置状态
         let history = state.message_history.clone();
+        state.message_history.clear(); // 清空历史
         state.message_count = 0;
         state.update_threshold = generate_threshold();
 
         drop(state);
 
         if let Err(e) = update_impression(user_id, history).await {
-            tracing::error!("Failed to update impression for user {}: {:?}", user_id, e);
+            error!(user_id = ?user_id, error = ?e, "更新用户印象失败");
+        } else {
+            info!(user_id = ?user_id, "用户印象更新成功");
         }
     }
 
@@ -111,7 +116,17 @@ pub async fn push_message(user_id: i32, message: ChatMessage) -> Result<()> {
 
 /// 实际执行印象生成或更新的逻辑
 async fn update_impression(user_id: i32, history: Vec<ChatMessage>) -> Result<()> {
-    let old_impression: Option<Impression> = IMPRESSION_DB.get_async(user_id).await?;
+    let old_impression: Option<Impression> =
+        IMPRESSION_DB.get_async(&user_id).await.map_err(|e| {
+            error!(user_id = ?user_id, error = ?e, "获取旧的用户印象失败");
+            e
+        })?;
+
+    if old_impression.is_none() {
+        debug!(user_id = ?user_id, "用户是新用户，开始生成新印象");
+    } else {
+        debug!(user_id = ?user_id, "用户存在旧印象，开始更新印象");
+    }
 
     let prompt_content = if let Some(old) = &old_impression {
         [vec![ChatMessage::system(format!(
@@ -134,15 +149,33 @@ async fn update_impression(user_id: i32, history: Vec<ChatMessage>) -> Result<()
             vec![ChatMessage::system("请基于此生成一份完整的用户印象。请勿包含任何解释性文字")]].concat()
     };
 
-    let new_impression = ask_as::<Impression>(prompt_content).await?;
+    let new_impression = ask_as::<Impression>(prompt_content).await.map_err(|e| {
+        error!(user_id = ?user_id, error = ?e, "LLM 生成新印象失败");
+        e
+    })?;
 
-    IMPRESSION_DB.insert(user_id, new_impression).await?;
+    IMPRESSION_DB
+        .insert(&user_id, &new_impression)
+        .await
+        .map_err(|e| {
+            error!(user_id = ?user_id, error = ?e, "保存新印象到数据库失败");
+            e
+        })?;
 
-    debug!("Successfully updated impression for user {}", user_id);
+    debug!(user_id = ?user_id, "成功更新用户印象并保存");
 
     Ok(())
 }
 
 pub async fn get_impression(user_id: i32) -> Option<Impression> {
-    IMPRESSION_DB.get_async(user_id).await.ok().flatten()
+    debug!(user_id = ?user_id, "尝试获取用户印象");
+    IMPRESSION_DB
+        .get_async(&user_id)
+        .await
+        .map_err(|e| {
+            warn!(user_id = ?user_id, error = ?e, "获取用户印象失败");
+            e
+        })
+        .ok()
+        .flatten()
 }

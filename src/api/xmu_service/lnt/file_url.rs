@@ -31,7 +31,7 @@ impl FileUrl {
         id: i64,
         filename: &str,
     ) -> Result<Arc<File>> {
-        if let Some(file) = FILE_DATA.get_async(id).await? {
+        if let Some(file) = FILE_DATA.get_async(&id).await? {
             return Ok(file);
         }
 
@@ -40,7 +40,7 @@ impl FileUrl {
 
         let file = download_to_file(client, &url, filename).await?;
         let file = Arc::new(file);
-        FILE_DATA.insert(id, file.clone()).await?;
+        FILE_DATA.insert(&id, &file).await?;
 
         Ok(file)
     }

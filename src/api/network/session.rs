@@ -10,16 +10,21 @@ use reqwest::{
 };
 use smol_str::SmolStr;
 use std::sync::{Arc, LazyLock};
+use tracing::{debug, error, info, trace};
 use url::Url;
 
 const MAX_REDIRECTS: u8 = 20;
 
 static GLOBAL_CLIENT: LazyLock<Client> = LazyLock::new(|| {
+    info!("初始化全局 Reqwest HTTP 客户端");
     Client::builder()
         .tcp_keepalive(std::time::Duration::from_secs(60))
         .redirect(reqwest::redirect::Policy::none()) // 必须手动处理重定向，才能跨请求同步 Cookie
         .build()
-        .unwrap()
+        .unwrap_or_else(|e| {
+            error!(error = ?e, "初始化全局 Reqwest HTTP 客户端失败");
+            panic!()
+        })
 });
 
 pub struct SessionCookieStore {
@@ -48,6 +53,7 @@ impl SessionCookieStore {
         // 1. 检查当前请求的 host 是否在脏集合中
         // 使用 remove 如果存在则返回 true，这在 DashSet 中是原子操作
         if self.dirty.remove(host).is_some() {
+            trace!(host = host, "Cookie Store 脏标记触发，重建 Header 缓存");
             // 只有当前 host 脏了才重构当前 host
             self.rebuild_cache_internal(host);
         }
@@ -63,6 +69,7 @@ impl SessionCookieStore {
     }
 
     pub fn set(&self, host: &str, key: &str, value: &str) {
+        debug!(host = host, key = key, "设置新的 Cookie 值");
         let host = SmolStr::new(host);
 
         let domain_map = self.raw_data.entry(host.clone()).or_default();
@@ -121,6 +128,7 @@ impl Default for SessionClient {
 
 impl SessionClient {
     pub fn new() -> Self {
+        debug!("初始化 SessionClient");
         Self {
             cookie_store: Arc::new(SessionCookieStore::new()),
             ua: HeaderValue::from_static(get_chrome_rua()),
@@ -136,11 +144,30 @@ impl SessionClient {
         headers: Option<reqwest::header::HeaderMap>, // 新增参数
     ) -> Result<Response> {
         let mut redirect_count = 0;
+        let original_url = url.to_string();
+        debug!(
+            url = %original_url,
+            method = %method,
+            "开始执行 SessionClient 请求 (包含重定向和 Cookie 管理)"
+        );
 
         loop {
             if redirect_count > MAX_REDIRECTS {
+                error!(
+                    url = %url,
+                    redirect_count = redirect_count,
+                    "重定向次数超过最大限制 {}，可能存在循环重定向",
+                    MAX_REDIRECTS
+                );
                 anyhow::bail!("重定向次数过多，可能存在循环重定向");
             }
+
+            trace!(
+                current_url = %url,
+                current_method = %method,
+                redirect_count = redirect_count,
+                "准备发送 HTTP 请求"
+            );
 
             // 1. 构造本次请求的 Builder
             let mut builder = GLOBAL_CLIENT
@@ -171,13 +198,25 @@ impl SessionClient {
                 builder = builder.body(b.clone());
             }
 
-            let resp = builder.send().await?;
+            let resp = builder.send().await.map_err(|e| {
+                error!(url = %url, method = %method, error = ?e, "HTTP 请求发送失败");
+                e
+            })?;
+
+            trace!(url = %url, status = %resp.status(), "收到 HTTP 响应");
 
             // 4. 异步更新 Cookie (逻辑保持不变)
             for cookie in resp.headers().get_all(SET_COOKIE) {
                 if let Ok(c_str) = cookie.to_str() {
+                    debug!(
+                        host = resp.url().host_str().unwrap_or_default(),
+                        cookie = c_str,
+                        "从响应头捕获并更新 Cookie"
+                    );
                     self.cookie_store
                         .add_cookie_str(resp.url().host_str().unwrap_or_default(), c_str);
+                } else {
+                    debug!("无法将 SET-COOKIE 头解析为 UTF-8 字符串");
                 }
             }
 
@@ -185,8 +224,22 @@ impl SessionClient {
             if resp.status().is_redirection()
                 && let Some(loc) = resp.headers().get(reqwest::header::LOCATION)
             {
-                let next_url = resp.url().join(loc.to_str()?)?;
+                let next_url = resp.url().join(loc.to_str()?).inspect_err(|&e| {
+                    error!(
+                        location = %loc.to_str().unwrap_or("N/A"),
+                        current_url = %resp.url(),
+                        error = ?e,
+                        "解析重定向 URL 失败"
+                    );
+                })?;
                 let status = resp.status();
+
+                debug!(
+                    status = %status,
+                    location = %loc.to_str().unwrap_or("N/A"),
+                    next_url = %next_url,
+                    "检测到 HTTP 重定向"
+                );
 
                 match status {
                     // 301, 302, 303: 标准做法是转为 GET 并丢弃 Body
@@ -195,19 +248,27 @@ impl SessionClient {
                     | reqwest::StatusCode::SEE_OTHER => {
                         method = reqwest::Method::GET;
                         body = None;
+                        trace!("重定向类型 30x，请求方法变更为 GET 并移除 Body");
                     }
                     // 307, 308: 必须严格保持原有的 Method 和 Body
                     // 逻辑上这里不需要操作，保持当前的 method 和 body 变量即可
                     reqwest::StatusCode::TEMPORARY_REDIRECT
-                    | reqwest::StatusCode::PERMANENT_REDIRECT => {}
+                    | reqwest::StatusCode::PERMANENT_REDIRECT => {
+                        trace!("重定向类型 307/308，保持原有 Method 和 Body");
+                    }
                     // 其他不常见的重定向不自动处理
-                    _ => return Ok(resp),
+                    _ => {
+                        info!(status = %status, "遇到不自动处理的重定向状态码，返回响应");
+                        return Ok(resp);
+                    }
                 }
 
                 url = next_url;
                 redirect_count += 1;
                 continue;
             }
+
+            debug!(url = %url, status = %resp.status(), "请求完成，返回最终响应");
             return Ok(resp);
         }
     }
@@ -224,7 +285,10 @@ impl SessionClient {
         data: &T,
     ) -> Result<Response> {
         let url = url.into_url()?;
-        let body = serde_urlencoded::to_string(data)?;
+        let body = serde_urlencoded::to_string(data).map_err(|e| {
+            error!(error = ?e, "POST 请求体 URL 编码失败");
+            e
+        })?;
         self.request_internal(reqwest::Method::POST, url, Some(body), None)
             .await
     }
@@ -240,11 +304,16 @@ impl SessionClient {
     }
 
     pub async fn get_range<U: IntoUrl>(&self, url: U, start: u64, end: u64) -> Result<Response> {
+        let range_str = format!("bytes={}-{}", start, end);
         let mut h = reqwest::header::HeaderMap::new();
         h.insert(
             reqwest::header::RANGE,
-            format!("bytes={}-{}", start, end).parse()?,
+            range_str.parse().map_err(|e| {
+                error!(range = %range_str, error = ?e, "Range HeaderValue 解析失败");
+                e
+            })?,
         );
+        debug!(range = %range_str, "发送 Range 请求");
         self.request_internal(reqwest::Method::GET, url.into_url()?, None, Some(h))
             .await
     }

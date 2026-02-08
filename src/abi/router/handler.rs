@@ -13,7 +13,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use std::{fmt, sync::Arc};
 use tokio::sync::mpsc;
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 
 pub trait Handler<T, M>: Send + Sync
 where
@@ -53,6 +53,11 @@ where
         let client_arc = self.get_client();
         let context = Context::new(client_arc, msg);
 
+        info!(
+            message_type = ?context.message.get_type(),
+            target = ?context.target,
+            "开始路由处理传入的消息/事件"
+        );
         dispatch_all_handlers(context);
     }
 }
@@ -76,41 +81,41 @@ impl<T: BotHandler + BotClient + fmt::Debug> Router<T> for NapcatRouter<T> {
         while let Some(event) = self.subscribe.recv().await {
             match event {
                 Event::Message(msg) => {
-                    debug!("处理消息事件: {:?}", msg);
+                    info!(message = ?msg, "收到并开始处理消息事件");
                     let ctx_data = Arc::new(*msg);
                     self.spawn_context(ctx_data);
                 }
                 Event::Notice(notice) => {
-                    debug!("处理通知事件: {:?}", notice);
+                    info!(notice = ?notice, "收到并开始处理通知事件");
                     let ctx_data = Arc::new(notice);
                     self.spawn_context(ctx_data);
                 }
                 Event::Request(req) => {
-                    debug!("处理请求事件: {:?}", req);
+                    info!(request = ?req, "收到并开始处理请求事件");
                     let ctx_data = Arc::new(req);
                     self.spawn_context(ctx_data);
                 }
                 Event::MetaEvent(meta) => {
-                    debug!("处理元事件: {:?}", meta);
+                    debug!(meta = ?meta, "开始处理元事件");
 
                     match meta {
                         MetaEvent::Heartbeat(hb) => {
-                            trace!("收到心跳事件: {:?}", hb);
+                            trace!(heartbeat = ?hb, "收到心跳事件");
                         }
                         MetaEvent::Lifecycle(lc) => {
-                            trace!("收到生命周期事件: {:?}", lc);
+                            trace!(lifecycle = ?lc, "收到生命周期事件");
                         }
                     }
                 }
                 Event::MessageSent(message_sent) => {
-                    debug!("处理消息发送事件: {:?}", message_sent);
+                    debug!(sent_event = ?message_sent, "开始处理消息发送事件");
 
                     match *message_sent {
                         MessageSent::Private(p) => {
-                            trace!("私人消息已发送: {:?}", p);
+                            trace!(private_message = ?p, "私人消息已发送");
                         }
                         MessageSent::Group(g) => {
-                            trace!("群消息已发送: {:?}", g);
+                            trace!(group_message = ?g, "群消息已发送");
                         }
                     }
                 }

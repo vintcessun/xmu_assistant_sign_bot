@@ -1,4 +1,4 @@
-use tracing::level_filters::LevelFilter;
+use tracing::{info, level_filters::LevelFilter};
 use tracing_appender::non_blocking;
 use tracing_subscriber::{Layer, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -21,6 +21,8 @@ pub fn init_logger(path: &str, level: LevelFilter) -> non_blocking::WorkerGuard 
         .with(stdout_layer)
         .with(file_layer)
         .init();
+
+    info!(log_path = ?path, log_level = ?level, "日志系统初始化完成");
 
     guard
 }

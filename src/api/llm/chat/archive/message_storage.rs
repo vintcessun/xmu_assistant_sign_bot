@@ -19,13 +19,16 @@ pub struct MessageStore {
 pub struct MessageStorage;
 
 impl MessageStorage {
-    pub async fn get(key: String) -> Option<ChatMessage> {
-        let msg = MESSAGE_DB.get_async(key).await.unwrap_or_default();
+    pub async fn get(key: &String) -> Option<ChatMessage> {
+        let msg = MESSAGE_DB.get_async(key).await.unwrap_or_else(|e| {
+            error!(key = ?key, error = ?e, "获取消息记录失败");
+            None
+        });
         msg.map(|m| m.msg)
     }
 
-    pub async fn save(key: String, message: Vec<ChatMessage>) {
-        trace!("保存消息{} {:?}", key, message);
+    pub async fn save(key: &String, message: Vec<ChatMessage>) {
+        trace!(key = ?key, message = ?message, "正在尝试保存消息");
 
         let mut msg_contents = vec![];
         for msg in message {
@@ -35,8 +38,8 @@ impl MessageStorage {
         match async {
             MESSAGE_DB
                 .insert(
-                    key.clone(),
-                    MessageStore {
+                    key,
+                    &MessageStore {
                         msg: ChatMessage::user(msg_contents),
                         timestamp: time::SystemTime::now()
                             .duration_since(time::UNIX_EPOCH)?
@@ -49,16 +52,20 @@ impl MessageStorage {
         .await
         {
             Ok(_) => {
-                trace!("保存消息{}记录成功", key);
+                trace!(key = ?key, "消息记录保存成功");
             }
             Err(e) => {
-                error!("保存消息记录失败: {:?}", e);
+                error!(key = ?key, error = ?e, "消息记录保存失败");
             }
         }
     }
 
     pub async fn get_range(start_time: u64, end_time: u64) -> Vec<(String, ChatMessage)> {
-        let segments = MESSAGE_DB.get_all_async().await.unwrap_or_default();
+        trace!(start_time = ?start_time, end_time = ?end_time, "开始获取指定时间范围内的消息记录");
+        let segments = MESSAGE_DB.get_all_async().await.unwrap_or_else(|e| {
+            error!(error = ?e, "获取所有消息记录失败，返回空列表");
+            vec![]
+        });
         let mut ret = Vec::with_capacity(segments.len());
 
         for segment in segments {
@@ -76,15 +83,18 @@ pub struct NoticeStorage;
 
 impl NoticeStorage {
     pub async fn get(key: i64) -> Option<ChatMessage> {
-        let msg = NOTICE_DB.get_async(key).await.unwrap_or_default();
+        let msg = NOTICE_DB.get_async(&key).await.unwrap_or_else(|e| {
+            error!(key = ?key, error = ?e, "获取通知记录失败");
+            None
+        });
         msg.map(|m| m.msg)
     }
 
     pub async fn save(key: i64, message: ChatMessage) {
         let ret = NOTICE_DB
             .insert(
-                key,
-                MessageStore {
+                &key,
+                &MessageStore {
                     msg: message,
                     timestamp: time::SystemTime::now()
                         .duration_since(time::UNIX_EPOCH)
@@ -95,15 +105,21 @@ impl NoticeStorage {
             .await;
 
         match ret {
-            Ok(_) => {}
+            Ok(_) => {
+                trace!(key = ?key, "通知记录保存成功");
+            }
             Err(e) => {
-                error!("保存通知记录失败: {:?}", e);
+                error!(key = ?key, error = ?e, "保存通知记录失败");
             }
         }
     }
 
     pub async fn get_range(start_time: u64, end_time: u64) -> Vec<ChatMessage> {
-        let segments = NOTICE_DB.get_all_async().await.unwrap_or_default();
+        trace!(start_time = ?start_time, end_time = ?end_time, "开始获取指定时间范围内的通知记录");
+        let segments = NOTICE_DB.get_all_async().await.unwrap_or_else(|e| {
+            error!(error = ?e, "获取所有通知记录失败，返回空列表");
+            vec![]
+        });
         let mut ret = Vec::with_capacity(segments.len());
         for segment in segments {
             let (_, MessageStore { msg, timestamp }) = segment;

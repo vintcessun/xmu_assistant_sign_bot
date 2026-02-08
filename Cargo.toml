@@ -96,3 +96,6 @@ debug = 0
 
 [profile.release.package."*"]
 opt-level = 3
+
+[profile.bench]
+debug = true

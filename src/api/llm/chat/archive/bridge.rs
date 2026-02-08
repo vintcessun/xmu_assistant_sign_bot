@@ -23,7 +23,7 @@ use crate::{
 use anyhow::anyhow;
 use futures::{FutureExt, future::BoxFuture};
 use genai::chat::{Binary, ChatMessage, ContentPart, MessageContent};
-use tracing::error;
+use tracing::{debug, error, info, trace, warn};
 
 include!(concat!(env!("OUT_DIR"), "/face_data.rs"));
 
@@ -107,9 +107,12 @@ where
             }
             .await
             {
-                Ok(e) => e,
+                Ok(e) => {
+                    debug!(url = %url, "图片文件内容转换成功");
+                    e
+                }
                 Err(err) => {
-                    error!("获取图片文件URL失败，URL: {}, 错误信息: {}", url, err);
+                    error!(url = %url, error = ?err, "获取图片文件URL失败");
                     #[cfg(test)]
                     {
                         println!("获取文件URL失败，URL: {}, 错误信息: {}", url, err);
@@ -136,9 +139,12 @@ where
             }
             .await
             {
-                Ok(e) => e,
+                Ok(e) => {
+                    debug!(url = %url, "语音文件内容转换成功");
+                    e
+                }
                 Err(err) => {
-                    error!("获取文件URL失败，URL: {}, 错误信息: {}", url, err);
+                    error!(url = %url, error = ?err, "获取文件URL失败");
                     ChatMessage::user(ContentPart::Binary(Binary::from_url(
                         get_mime_type(&e.file),
                         url,
@@ -159,9 +165,12 @@ where
             }
             .await
             {
-                Ok(e) => e,
+                Ok(e) => {
+                    debug!(url = %url, "视频文件内容转换成功");
+                    e
+                }
                 Err(err) => {
-                    error!("获取文件URL失败，URL: {}, 错误信息: {}", url, err);
+                    error!(url = %url, error = ?err, "获取文件URL失败");
                     ChatMessage::user(ContentPart::Binary(Binary::from_url(
                         get_mime_type(&e.file),
                         url,
@@ -172,11 +181,23 @@ where
         }
         SegmentReceive::At(e) => {
             let user_id = &e.qq;
-            let qq_i64 = user_id.parse::<i64>().unwrap_or(0);
+            let qq_i64 = user_id.parse::<i64>().unwrap_or_else(|e| {
+                error!(qq = ?user_id, error = ?e, "无法将QQ号转换为i64");
+                0
+            });
             let identity = IdentityPerson::get(qq_i64).await;
             let identity_data = match identity {
-                Some(data) => quick_xml::se::to_string(&data).unwrap_or("未知身份".to_string()),
-                None => "未知身份".to_string(),
+                Some(data) => {
+                    debug!(qq = ?qq_i64, "已获取个人身份信息");
+                    quick_xml::se::to_string(&data).unwrap_or_else(|e| {
+                        error!(data = ?data, error = ?e, "个人身份信息序列化失败");
+                        "未知身份".to_string()
+                    })
+                }
+                None => {
+                    warn!(qq = ?qq_i64, "未找到个人身份信息");
+                    "未知身份".to_string()
+                }
             };
             ChatMessage::user(format!("[At {user_id}]<data>{identity_data}</data>"))
         }
@@ -208,9 +229,12 @@ where
                     }
                     .await
                     {
-                        Ok(e) => e,
+                        Ok(e) => {
+                            debug!(url = %url, "分享图片文件内容转换成功");
+                            e
+                        }
                         Err(err) => {
-                            error!("获取文件URL失败，URL: {}, 错误信息: {}", url, err);
+                            error!(url = %url, error = ?err, "获取文件URL失败");
                             ContentPart::Binary(Binary::from_url(
                                 get_mime_type(&e.image),
                                 url,
@@ -225,13 +249,23 @@ where
         SegmentReceive::Contact(e) => match e {
             contact::DataReceive::Group(g) => {
                 let group_id = &g.id;
-                let group_i64 = group_id.parse::<i64>().unwrap_or(0);
+                let group_i64 = group_id.parse::<i64>().unwrap_or_else(|e| {
+                    error!(group_id = ?group_id, error = ?e, "无法将群ID转换为i64");
+                    0
+                });
                 let identity = IdentityGroup::get(group_i64);
                 let identity_data = match identity.await {
                     Some(data) => {
-                        quick_xml::se::to_string(&data).unwrap_or("未知群身份".to_string())
+                        debug!(group_id = ?group_i64, "已获取群身份信息");
+                        quick_xml::se::to_string(&data).unwrap_or_else(|e| {
+                            error!(data = ?data, error = ?e, "群身份信息序列化失败");
+                            "未知群身份".to_string()
+                        })
                     }
-                    None => "未知群身份".to_string(),
+                    None => {
+                        warn!(group_id = ?group_i64, "未找到群身份信息");
+                        "未知群身份".to_string()
+                    }
                 };
                 ChatMessage::user(format!(
                     "[推荐群聊 {}]<data>{}</data>",
@@ -240,13 +274,23 @@ where
             }
             contact::DataReceive::Qq(q) => {
                 let qq = &q.id;
-                let qq_i64 = qq.parse::<i64>().unwrap_or(0);
+                let qq_i64 = qq.parse::<i64>().unwrap_or_else(|e| {
+                    error!(qq = ?qq, error = ?e, "无法将QQ号转换为i64");
+                    0
+                });
                 let identity = IdentityPerson::get(qq_i64);
                 let identity_data = match identity.await {
                     Some(data) => {
-                        quick_xml::se::to_string(&data).unwrap_or("未知群身份".to_string())
+                        debug!(qq = ?qq_i64, "已获取个人身份信息");
+                        quick_xml::se::to_string(&data).unwrap_or_else(|e| {
+                            error!(data = ?data, error = ?e, "个人身份信息序列化失败");
+                            "未知身份".to_string()
+                        })
                     }
-                    None => "未知群身份".to_string(),
+                    None => {
+                        warn!(qq = ?qq_i64, "未找到个人身份信息");
+                        "未知身份".to_string()
+                    }
                 };
                 ChatMessage::user(format!("[推荐群聊 {}]<data>{}</data>", qq, identity_data))
             }
@@ -256,37 +300,46 @@ where
             e.title, e.content, e.lon, e.lat,
         )),
         SegmentReceive::Reply(e) => {
-            let msg_id = e.id.clone();
+            let msg_id = &e.id;
             let content = vec![ContentPart::Text(format!("[回复消息 ID: {}]", msg_id))];
             let msg_content = match MessageStorage::get(msg_id).await {
                 Some(c) => {
+                    debug!(msg_id = ?msg_id, "找到回复消息原文");
                     let mut content = MessageContent::from(content);
                     content.extend(c.content);
                     content
                 }
-                None => MessageContent::from(content),
+                None => {
+                    warn!(msg_id = ?msg_id, "未找到回复消息原文");
+                    MessageContent::from(content)
+                }
             };
             ChatMessage::user(msg_content)
         }
         SegmentReceive::Forward(e) => {
-            let id = e.id.clone();
+            let id = &e.id;
             let content = vec![ContentPart::Text(format!("[转发消息 id: {id}]"))];
 
-            let msg = MessageStorage::get(id.clone()).await;
+            let msg = MessageStorage::get(id).await;
 
             if msg.is_none() {
+                info!(message_id = ?id, "本地缓存未命中，尝试通过 API 获取转发消息");
                 match async {
                     let call = client
                         .call_api(
                             &GetForwardMsgParams {
-                                message_id: id.clone(),
+                                message_id: id.to_string(),
                             },
                             Echo::new(),
                         )
-                        .await?;
+                        .await
+                        .map_err(|e| anyhow!("API 调用失败: {}", e))?;
 
-                    let data = call.wait_echo().await?;
-                    let msg_data = data.data.ok_or(anyhow!("获取转发消息数据失败"))?.messages;
+                    let data = call
+                        .wait_echo()
+                        .await
+                        .map_err(|e| anyhow!("等待回声失败: {}", e))?;
+                    let msg_data = data.data.ok_or(anyhow!("API 返回数据为空"))?.messages;
 
                     let mut msg = Vec::new();
                     for m in &msg_data {
@@ -294,33 +347,43 @@ where
                         msg.extend(segment_msgs);
                     }
 
-                    MessageStorage::save(id.clone(), msg).await;
-
+                    MessageStorage::save(id, msg).await;
+                    info!(message_id = ?id, "转发消息获取并存储成功");
                     Ok::<(), anyhow::Error>(())
                 }
                 .await
                 {
                     Ok(v) => v,
                     Err(e) => {
-                        error!("获取转发消息失败，错误信息: {}", e);
+                        error!(error = ?e, message_id = ?id, "获取转发消息失败");
                     }
                 }
             }
 
-            let msg = MessageStorage::get(id).await;
+            let msg = MessageStorage::get(id).await; // 使用引用
 
             let msg_content = match msg {
                 Some(e) => {
+                    debug!(message_id = ?id, "获取转发消息成功");
                     let mut content = MessageContent::from(content);
                     content.extend(e.content);
                     content
                 }
-                None => MessageContent::from(content),
+                None => {
+                    warn!(message_id = ?id, "获取转发消息失败，使用默认内容");
+                    MessageContent::from(content)
+                }
             };
             ChatMessage::user(msg_content)
         }
-        SegmentReceive::Xml(e) => ChatMessage::user(format!("[XML消息 {}]", e.data)),
-        SegmentReceive::Json(e) => ChatMessage::user(format!("[JSON消息 {}]", e.data)),
+        SegmentReceive::Xml(e) => {
+            trace!("处理 XML 消息");
+            ChatMessage::user(format!("[XML消息 {}]", e.data))
+        }
+        SegmentReceive::Json(e) => {
+            trace!("处理 JSON 消息");
+            ChatMessage::user(format!("[JSON消息 {}]", e.data))
+        }
         SegmentReceive::File(e) => {
             let url = &e.url;
             match async {
@@ -333,9 +396,12 @@ where
             }
             .await
             {
-                Ok(e) => e,
+                Ok(e) => {
+                    debug!(url = %url, "文件内容转换成功");
+                    e
+                }
                 Err(err) => {
-                    error!("获取文件URL失败，URL: {}, 错误信息: {}", url, err);
+                    error!(url = %url, error = ?err, "获取文件URL失败");
                     ChatMessage::user(ContentPart::Binary(Binary::from_url(
                         get_mime_type(&e.file),
                         url,
@@ -406,17 +472,19 @@ pub async fn llm_msg_from_notice(notice: &Notice) -> ChatMessage {
     ChatMessage::user(quick_xml::se::to_string(notice).unwrap_or("未知提示".to_string()))
 }
 
-async fn archive_message_file_inner(url: &str, name: String) {
+async fn archive_message_file_inner(url: &String, name: String) {
     match async move {
         let file = LlmFile::from_url(url, name).await?;
-        file.embedded().await?;
+        info!(file_name = ?file.alias, "文件下载成功，开始生成嵌入");
+        let file = file.embedded().await?;
+        info!(file_name = ?file.alias, "文件嵌入生成成功");
         Ok::<(), anyhow::Error>(())
     }
     .await
     {
         Ok(_) => {}
         Err(e) => {
-            error!("归档embedding文件失败，错误信息: {}", e);
+            error!(url = %url, error = ?e, "归档 Embedding 文件失败");
         }
     }
 }

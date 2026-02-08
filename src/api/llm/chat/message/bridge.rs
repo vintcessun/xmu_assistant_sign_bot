@@ -21,6 +21,7 @@ use anyhow::{Result, anyhow};
 use genai::chat::{ChatMessage, ChatResponse};
 use helper::{LlmPrompt, box_new};
 use serde::{Deserialize, Serialize};
+use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, LlmPrompt, Serialize, Deserialize)]
 pub struct LlmFileWithIdOrOptionAlias {
@@ -30,8 +31,20 @@ pub struct LlmFileWithIdOrOptionAlias {
 
 impl LlmFileWithIdOrOptionAlias {
     pub async fn to_llm_file(&self) -> Result<Arc<LlmFile>> {
-        let id = FileShortId::from_llm(&self.id)?;
-        let file = LlmFile::get_by_id(id)?.ok_or(anyhow!("文件ID:{}未找到", id))?;
+        let id = FileShortId::from_llm(&self.id).map_err(|e| {
+            debug!(file_id = %self.id, error = ?e, "从 LLM ID 解析 FileShortId 失败");
+            e
+        })?;
+        let file = LlmFile::get_by_id(id)
+            .map_err(|e| {
+                debug!(file_short_id = ?id, error = ?e, "获取 LlmFile 失败");
+                e
+            })?
+            .ok_or_else(|| {
+                debug!(file_short_id = ?id, "LlmFile 未找到");
+                anyhow!("文件ID:{}未找到", id)
+            })?;
+        debug!(file_short_id = ?id, "成功获取 LlmFile");
         Ok(file)
     }
 }
@@ -91,7 +104,13 @@ impl IntoMessageSend {
             ChatMessage::user("请将上述消息转写为规范的消息格式，不要添加任何额外的说明。"),
         ];
 
-        let response = ask_as::<MessageSendLlmResponse>(messages).await?;
+        let response = ask_as::<MessageSendLlmResponse>(messages)
+            .await
+            .map_err(|e| {
+                error!(error = ?e, "LLM 转写结构化消息失败");
+                e
+            })?;
+        info!("LLM 成功将回复转写为结构化消息");
         Ok(response)
     }
 
@@ -100,23 +119,40 @@ impl IntoMessageSend {
         let mut ret = Vec::new();
         for segment in msg.message {
             ret.push(match segment {
-                SegmentSendLlmResponse::At { qq } => SegmentSend::At(at::DataSend { qq }),
-                SegmentSendLlmResponse::Face { id } => SegmentSend::Face(face::DataSend { id }),
+                SegmentSendLlmResponse::At { qq } => {
+                    trace!(qq = %qq, "转写消息段: @用户");
+                    SegmentSend::At(at::DataSend { qq })
+                }
+                SegmentSendLlmResponse::Face { id } => {
+                    trace!(face_id = %id, "转写消息段: 表情");
+                    SegmentSend::Face(face::DataSend { id })
+                }
                 SegmentSendLlmResponse::Image { file } => {
+                    trace!(file_id = %file.id, "转写消息段: 图片");
+                    let llm_file = file.to_llm_file().await?;
+                    let file_path = llm_file.file.get_path();
+                    let file_url = FileUrl::from_path(file_path).map_err(|e| {
+                        warn!(path = %file_path.display(), error = ?e, "从文件路径创建 FileUrl 失败");
+                        e
+                    })?;
                     SegmentSend::Image(box_new!(image::DataSend, {
-                        file: FileUrl::from_path(file.to_llm_file().await?.file.get_path())?,
+                        file: file_url,
                         r#type: None,
                         cache: Cache::default(),
                         proxy: Proxy::default(),
                         timeout: None,
                     }))
                 }
-                SegmentSendLlmResponse::Text { text } => SegmentSend::Text(text::DataSend { text }),
+                SegmentSendLlmResponse::Text { text } => {
+                    trace!(content = %text, "转写消息段: 文本");
+                    SegmentSend::Text(text::DataSend { text })
+                }
             });
             ret.push(SegmentSend::Text(text::DataSend {
                 text: "\n".to_string(),
             }));
         }
+        info!(segment_count = ?ret.len(), "消息转写完成");
         Ok(MessageSend::Array(ret))
     }
 }

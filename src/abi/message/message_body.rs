@@ -1,5 +1,6 @@
 use helper::define_default_type;
 use serde::{Deserialize, Deserializer, Serialize, de};
+use tracing::trace;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CQ {
     pub user_id: u64,
@@ -86,6 +87,7 @@ impl<'de> de::Deserialize<'de> for MessageReceive {
                 while let Some(elem) = seq.next_element()? {
                     vec.push(elem);
                 }
+                trace!(segment_count = ?vec.len(), "消息段数组反序列化成功");
                 Ok(MessageReceive::Array(vec))
             }
 
@@ -96,6 +98,7 @@ impl<'de> de::Deserialize<'de> for MessageReceive {
             {
                 // 直接反序列化为单条 Segment，跳过缓冲逻辑
                 let seg = SegmentReceive::deserialize(de::value::MapAccessDeserializer::new(map))?;
+                trace!("单个消息段反序列化成功");
                 Ok(MessageReceive::Single(seg))
             }
         }
@@ -111,16 +114,15 @@ impl MessageReceive {
             // 1. 极速路径：单条文本直接 Clone
             MessageReceive::Single(SegmentReceive::Text(data)) => data.text.clone(),
 
-            // 2. 数组路径：利用 Extend 内部优化
+            // 2. 数组路径：收集所有文本并避免不必要的中间 String 克隆
             MessageReceive::Array(arr) => {
-                let mut result = String::new();
-                result.extend(arr.iter().filter_map(|seg| {
+                // 预估容量：使用一个小容量来减少重分配开销。
+                let mut result = String::with_capacity(100);
+                for seg in arr {
                     if let SegmentReceive::Text(data) = seg {
-                        Some(data.text.clone())
-                    } else {
-                        None
+                        result.push_str(&data.text);
                     }
-                }));
+                }
                 result
             }
 
