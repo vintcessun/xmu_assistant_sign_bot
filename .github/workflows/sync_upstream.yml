@@ -28,9 +28,12 @@ jobs:
                   git fetch upstream master
 
                   # 2. 尝试合并
+                  # 使用 --allow-unrelated-histories 解决首次同步问题
                   # 使用 -m 确保 Commit Message 包含 [skip ci]，防止挤占 Action 额度
                   if git merge upstream/master --allow-unrelated-histories --no-edit -m "chore: sync upstream [skip ci]"; then
-                    echo "Merge successful, pushing to private..."
+                    echo "Merge successful, deleting all upstream workflows and pushing to private..."
+                    # 删除所有非当前脚本的工作流文件
+                    find .github/workflows/ -maxdepth 1 -type f -name "*.yml" -not -name "sync_upstream.yml" -print0 | xargs -0 git rm -f --ignore-unmatch
                     git push origin main
                   else
                     echo "Error: Conflict detected. Manual intervention required."
