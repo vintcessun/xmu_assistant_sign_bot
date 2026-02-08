@@ -25,11 +25,11 @@ jobs:
               run: |
                   # 1. 添加上游并拉取
                   git remote add upstream https://github.com/vintcessun/xmu_assistant_bot.git
-                  git fetch upstream main
+                  git fetch upstream master
 
                   # 2. 尝试合并
                   # 使用 -m 确保 Commit Message 包含 [skip ci]，防止挤占 Action 额度
-                  if git merge upstream/main --no-edit -m "chore: sync upstream [skip ci]"; then
+                  if git merge upstream/master --no-edit -m "chore: sync upstream [skip ci]"; then
                     echo "Merge successful, pushing to private..."
                     git push origin main
                   else
