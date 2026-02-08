@@ -2,7 +2,7 @@ use super::BuildHelp;
 use genai::chat::ChatMessage;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
-use tracing::debug;
+use tracing::{debug, trace, warn};
 
 // 引入 build.rs 生成的 omikuji 模块
 include!(concat!(env!("OUT_DIR"), "/omikuji.rs"));
@@ -21,6 +21,11 @@ pub async fn fate(ctx: Context) -> Result<()> {
 
     let fortune_senso_ji = random_senso_ji_fortune(&mut rng);
     let fortune_ruanyf = random_ruanyf_fortune(&mut rng);
+    trace!(
+        senso_ji = fortune_senso_ji,
+        ruanyf = fortune_ruanyf,
+        "成功抽取两份签文"
+    );
 
     //From https://github.com/Tamshen/senso-ji-stick-data
     ctx.send_message_async(from_str(fortune_senso_ji));
@@ -31,7 +36,9 @@ pub async fn fate(ctx: Context) -> Result<()> {
     let sender = message.get_sender();
 
     if let Some(user_id) = sender.user_id {
+        debug!(user_id = user_id, "开始获取用户印象并进行 AI 解签");
         let impression = get_impression(user_id as i32).await;
+        debug!(user_id = user_id, impression = ?impression, "成功获取用户印象");
 
         let prompt = vec![
             ChatMessage::system(
@@ -44,11 +51,18 @@ pub async fn fate(ctx: Context) -> Result<()> {
             )),
         ];
 
-        debug!(?prompt, "Fate Prompt");
+        debug!(prompt = ?prompt, "用于解签的 LLM 提示词");
 
         let res = ask_str(prompt).await?;
+        debug!("成功获得 AI 解签结果");
 
+        trace!(ai_response = res, "发送 AI 解签结果");
         ctx.send_message_async(from_str(format!("AI解答:\n{}", res)));
+    } else {
+        warn!(
+            message = ?ctx.message,
+            "未获取到消息发送者用户 ID，跳过 AI 解签流程"
+        );
     }
 
     Ok(())

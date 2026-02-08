@@ -3,7 +3,7 @@ use crate::{
     abi::{logic_import::*, message::MessageSend},
     api::llm::{chat::archive::bridge::llm_msg_from_message_without_archive, tool::generate_image},
 };
-use tracing::trace;
+use tracing::{debug, trace};
 
 #[handler(msg_type=Message,command="image",echo_cmd=true,
 help_msg=r#"用法:/image <内容>
@@ -12,16 +12,17 @@ help_msg=r#"用法:/image <内容>
 pub async fn image(ctx: Context) -> Result<()> {
     let msg = ctx.get_message();
 
-    trace!("收到生成图片消息: {:?}", msg);
+    trace!(message = ?msg, "收到生成图片请求消息");
     let msg = llm_msg_from_message_without_archive(ctx.client.clone(), &msg).await;
-    trace!("转化为 LLM 消息: {:?}", msg);
+    debug!(llm_message = ?msg, "消息已转化为 LLM 格式，内容将作为提示词");
 
     let img = generate_image(msg).await?;
-    trace!("生成图片结果: {:?}", img);
+    debug!(result = ?img, "图片生成结果");
 
-    let message = MessageSend::new_message()
-        .image(img.to_fileurl().await?)
-        .build();
+    let fileurl = img.to_fileurl().await?;
+    trace!(file_url = ?fileurl, "图片文件 URL");
+
+    let message = MessageSend::new_message().image(fileurl).build();
 
     ctx.send_message_async(message);
 

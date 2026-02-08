@@ -10,6 +10,7 @@ use std::{
     fmt::Display,
     sync::{Arc, LazyLock},
 };
+use tracing::{debug, error, info, trace, warn};
 
 static FILE_DB: LazyLock<ColdTable<FileShortId, Arc<LlmFile>>> =
     LazyLock::new(|| ColdTable::new("llm_chat_file_storage"));
@@ -53,19 +54,40 @@ pub struct LlmFile {
 impl LlmFile {
     /// 从现有的 File 对象创建一个 LlmFile
     pub async fn attach(mut file: File, alias: String) -> Result<Self> {
+        debug!(path = %file.path.display(), alias = %alias, "开始新建文件并生成短 ID");
         let p = file.path.clone();
         let short_id = tokio::task::spawn_blocking(move || {
             let mut hasher = sha2::Sha256::new();
-            let mut f = std::fs::File::open(&p)?;
-            std::io::copy(&mut f, &mut hasher)?;
+            let mut f = std::fs::File::open(&p).map_err(|e| {
+                error!(path = %p.display(), error = ?e, "打开文件失败");
+                e
+            })?;
+            std::io::copy(&mut f, &mut hasher).map_err(|e| {
+                error!(path = %p.display(), error = ?e, "读取文件内容计算 SHA-256 失败");
+                e
+            })?;
             let hash = format!("{:x}", hasher.finalize());
-            let short = FileShortId::from_hex(&hash)?;
+            let short = FileShortId::from_hex(&hash).map_err(|e| {
+                error!(hash = %hash, error = ?e, "将 SHA-256 转换为 FileShortId 失败");
+                e
+            })?;
             Ok::<FileShortId, anyhow::Error>(short)
         })
-        .await??;
+        .await
+        .map_err(|e| {
+            error!(error = ?e, "文件短 ID 生成阻塞任务失败");
+            e
+        })??;
+
+        debug!(file_id = %short_id, "文件短 ID 生成成功，开始完成文件设置");
 
         // 3. 完成物理文件的 finish (只读设置、预读)
-        file.finish().await?;
+        file.finish().await.map_err(|e| {
+            error!(file_id = %short_id, error = ?e, "完成物理文件设置失败");
+            e
+        })?;
+
+        debug!(file_id = %short_id, "物理文件设置完成");
 
         let ret = Self {
             id: short_id,
@@ -74,6 +96,7 @@ impl LlmFile {
             embedding: None,
         };
 
+        debug!(file_id = %short_id, "LlmFile 新建成功");
         Ok(ret)
     }
 
@@ -87,15 +110,50 @@ static FILE_URL_FILTER_DB: LazyLock<ColdTable<String, FileShortId>> =
 
 impl LlmFile {
     pub async fn from_url(url: &str, alias: String) -> Result<Self> {
+        debug!(url = %url, alias = %alias, "尝试从 URL 获取 LlmFile");
+
         // 1. 先检查 URL 是否已经下载过（通过 URL 过滤）
-        if let Some(id) = FILE_URL_FILTER_DB.get_async(url.to_string()).await?
-            && let Some(file) = Self::get_by_id(id)?
+        let id_result = FILE_URL_FILTER_DB
+            .get_async(url.to_string())
+            .await
+            .map_err(|e| {
+                error!(url = %url, error = ?e, "查询 URL 过滤数据库失败");
+                e
+            })?;
+
+        if let Some(id) = id_result
+            && let Some(file) = Self::get_by_id(id).map_err(|e| {
+                error!(file_id = %id, error = ?e, "从文件数据库中获取文件失败");
+                e
+            })?
         {
+            debug!(url = %url, file_id = %id, "文件已存在于数据库中，直接返回");
             return Ok((*file).clone());
         }
-        let file = download_to_file(Arc::new(SessionClient::new()), url, &alias).await?;
-        let file = Self::attach(file, alias).await?;
-        FILE_URL_FILTER_DB.insert(url.to_string(), file.id).await?;
+
+        debug!(url = %url, "文件在过滤数据库中不存在或查找失败，开始下载");
+
+        let file = download_to_file(Arc::new(SessionClient::new()), url, &alias)
+            .await
+            .map_err(|e| {
+                error!(url = %url, error = ?e, "下载文件失败");
+                e
+            })?;
+
+        let file = Self::attach(file, alias).await.map_err(|e| {
+            error!(url = %url, error = ?e, "附加下载文件失败");
+            e
+        })?;
+
+        FILE_URL_FILTER_DB
+            .insert(url.to_string(), file.id)
+            .await
+            .map_err(|e| {
+                warn!(url = %url, file_id = %file.id, error = ?e, "插入 URL 过滤数据库失败");
+                e
+            })?;
+
+        debug!(url = %url, file_id = %file.id, "文件下载、附加和记录成功");
         #[cfg(test)]
         {
             println!(
@@ -108,20 +166,39 @@ impl LlmFile {
     }
 
     pub async fn insert(file: Arc<Self>) -> Result<()> {
-        FILE_DB.insert(file.id, file.clone()).await?;
+        debug!(file_id = %file.id, alias = %file.alias, "插入 LlmFile 到数据库");
+        FILE_DB.insert(file.id, file.clone()).await.map_err(|e| {
+            error!(file_id = %file.id, error = ?e, "插入 LlmFile 到数据库失败");
+            e
+        })?;
+        trace!(file_id = %file.id, "LlmFile 插入成功");
         Ok(())
     }
 
     pub fn get_by_id(id: FileShortId) -> Result<Option<Arc<Self>>> {
-        FILE_DB.get(id)
+        trace!(file_id = %id, "尝试从数据库获取 LlmFile");
+        FILE_DB.get(id).map_err(|e| {
+            error!(file_id = %id, error = ?e, "从数据库获取 LlmFile 失败");
+            e
+        })
     }
 
     pub async fn embedded(self) -> Result<Arc<Self>> {
         if self.embedding.is_none() {
-            let file = embedding_llm_file(self).await?;
-            Self::insert(file.clone()).await?;
+            debug!(file_id = %self.id, alias = %self.alias, "文件尚未嵌入，开始生成嵌入向量");
+            let id = self.id;
+            let file = embedding_llm_file(self).await.map_err(|e| {
+                error!(file_id = %id, error = ?e, "生成文件嵌入向量失败");
+                e
+            })?;
+            Self::insert(file.clone()).await.map_err(|e| {
+                error!(file_id = %file.id, error = ?e, "嵌入后插入数据库失败");
+                e
+            })?;
+            info!(file_id = %file.id, "文件嵌入和存储完成");
             Ok(file)
         } else {
+            debug!(file_id = %self.id, "文件已包含嵌入向量，跳过嵌入步骤");
             Ok(Arc::new(self))
         }
     }

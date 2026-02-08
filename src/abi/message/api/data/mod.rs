@@ -16,6 +16,7 @@ use crate::abi::echo::{Echo, EchoPending};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
+use tracing::error;
 
 pub trait Data: Send + Sync + 'static + Serialize {}
 
@@ -33,8 +34,20 @@ impl<R: ApiResponseTrait + for<'de> Deserialize<'de>> ApiResponsePending<R> {
     }
 
     pub async fn wait_echo(self) -> Result<R> {
-        let response_bytes = self.echo.wait().await?;
-        let response = serde_json::from_slice::<R>(response_bytes.as_bytes())?;
+        let echo = self.echo.echo;
+        let response_bytes = self.echo.wait().await.map_err(|e| {
+            error!(echo = ?echo, error = ?e, "等待 API 响应超时或失败");
+            e
+        })?;
+        let response = serde_json::from_slice::<R>(response_bytes.as_bytes()).map_err(|e| {
+            error!(
+                echo = ?echo,
+                response_body_len = ?response_bytes.len(),
+                error = ?e,
+                "API 响应反序列化失败"
+            );
+            e
+        })?;
         Ok(response)
     }
 }

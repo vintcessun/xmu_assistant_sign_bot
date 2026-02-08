@@ -2,6 +2,7 @@ use std::{any::Any, fmt, path::Path, sync::Arc};
 
 use anyhow::Result;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
+use tracing::error;
 use url::Url;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -100,11 +101,17 @@ impl<'de> Deserialize<'de> for FileUrl {
 
 impl FileUrl {
     pub fn from_path(path: &Path) -> Result<Self> {
-        let absolute_path = std::fs::canonicalize(path)?;
+        let absolute_path = std::fs::canonicalize(path).map_err(|e| {
+            error!(path = ?path, error = ?e, "无法获取文件的规范路径");
+            e
+        })?;
 
         let ret: String = Url::from_file_path(absolute_path)
             .map(|url| url.into())
-            .map_err(|_| anyhow::anyhow!("Failed to convert path to file URL"))?;
+            .map_err(|_| {
+                error!("无法将文件路径转换为 URL 格式"); // 错误类型为 ()，不包含详细信息
+                anyhow::anyhow!("Failed to convert path to file URL")
+            })?;
 
         Ok(Self::new(ret))
     }

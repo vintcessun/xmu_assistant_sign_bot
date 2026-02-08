@@ -14,6 +14,7 @@ use std::{
     sync::{Arc, LazyLock},
     time::UNIX_EPOCH,
 };
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 static MEMO_FRAGMENT_DB: LazyLock<VectorSearchEngine<ChatSegment>> =
@@ -51,10 +52,13 @@ impl HasEmbedding for ChatSegment {
 
 impl ChatSegment {
     pub async fn generate(group_id: i64, message_id: Vec<String>, request: String) -> Result<Self> {
+        info!(group_id = ?group_id, message_count = ?message_id.len(), "开始生成记忆片段");
         let mut messages = Vec::with_capacity(message_id.len());
         for msg in &message_id {
             if let Some(m) = MessageStorage::get(msg.clone()).await {
                 messages.push(m)
+            } else {
+                warn!(message_id = ?msg, "对话消息片段缺失，无法添加到记忆生成上下文");
             }
         }
 
@@ -70,18 +74,32 @@ impl ChatSegment {
             messages
         ].concat();
 
-        let response = ask_as::<ChatSegmentLlmResponse>(message).await?;
+        let response = ask_as::<ChatSegmentLlmResponse>(message)
+            .await
+            .map_err(|e| {
+                error!(error = ?e, "LLM 调用失败，无法生成对话摘要和关键词");
+                e
+            })?;
 
         let timestamp = time::SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_else(|e| {
+                error!(error = ?e, "获取系统时间失败，系统时间早于 UNIX 纪元");
+                time::Duration::from_secs(0)
+            })
             .as_secs();
 
         let embedding = get_single_text_embedding(format!(
             "对话摘要: {}\n对话关键词: {:?}",
             response.summary, response.keywords
         ))
-        .await?;
+        .await
+        .map_err(|e| {
+            error!(error = ?e, "文本嵌入生成失败");
+            e
+        })?;
+
+        info!(group_id = ?group_id, summary = %response.summary, "记忆片段生成成功");
 
         Ok(Self {
             group_id,
@@ -101,13 +119,29 @@ impl MemoFragment {
         key: Vec<f32>,
         top_k: usize,
     ) -> anyhow::Result<Vec<(Uuid, Arc<ChatSegment>)>> {
-        MEMO_FRAGMENT_DB.search(key, top_k).await
+        info!(key_len = ?key.len(), top_k = ?top_k, "开始搜索记忆片段");
+        let result = MEMO_FRAGMENT_DB.search(key, top_k).await.map_err(|e| {
+            error!(error = ?e, "记忆片段向量搜索失败");
+            e
+        })?;
+        info!(result_count = ?result.len(), "记忆片段搜索完成");
+        Ok(result)
     }
 
     pub async fn insert(group_id: i64, message_id: Vec<String>, request: String) -> Result<()> {
-        let msg = ChatSegment::generate(group_id, message_id, request).await?;
+        info!(group_id = ?group_id, message_count = ?message_id.len(), "开始插入新的记忆片段");
+        let msg = ChatSegment::generate(group_id, message_id, request)
+            .await
+            .map_err(|e| {
+                error!(group_id = ?group_id, error = ?e, "生成记忆片段失败");
+                e
+            })?;
         let fragment = Arc::new(msg);
-        MEMO_FRAGMENT_DB.insert(fragment).await?;
+        MEMO_FRAGMENT_DB.insert(fragment).await.map_err(|e| {
+            error!(group_id = ?group_id, error = ?e, "插入向量数据库失败");
+            e
+        })?;
+        info!(group_id = ?group_id, "记忆片段插入成功");
         Ok(())
     }
 }

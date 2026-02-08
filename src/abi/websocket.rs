@@ -9,7 +9,7 @@ use tokio_tungstenite::{
     connect_async,
     tungstenite::{Message, Utf8Bytes},
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, trace, warn};
 
 #[async_trait]
 pub trait BotHandler: Send + Sync + 'static {
@@ -48,25 +48,34 @@ impl<T: BotHandler> BotWebsocketClient<T> {
     }
 
     pub async fn connect(&mut self) -> Result<()> {
-        info!(
-            "正在连接到 WebSocket 服务器... {}:{}",
-            self.config.host, self.config.port
-        );
-        debug!(?self.config);
+        info!(host = ?self.config.host, port = ?self.config.port, "正在连接到 WebSocket 服务器");
+        debug!(config = ?self.config, "配置详情");
 
         let url_event = format!("ws://{}:{}/event", self.config.host, self.config.port);
+        info!(url = ?url_event, "尝试连接事件 WebSocket");
         let (ws_stream, _) = connect_async(&url_event).await?;
+        info!(url = ?url_event, "事件 WebSocket 连接成功");
         let (mut write_event, mut read_event) = ws_stream.split();
 
         let handler = self.handler.clone();
 
         self.event_read_task = Some(tokio::spawn(async move {
             while let Some(message) = read_event.next().await {
-                if let Ok(Message::Text(msg)) = message {
-                    let h = handler.clone();
-                    tokio::spawn(async move {
-                        h.handle_event(msg).await;
-                    });
+                match message {
+                    Ok(Message::Text(msg)) => {
+                        debug!("接收到事件文本消息");
+                        let h = handler.clone();
+                        tokio::spawn(async move {
+                            h.handle_event(msg).await;
+                        });
+                    }
+                    Ok(m) => {
+                        trace!(message_type = ?m, "接收到非文本事件消息，已忽略");
+                    }
+                    Err(e) => {
+                        warn!(error = ?e, "读取事件 WebSocket 消息时发生错误，中断读取任务");
+                        break;
+                    }
                 }
             }
         }));
@@ -75,26 +84,40 @@ impl<T: BotHandler> BotWebsocketClient<T> {
 
         self.event_write_task = Some(tokio::spawn(async move {
             while let Some(msg) = event_receiver.recv().await {
+                trace!(message = ?msg, "准备发送事件消息");
                 if let Err(e) = write_event.send(Message::Text(msg.into())).await {
-                    error!("传输Event失败通过 WsWriter: {:?}", e);
+                    error!(error = ?e, "通过 WsWriter 传输事件失败");
                     break;
                 }
+                trace!("事件消息发送成功");
             }
         }));
 
         let url_api = format!("ws://{}:{}/api", self.config.host, self.config.port);
+        info!(url = ?url_api, "尝试连接 API WebSocket");
         let (ws_stream, _) = connect_async(&url_api).await?;
+        info!(url = ?url_api, "API WebSocket 连接成功");
         let (mut write_api, mut read_api) = ws_stream.split();
 
         let handler = self.handler.clone();
 
         self.api_read_task = Some(tokio::spawn(async move {
             while let Some(message) = read_api.next().await {
-                if let Ok(Message::Text(msg)) = message {
-                    let h = handler.clone();
-                    tokio::spawn(async move {
-                        h.handle_api(msg).await;
-                    });
+                match message {
+                    Ok(Message::Text(msg)) => {
+                        debug!("接收到 API 文本消息");
+                        let h = handler.clone();
+                        tokio::spawn(async move {
+                            h.handle_api(msg).await;
+                        });
+                    }
+                    Ok(m) => {
+                        trace!(message_type = ?m, "接收到非文本 API 消息，已忽略");
+                    }
+                    Err(e) => {
+                        warn!(error = ?e, "读取 API WebSocket 消息时发生错误，中断读取任务");
+                        break;
+                    }
                 }
             }
         }));
@@ -103,10 +126,12 @@ impl<T: BotHandler> BotWebsocketClient<T> {
 
         self.api_write_task = Some(tokio::spawn(async move {
             while let Some(msg) = api_receiver.recv().await {
+                trace!(message = ?msg, "准备发送 API 消息");
                 if let Err(e) = write_api.send(Message::Text(msg.into())).await {
-                    error!("传输Message失败通过 WsWriter: {:?}", e);
+                    error!(error = ?e, "通过 WsWriter 传输消息失败");
                     break;
                 }
+                trace!("API 消息发送成功");
             }
         }));
 

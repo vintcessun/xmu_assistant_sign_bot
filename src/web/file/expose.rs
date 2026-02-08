@@ -10,6 +10,7 @@ use dashmap::DashSet;
 use serde::Deserialize;
 use std::sync::LazyLock;
 use tokio_util::io::ReaderStream;
+use tracing::{debug, error, trace, warn};
 
 // 对应 /task/:id
 #[derive(Deserialize)]
@@ -28,14 +29,25 @@ pub static ON_QUEUE: LazyLock<DashSet<String>> = LazyLock::new(DashSet::new);
 
 /// 任务状态处理器：返回 HTML 文件列表
 async fn task_status_handler(Path(params): Path<ListParams>) -> impl IntoResponse {
+    trace!(task_id = params.id, "收到文件任务状态查询请求");
     // 1. 调用你提供的查询函数
     if ON_QUEUE.contains(&params.id) {
+        debug!(task_id = params.id, "任务仍在队列中");
         return (StatusCode::OK, "任务正在处理中，请稍后刷新页面").into_response();
     }
+    debug!(task_id = params.id, "任务不在队列中，尝试查询文件列表");
     let list = match query(&params.id) {
         Some(l) => l,
-        None => return (StatusCode::NOT_FOUND, "该任务不存在或已过期").into_response(),
+        None => {
+            warn!(task_id = params.id, "文件任务不存在或已过期");
+            return (StatusCode::NOT_FOUND, "该任务不存在或已过期").into_response();
+        }
     };
+    debug!(
+        task_id = params.id,
+        file_count = list.files.len(),
+        "成功获取文件列表"
+    );
 
     // 2. 构造 HTML 视图内容
     let mut rows = String::new();
@@ -75,22 +87,45 @@ async fn task_status_handler(Path(params): Path<ListParams>) -> impl IntoRespons
 
 /// 文件下载处理器：根据索引返回文件流d
 async fn file_download_handler(Path(params): Path<DownloadParams>) -> impl IntoResponse {
+    trace!(
+        task_id = params.id,
+        index = params.index,
+        "收到文件下载请求"
+    );
     // 1. 检索列表
     let list = match query(&params.id) {
         Some(l) => l,
-        None => return StatusCode::NOT_FOUND.into_response(),
+        None => {
+            warn!(task_id = params.id, "尝试下载不存在或已过期任务的文件");
+            return StatusCode::NOT_FOUND.into_response();
+        }
     };
+    debug!(task_id = params.id, "找到文件列表");
 
     // 2. 使用自动反序列化的 index 获取文件元数据
     let file_info = match list.files.get(params.index) {
         Some(f) => f,
-        None => return (StatusCode::NOT_FOUND, "索引超出范围").into_response(),
+        None => {
+            warn!(
+                task_id = params.id,
+                index = params.index,
+                "下载索引超出范围"
+            );
+            return (StatusCode::NOT_FOUND, "索引超出范围").into_response();
+        }
     };
+    debug!(
+        file_path = file_info.path.display().to_string(),
+        "找到文件信息"
+    );
 
     // 3. 打开文件并流化
     let file = match tokio::fs::File::open(&file_info.path).await {
         Ok(f) => f,
-        Err(_) => return StatusCode::GONE.into_response(),
+        Err(e) => {
+            error!(path = ?file_info.path, error = ?e, "文件下载时打开文件失败，文件可能已过期或被删除");
+            return StatusCode::GONE.into_response();
+        }
     };
 
     let filename = file_info
@@ -100,6 +135,12 @@ async fn file_download_handler(Path(params): Path<DownloadParams>) -> impl IntoR
         .to_string_lossy();
     let stream = ReaderStream::new(file);
     let body = axum::body::Body::from_stream(stream);
+
+    trace!(
+        file_name = %filename,
+        mime = %file_info.mime,
+        "开始流式传输文件"
+    );
 
     // 4. 构建响应头，强制浏览器下载
     Response::builder()

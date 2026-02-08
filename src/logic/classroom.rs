@@ -11,7 +11,7 @@ use crate::{
     web::md::task::MdTask,
 };
 use anyhow::anyhow;
-use tracing::trace;
+use tracing::{debug, error, trace, warn};
 
 #[handler(msg_type=Message,command="class",echo_cmd=true,
 help_msg=r#"用法:/class <描述>
@@ -22,16 +22,24 @@ pub async fn class(ctx: Context) -> Result<()> {
     let msg_text = ctx.get_message_text();
     let course_id = {
         let course = ChooseCourse::get_from_client(&client, msg_text).await?;
-        trace!("返回课程选择结果：");
-        trace!(?course);
+        trace!(course = ?course, "LLM 返回课程选择结果");
         course.course_id
     }
-    .ok_or(anyhow!("未找到课程，请更加清晰的阐释课程的名称"))?;
+    .ok_or_else(|| {
+        warn!("LLM 未能从输入中识别出课程");
+        anyhow!("未找到课程，请更加清晰的阐释课程的名称")
+    })?;
+    debug!(course_id = ?course_id, "成功识别课程 ID，开始查询课堂互动数据");
 
     let classroom_data = ClassroomList::get_from_client(&client, *course_id).await?;
+    debug!(
+        count = classroom_data.classrooms.len(),
+        "成功获取 {} 个课堂互动信息",
+        classroom_data.classrooms.len()
+    );
 
     for classroom in classroom_data.classrooms {
-        trace!("测试信息：{:?}", classroom);
+        trace!(classroom = ?classroom, "处理当前课堂互动信息");
         ctx.send_message_async(from_str(format!(
             r#"小测名称: {}
 小测开始时间: {}
@@ -55,17 +63,22 @@ help_msg=r#"用法:/getclass <ID>
 功能: 查询指定课堂互动小测的内容"#)]
 pub async fn get_class(ctx: Context) -> Result<()> {
     let client = get_client_or_err(&ctx).await?;
-    let id = ctx
+    let id_text = ctx
         .get_message_text()
         .split_whitespace()
-        .collect::<String>()
-        .parse::<i64>()
-        .map_err(|e| anyhow!("不是有效的ID: {}\n可以通过/class 获取ID", e))?;
+        .collect::<String>();
+    let id = id_text.parse::<i64>().map_err(|e| {
+        error!(input = id_text, error = ?e, "无效的课堂互动 ID");
+        anyhow!("不是有效的ID: {}\n可以通过/class 获取ID", e)
+    })?;
+    debug!(class_id = id, "成功解析课堂互动 ID");
 
+    debug!(class_id = id, "开始获取课堂互动内容 ClassroomSubject 数据");
     let distribute = ClassroomSubject::get_from_client(&client, id).await?;
 
     let client = Arc::new(client);
 
+    debug!(class_id = id, "开始解析课堂互动内容");
     let result = distribute.parse(client).await?;
 
     for msg in result.message.build_chunk(30) {
@@ -73,6 +86,7 @@ pub async fn get_class(ctx: Context) -> Result<()> {
     }
 
     let task = MdTask::new(result.markdown);
+    debug!(class_id = id, "创建 Markdown 任务");
 
     ctx.send_message_async(from_str(format!(
         "小测内容已生成，访问链接下载或预览：{}",

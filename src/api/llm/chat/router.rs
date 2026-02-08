@@ -1,4 +1,4 @@
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::{
     abi::{
@@ -26,23 +26,35 @@ where
     identity_group_archive(ctx).await;
 
     //L0: 命中回复
-    if send_message_from_hot(ctx).await.is_ok() {
-        return;
+    match send_message_from_hot(ctx).await {
+        Ok(_) => {
+            info!("L0: 命中回复成功，结束路由");
+            return;
+        }
+        Err(e) => debug!(error = ?e, "L0: 命中回复处理失败，继续路由"),
     }
 
     //L1: 搜索回复
-    if send_message_from_store(ctx).await.is_ok() {
-        return;
+    match send_message_from_store(ctx).await {
+        Ok(_) => {
+            info!("L1: 搜索回复成功，结束路由");
+            return;
+        }
+        Err(e) => debug!(error = ?e, "L1: 搜索回复处理失败，继续路由"),
     }
 
     //L2: 深度回复
-    if send_message_from_llm(ctx).await.is_ok() {
-        return;
+    match send_message_from_llm(ctx).await {
+        Ok(_) => {
+            info!("L2: 深度回复成功，结束路由");
+            return;
+        }
+        Err(e) => debug!(error = ?e, "L2: 深度回复处理失败"),
     }
 
-    debug!(
-        "No LLM reply generated for message: {:?}",
-        ctx.get_message()
+    info!(
+        message = ?ctx.get_message(),
+        "未生成 LLM 回复，消息路由结束"
     );
 }
 

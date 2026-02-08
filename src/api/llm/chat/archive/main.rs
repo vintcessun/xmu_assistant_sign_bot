@@ -44,15 +44,20 @@ where
 
     //消息记录
     MessageStorage::save(id.to_string(), msg_content).await;
+    trace!(message_id = ?id, "消息内容存储完成");
 
     //印象记录
-    let _ = push_message(id, ChatMessage::user(msg_single)).await;
+    if let Err(e) = push_message(id, ChatMessage::user(msg_single)).await {
+        warn!(message_id = ?id, error = ?e, "消息印象推送失败");
+    }
+    trace!(message_id = ?id, "消息印象推送处理完成");
 }
 
 pub async fn notice_archive<T>(ctx: &mut Context<T, Notice>)
 where
     T: BotClient + BotHandler + std::fmt::Debug + Send + Sync + 'static,
 {
+    trace!(notice = ?ctx.get_message(), "开始归档通知");
     let notice = ctx.get_message();
     let time = match &*notice {
         Notice::GroupUpload(e) => e.time,
@@ -74,6 +79,7 @@ where
 
     let notice_content = llm_msg_from_notice(&notice).await;
     NoticeStorage::save(time, notice_content).await;
+    trace!(time = ?time, "通知内容存储完成");
 }
 
 pub async fn identity_person_archive<T>(ctx: &mut Context<T, Message>)
@@ -83,7 +89,7 @@ where
     let msg = ctx.get_message();
     match &*msg {
         Message::Private(p) => {
-            warn!("私人消息不进行身份归档: {:?}", p);
+            warn!(message = ?p, "私人消息不进行身份归档");
         }
         Message::Group(p) => {
             let params = GroupMemberInfo::new(p.group_id, p.user_id, false);
@@ -92,8 +98,8 @@ where
                 Ok(call) => {
                     let res = call.wait_echo().await;
                     trace!(?res);
-                    if let Ok(res) = res {
-                        match res.status {
+                    match res {
+                        Ok(res) => match res.status {
                             api::Status::Ok => {
                                 if let Some(data) = res.data {
                                     let person = IdentityPersonUpdateSend {
@@ -107,18 +113,21 @@ where
                             }
                             api::Status::Failed => {
                                 error!(
-                                    "获取群聊个人信息失败: {:?}",
-                                    res.message.unwrap_or("未知错误".to_string())
+                                    message = ?res.message,
+                                    "获取群聊个人信息失败"
                                 );
                             }
                             api::Status::Async => {
-                                info!("获取群聊个人信息异步处理中");
+                                info!("正在异步处理获取群聊个人信息");
                             }
+                        },
+                        Err(e) => {
+                            error!(error = ?e, "等待群聊个人信息回声时出错");
                         }
                     }
                 }
                 Err(e) => {
-                    error!("获取用户信息失败: {:?}", e);
+                    error!(error = ?e, "获取群聊个人信息 API 调用失败");
                 }
             }
         }
@@ -131,7 +140,7 @@ where
 {
     match &*ctx.get_message() {
         Message::Private(p) => {
-            warn!("私人消息不进行身份归档: {:?}", p);
+            warn!(message = ?p, "私人消息不进行群身份归档");
         }
         Message::Group(p) => {
             let params = GetGroupInfo::new(p.group_id, false);
@@ -140,8 +149,8 @@ where
                 Ok(call) => {
                     let res = call.wait_echo().await;
                     trace!(?res);
-                    if let Ok(res) = res {
-                        match res.status {
+                    match res {
+                        Ok(res) => match res.status {
                             api::Status::Ok => {
                                 if let Some(data) = res.data {
                                     let group = IdentityGroupUpdateSend {
@@ -153,18 +162,21 @@ where
                             }
                             api::Status::Failed => {
                                 error!(
-                                    "获取群聊信息失败: {:?}",
-                                    res.message.unwrap_or("未知错误".to_string())
+                                    message = ?res.message,
+                                    "获取群聊信息失败"
                                 );
                             }
                             api::Status::Async => {
-                                info!("获取群聊信息异步处理中");
+                                info!("正在异步处理获取群聊信息");
                             }
+                        },
+                        Err(e) => {
+                            error!(error = ?e, "等待群聊信息回声时出错");
                         }
                     }
                 }
                 Err(e) => {
-                    error!("获取群聊信息失败: {:?}", e);
+                    error!(error = ?e, "获取群聊信息 API 调用失败");
                 }
             }
         }

@@ -49,15 +49,17 @@ impl BotClient for NapcatAdapter {
             echo,
         };
         let msg = serde_json::to_string(&api_send)?;
-        debug!("调用 API: {}", action);
-        trace!(?api_send);
+        debug!(action = %action, "正在调用 API");
+        trace!(api_send = ?api_send, "发送的 API 请求详情");
 
         if let Some(sender) = self.api_sender.get() {
             if let Err(e) = sender.send(msg) {
-                error!("发送 API 消息失败: {:?}", e);
+                error!(error = ?e, "发送 API 消息失败");
+            } else {
+                trace!(action = %action, "API 消息已成功发送到 WebSocket 线程");
             }
         } else {
-            error!("API 发送通道未初始化");
+            error!("API 消息发送通道未初始化");
         }
 
         Ok(api::ApiResponsePending::new(echo))
@@ -79,18 +81,20 @@ impl BotHandler for NapcatAdapter {
         self.event_sender.set(event)?;
         self.api_sender.set(api)?;
 
+        info!("Napcat 适配器初始化成功");
+
         Ok(())
     }
 
     async fn handle_api(&self, message: Utf8Bytes) {
-        debug!("收到API返回: {}", message);
-        trace!(?message);
+        debug!(message = %message, "收到 API 返回");
+        trace!(message = ?message, "原始 API 返回消息");
 
         let echo_only = serde_json::from_slice::<EchoOnly>(message.as_bytes()).ok();
 
         let echo = match echo_only {
             None => {
-                error!("解析 API 返回的 Echo 失败");
+                error!("解析 API 返回的 Echo 字段失败，无法匹配响应");
                 return;
             }
             Some(e) => e.echo,
@@ -100,31 +104,33 @@ impl BotHandler for NapcatAdapter {
     }
 
     async fn handle_event(&self, event: Utf8Bytes) {
-        debug!("收到事件: {}", event);
-        trace!(?event);
+        debug!(event = %event, "收到事件");
+        trace!(event = ?event, "原始事件消息");
 
         let data = serde_json::from_slice::<Event>(event.as_bytes());
 
         match data {
             Ok(evt) => {
-                debug!("解析事件成功: {:?}", evt);
-                trace!(?evt);
+                debug!(event = ?evt, "事件解析成功");
+                trace!(event = ?evt, "已解析的事件对象");
 
                 if let Err(e) = self.handler.send(evt) {
-                    error!("分发事件失败: {:?}", e);
+                    error!(error = ?e, "分发事件失败");
+                } else {
+                    trace!("事件已成功分发到内部处理通道");
                 }
             }
             Err(e) => {
-                error!("解析事件失败: {:?}", e);
+                error!(error = ?e, "事件解析失败");
             }
         }
     }
 
     async fn on_connect(&self) {
-        info!("连接到服务器。");
+        info!("成功连接到服务器");
     }
 
     async fn on_disconnect(&self) {
-        info!("已断开与服务器的连接。");
+        info!("已断开与服务器的连接");
     }
 }

@@ -14,7 +14,7 @@ use anyhow::{Result, anyhow};
 use genai::chat::ChatMessage;
 use helper::LlmPrompt;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, trace};
+use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Serialize, Deserialize, LlmPrompt, Clone)]
 struct LlmMessageReply {
@@ -36,9 +36,16 @@ where
         Target::Group(id) => id,
         Target::Private(id) => -id,
     };
+    info!(group_id = ?group_id, "开始处理 LLM 深度回复请求");
 
     let msg_src = llm_msg_from_message_without_archive(ctx.client.clone(), &message).await;
-    let msg = get_chat_embedding(msg_src.clone()).await?;
+
+    trace!("开始生成聊天消息嵌入");
+    let msg = get_chat_embedding(msg_src.clone()).await.map_err(|e| {
+        error!(group_id = ?group_id, error = ?e, "生成聊天消息嵌入失败");
+        e
+    })?;
+    trace!("聊天消息嵌入生成成功");
 
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -64,17 +71,29 @@ where
     ]
     .concat();
 
-    trace!(?chat_message, "LLM Deep 分析提示词");
+    trace!(prompt = ?chat_message, "LLM 深度回复分析提示词");
 
-    let message = ask_as::<LlmMessageReply>(chat_message).await?;
+    let message = ask_as::<LlmMessageReply>(chat_message).await.map_err(|e| {
+        error!(group_id = ?group_id, error = ?e, "LLM 分析回复匹配度失败");
+        e
+    })?;
 
-    trace!("Llm Reply Analysis: {:?}", message);
+    trace!(reply_analysis = ?message, "LLM 深度回复匹配分析完成");
 
     if !*message.is_match {
+        info!(group_id = ?group_id, reply = ?message.reply, "LLM 决定不回复");
         return Err(anyhow!("AI决定不回复"));
     }
 
-    let backlist = Backlist::search(msg.clone(), 5).await.unwrap_or_default();
+    info!(group_id = ?group_id, reply = ?message.reply, "LLM 决定回复，开始搜索黑名单");
+
+    let backlist_result = Backlist::search(msg.clone(), 5).await;
+    let backlist = backlist_result.unwrap_or_else(|e| {
+        warn!(group_id = ?group_id, error = ?e, "黑名单搜索失败，使用空列表");
+        vec![]
+    });
+
+    debug!(backlist_count = ?backlist.len(), "黑名单搜索完成");
 
     let chat_message = [
         vec![
@@ -101,25 +120,33 @@ where
     ]
     .concat();
 
-    trace!(?chat_message, "LLM Deep 提示词");
+    trace!(prompt = ?chat_message, "LLM 深度回复生成提示词");
 
-    let resp = ask_llm(chat_message).await?;
+    let resp = ask_llm(chat_message).await.map_err(|e| {
+        error!(group_id = ?group_id, error = ?e, "LLM 生成回复失败");
+        e
+    })?;
 
-    trace!("LLM Deep Reply Source: {:?}", resp);
+    trace!(llm_response = ?resp, "LLM 深度回复源数据");
 
-    let msg = match IntoMessageSend::get_message_send(resp).await {
-        Ok(m) => m,
-        Err(e) => {
-            error!("转写消息失败: {:?}", e);
-            return Err(anyhow!("搜索回复消息转换失败"));
-        }
-    };
+    let msg = IntoMessageSend::get_message_send(resp).await.map_err(|e| {
+        error!(group_id = ?group_id, error = ?e, "LLM 深度回复转写消息失败");
+        anyhow!("LLM 深度回复转写消息失败: {:?}", e)
+    })?;
 
-    audit_test_deep(&msg, group_id).await?;
+    audit_test_deep(&msg, group_id).await.map_err(|e| {
+        warn!(group_id = ?group_id, error = ?e, "发送深度审计任务失败");
+        e
+    })?;
 
-    debug!("LLM Deep Reply: {:?}", msg);
+    debug!(reply_message = ?msg, "LLM 深度回复消息已准备发送");
 
-    ctx.send_message(msg).await?;
+    ctx.send_message(msg).await.map_err(|e| {
+        error!(group_id = ?group_id, error = ?e, "发送 LLM 深度回复消息失败");
+        e
+    })?;
+
+    info!(group_id = ?group_id, "LLM 深度回复流程完成");
 
     Ok(())
 }

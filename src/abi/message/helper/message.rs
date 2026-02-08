@@ -1,6 +1,7 @@
 use helper::box_new;
 use serde::Deserialize;
 use serde::Serialize;
+use tracing::debug;
 
 use super::super::MessageSend;
 use super::super::message_body::*;
@@ -39,18 +40,32 @@ impl MessageSendBuilder {
     }
 
     pub fn build_chunk(self, chunk_size: usize) -> Vec<MessageSend> {
+        debug!(
+            segments_count = ?self.segments.len(),
+            chunk_size = ?chunk_size,
+            "开始将消息段拆分为多个发送块"
+        );
         let mut result = Vec::new();
         let mut current_chunk = Vec::with_capacity(chunk_size);
         for segment in self.segments {
             current_chunk.push(segment);
             if current_chunk.len() >= chunk_size {
+                debug!(
+                    segments_in_chunk = ?current_chunk.len(),
+                    "达到最大块大小，将当前块推入结果列表"
+                );
                 result.push(MessageSend::Array(current_chunk));
                 current_chunk = Vec::with_capacity(chunk_size);
             }
         }
         if !current_chunk.is_empty() {
+            debug!(
+                segments_in_chunk = ?current_chunk.len(),
+                "将剩余消息段推入最后一个块"
+            );
             result.push(MessageSend::Array(current_chunk));
         }
+        debug!(chunks_count = ?result.len(), "消息段分块完成");
         result
     }
 

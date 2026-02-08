@@ -12,6 +12,7 @@ use genai::{
 use helper::LlmPrompt;
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
+use tracing::{debug, error, info};
 
 // 定义常量
 const CHAT_MODEL: &str = "gemini-flash-latest";
@@ -27,39 +28,79 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
         if let Some(cfg) = config {
             // 优先读取环境变量
             if let Ok(key) = std::env::var(cfg.api_key_env) {
+                info!(
+                    model_kind = %model_id.adapter_kind,
+                    env_var = %cfg.api_key_env,
+                    "已通过环境变量加载 LLM API Key"
+                );
                 return Ok(Some(AuthData::from_single(key)));
             }
             // 兼容明文 sk- 写入
             if cfg.api_key_env.starts_with("sk-") {
+                info!(
+                    api_key_env = %cfg.api_key_env,
+                    "成功从硬编码配置加载 API 密钥"
+                );
                 return Ok(Some(AuthData::from_single(cfg.api_key_env.to_string())));
             }
         }
+        debug!(model_kind = %model_id.adapter_kind, "未找到 LLM 模型的 API Key");
         Ok(None)
     });
 
     // 2. 统一路由解析器：根据模型名从 MODEL_MAP 映射 Base URL
     let target_resolver = ServiceTargetResolver::from_resolver_fn(|mut target: ServiceTarget| {
         if let Some(cfg) = MODEL_MAP.get(&*target.model.model_name) {
+            info!(
+                model_name = %target.model.model_name,
+                base_url = %cfg.base_url,
+                "LLM 服务目标已路由到配置的 Base URL"
+            );
             target.endpoint = Endpoint::from_static(cfg.base_url);
+        } else {
+            debug!(model_name = %target.model.model_name, "未找到 LLM 模型的 Base URL 配置，使用默认路由");
         }
         Ok(target)
     });
 
-    Client::builder()
+    let client = Client::builder()
         .with_auth_resolver(auth_resolver)
         .with_service_target_resolver(target_resolver)
-        .build()
+        .build();
+
+    info!("LLM 客户端初始化完成");
+    client
 });
 
 pub async fn get_single_text_embedding(input: String) -> Result<Vec<f32>> {
+    debug!(
+        model = %EMBED_MODEL,
+        input_len = ?input.len(),
+        "开始获取文本嵌入向量"
+    );
     let embed_req = genai::embed::EmbedRequest::new(input);
-    let res = CLIENT.exec_embed(EMBED_MODEL, embed_req, None).await?;
+    let res = CLIENT
+        .exec_embed(EMBED_MODEL, embed_req, None)
+        .await
+        .map_err(|e| {
+            error!(error = ?e, "获取文本嵌入向量时 API 调用失败");
+            e
+        })?;
 
     res.embeddings
         .into_iter()
         .next()
-        .map(|e| e.vector)
-        .ok_or_else(|| anyhow!("No embedding returned"))
+        .map(|e| {
+            info!(
+                model = %EMBED_MODEL,
+                "文本嵌入向量获取成功"
+            );
+            e.vector
+        })
+        .ok_or_else(|| {
+            error!("LLM 返回了空嵌入向量列表");
+            anyhow!("No embedding returned")
+        })
 }
 
 #[derive(Debug, LlmPrompt, Clone, Serialize, Deserialize)]
@@ -73,6 +114,7 @@ pub struct FileSemanticSnapshot {
 }
 
 pub async fn get_single_file_embedding(file: &LlmFile) -> Result<Vec<f32>> {
+    info!(file_name = %file.alias, "开始为文件生成嵌入向量");
     let filename = &file.alias;
     let prompt = vec![
         ChatMessage::system("你是一个文件分析专家。请分析以下文件内容并提取关键信息。"),
@@ -85,16 +127,26 @@ pub async fn get_single_file_embedding(file: &LlmFile) -> Result<Vec<f32>> {
     #[cfg(test)]
     println!("文件分析提示词: {:?}", prompt);
 
-    let response = ask_as::<FileSemanticSnapshot>(prompt).await?;
+    let response = ask_as::<FileSemanticSnapshot>(prompt).await.map_err(|e| {
+        error!(file_name = %file.alias, error = ?e, "文件语义分析失败");
+        e
+    })?;
 
     #[cfg(test)]
     println!("文件分析结果: {:?}", response);
 
-    get_single_text_embedding(format!(
+    let result = get_single_text_embedding(format!(
         "文件名: {}\n文件摘要: {}\n详细信息: {}\n关键词: {:?}",
         filename, response.summary, response.details, response.keywords
     ))
     .await
+    .map_err(|e| {
+        error!(file_name = %file.alias, error = ?e, "从文件分析结果生成嵌入向量失败");
+        e
+    })?;
+
+    info!(file_name = %file.alias, "文件嵌入向量生成成功");
+    Ok(result)
 }
 
 #[derive(Debug, LlmPrompt, Clone, Serialize, Deserialize)]
@@ -108,6 +160,7 @@ pub struct ChatSemanticSnapshot {
 }
 
 pub async fn get_chat_embedding(messages: Vec<ChatMessage>) -> Result<Vec<f32>> {
+    info!(messages_count = ?messages.len(), "开始为聊天记录生成嵌入向量");
     let msgs = [
         vec![ChatMessage::system(
             "你是一个聊天消息分析专家。请分析以下聊天内容并提取关键信息。",
@@ -116,18 +169,32 @@ pub async fn get_chat_embedding(messages: Vec<ChatMessage>) -> Result<Vec<f32>> 
     ]
     .concat();
 
-    let response = ask_as::<ChatSemanticSnapshot>(msgs).await?;
+    let response = ask_as::<ChatSemanticSnapshot>(msgs).await.map_err(|e| {
+        error!(error = ?e, "聊天记录语义分析失败");
+        e
+    })?;
     let combined_text = format!(
         "消息摘要: {}\n详细信息: {}\n关键词: {:?}",
         response.summary, response.details, response.keywords
     );
 
-    get_single_text_embedding(combined_text).await
+    get_single_text_embedding(combined_text).await.map_err(|e| {
+        error!(error = ?e, "从聊天记录分析结果生成嵌入向量失败");
+        e
+    })
 }
 
 pub async fn ask_llm(chat_message: Vec<ChatMessage>) -> Result<ChatResponse> {
+    debug!(messages_count = ?chat_message.len(), model = %CHAT_MODEL, "向 LLM 发送聊天请求");
     let chat_req = genai::chat::ChatRequest::new(chat_message);
-    let res = CLIENT.exec_chat(CHAT_MODEL, chat_req, None).await?;
+    let res = CLIENT
+        .exec_chat(CHAT_MODEL, chat_req, None)
+        .await
+        .map_err(|e| {
+            error!(error = ?e, "LLM 聊天请求失败");
+            e
+        })?;
+    info!(model = %CHAT_MODEL, "LLM 聊天请求成功");
     Ok(res)
 }
 

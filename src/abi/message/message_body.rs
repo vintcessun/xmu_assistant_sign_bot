@@ -1,5 +1,6 @@
 use helper::define_default_type;
 use serde::{Deserialize, Deserializer, Serialize, de};
+use tracing::trace;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CQ {
     pub user_id: u64,
@@ -86,6 +87,7 @@ impl<'de> de::Deserialize<'de> for MessageReceive {
                 while let Some(elem) = seq.next_element()? {
                     vec.push(elem);
                 }
+                trace!(segment_count = ?vec.len(), "消息段数组反序列化成功");
                 Ok(MessageReceive::Array(vec))
             }
 
@@ -96,6 +98,7 @@ impl<'de> de::Deserialize<'de> for MessageReceive {
             {
                 // 直接反序列化为单条 Segment，跳过缓冲逻辑
                 let seg = SegmentReceive::deserialize(de::value::MapAccessDeserializer::new(map))?;
+                trace!("单个消息段反序列化成功");
                 Ok(MessageReceive::Single(seg))
             }
         }
