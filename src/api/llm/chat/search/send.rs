@@ -196,10 +196,7 @@ where
 
     debug!(group_id = ?group_id, "搜索审计任务发送成功");
 
-    ctx.send_message(msg).await.map_err(|e| {
-        error!(group_id = ?group_id, error = ?e, "发送搜索回复消息失败");
-        e
-    })?;
+    ctx.send_message_async(msg);
 
     info!(group_id = ?group_id, "LLM 搜索回复发送成功");
 

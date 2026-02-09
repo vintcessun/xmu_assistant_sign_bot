@@ -7,7 +7,7 @@ use futures::{FutureExt, future::BoxFuture};
 use futures_util::StreamExt;
 use std::{path::PathBuf, sync::Arc};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, trace, warn};
 
 const OPTIMAL_CHUNKS: u64 = 1; //为了稳定性，先固定为1，后续可以根据实际情况调整
 
@@ -33,7 +33,7 @@ pub fn download_to_backend_sync<T: FileBackend>(
     url: &str,
     filename: &str,
 ) -> FutureFile {
-    info!(
+    debug!(
         url = url,
         filename = filename,
         "开始创建异步下载任务 (Sync 接口)"
@@ -54,7 +54,7 @@ pub fn download_to_backend_sync<T: FileBackend>(
             warn!(url = %url, "无法从响应头获取 Content-Length, 尝试单线程下载");
             anyhow::anyhow!("无法获取 Content-Length")
         })?;
-        info!(
+        debug!(
             url = %url,
             file_size = total_size,
             "成功获取文件大小，启动并行下载"
@@ -63,7 +63,7 @@ pub fn download_to_backend_sync<T: FileBackend>(
         // 3. 执行 11 协程并行下载
         download_parallel_benchmarked(client, &url, &path, total_size).await?;
 
-        info!(path = ?path, "下载任务完成");
+        debug!(path = ?path, "下载任务完成");
         Ok::<(), anyhow::Error>(())
     }
     .boxed();
@@ -77,7 +77,7 @@ pub async fn download_to_backend<T: FileBackend>(
     url: &str,
     filename: &str,
 ) -> Result<T> {
-    info!(
+    debug!(
         url = url,
         filename = filename,
         "开始调用下载任务 (Async 接口)"
@@ -89,7 +89,7 @@ pub async fn download_to_backend<T: FileBackend>(
         anyhow::anyhow!("无法获取 Content-Length")
     })?;
 
-    info!(
+    debug!(
         url = url,
         file_size = total_size,
         "成功获取文件大小，准备后端并启动并行下载"
@@ -112,7 +112,7 @@ pub async fn download_to_backend<T: FileBackend>(
             e
         })?;
 
-    info!(path = %path.display(), "下载任务成功完成");
+    debug!(path = %path.display(), "下载任务成功完成");
     Ok(backend)
 }
 
@@ -134,7 +134,7 @@ async fn download_parallel_benchmarked(
             error!(path = %path.display(), error = ?e, "创建零大小文件失败");
             e
         })?;
-        info!(path = %path.display(), "文件大小为 0，跳过下载，创建空文件");
+        debug!(path = %path.display(), "文件大小为 0，跳过下载，创建空文件");
         return Ok(());
     }
 

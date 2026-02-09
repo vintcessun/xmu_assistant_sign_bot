@@ -558,11 +558,14 @@ pub mod reply {
 }
 
 pub mod forward {
+    use crate::abi::logic_import::Message;
+
     use super::*;
 
     #[derive(Serialize, Deserialize, Debug, Clone)]
     pub struct DataReceive {
         pub id: String,
+        pub content: Option<Vec<Message>>,
     }
 }
 

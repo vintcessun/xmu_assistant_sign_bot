@@ -9,3 +9,4 @@ pub mod message;
 pub mod repeat;
 pub mod router;
 pub mod search;
+pub mod tool;

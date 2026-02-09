@@ -141,10 +141,7 @@ where
 
     debug!(reply_message = ?msg, "LLM 深度回复消息已准备发送");
 
-    ctx.send_message(msg).await.map_err(|e| {
-        error!(group_id = ?group_id, error = ?e, "发送 LLM 深度回复消息失败");
-        e
-    })?;
+    ctx.send_message_async(msg);
 
     info!(group_id = ?group_id, "LLM 深度回复流程完成");
 

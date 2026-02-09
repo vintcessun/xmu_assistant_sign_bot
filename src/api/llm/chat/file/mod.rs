@@ -1,15 +1,18 @@
 use crate::api::{
+    ffmpeg::gif2mp4::gif_to_mp4_silent_async,
     llm::chat::archive::file_embedding::embedding_llm_file,
     network::{SessionClient, download_to_file},
-    storage::{ColdTable, File},
+    storage::{ColdTable, File, FileBackend, FileStorage},
 };
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::{
     fmt::Display,
+    path::PathBuf,
     sync::{Arc, LazyLock},
 };
+use tokio::task::block_in_place;
 use tracing::{debug, error, info, trace, warn};
 
 static FILE_DB: LazyLock<ColdTable<FileShortId, Arc<LlmFile>>> =
@@ -49,6 +52,7 @@ pub struct LlmFile {
     #[serde(default)]
     pub alias: String, // LLM 容易理解的文件别名（如“大笑.gif”）
     pub embedding: Option<Vec<f32>>, // 可选的向量嵌入
+    pub file_type: Option<String>, // 可选的文件类型
 }
 
 impl LlmFile {
@@ -89,9 +93,12 @@ impl LlmFile {
 
         debug!(file_id = %short_id, "物理文件设置完成");
 
+        let file = Arc::new(file);
+
         let ret = Self {
             id: short_id,
-            file: Arc::new(file),
+            file_type: get_mine_type(&file.path).await.ok().map(|x| x.to_string()),
+            file,
             alias,
             embedding: None,
         };
@@ -107,6 +114,12 @@ impl LlmFile {
 
 static FILE_URL_FILTER_DB: LazyLock<ColdTable<String, FileShortId>> =
     LazyLock::new(|| ColdTable::new("llm_chat_file_url_filter"));
+
+async fn get_mine_type(file: &PathBuf) -> Result<&'static str> {
+    let kind = block_in_place(|| infer::get_from_path(file))?;
+    let mine_type = kind.ok_or(anyhow!("无法确定文件类型"))?.mime_type();
+    Ok(mine_type)
+}
 
 impl LlmFile {
     pub async fn from_url(url: &String, alias: String) -> Result<Self> {
@@ -130,12 +143,27 @@ impl LlmFile {
 
         debug!(url = %url, "文件在过滤数据库中不存在或查找失败，开始下载");
 
-        let file = download_to_file(Arc::new(SessionClient::new()), url, &alias)
-            .await
-            .map_err(|e| {
-                error!(url = %url, error = ?e, "下载文件失败");
-                e
-            })?;
+        let file = {
+            let file = download_to_file(Arc::new(SessionClient::new()), url, &alias)
+                .await
+                .map_err(|e| {
+                    error!(url = %url, error = ?e, "下载文件失败");
+                    e
+                })?;
+
+            if let Ok(mime) = get_mine_type(&file.path).await
+                && mime == "image/gif"
+            {
+                debug!(url = %url, "下载的文件是 GIF，开始转换为 MP4");
+                let file_new = File::prepare(&format!("{alias}.mp4"));
+                let path = file_new.get_path();
+                gif_to_mp4_silent_async(file.get_path(), path).await?;
+
+                file_new
+            } else {
+                file
+            }
+        };
 
         let file = Self::attach(file, alias).await.map_err(|e| {
             error!(url = %url, error = ?e, "附加下载文件失败");
