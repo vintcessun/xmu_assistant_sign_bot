@@ -49,10 +49,7 @@ where
 
     info!(group_id = ?group_id, reply_segment = ?message_send, "已生成重复消息热回复，准备发送");
 
-    ctx.send_message(message_send).await.map_err(|e| {
-        error!(group_id = ?group_id, error = ?e, "发送热回复消息失败");
-        e
-    })?;
+    ctx.send_message_async(message_send);
 
     info!(group_id = ?group_id, "热回复发送流程完成");
 

@@ -323,39 +323,55 @@ where
             let msg = MessageStorage::get(id).await;
 
             if msg.is_none() {
-                info!(message_id = ?id, "本地缓存未命中，尝试通过 API 获取转发消息");
-                match async {
-                    let call = client
-                        .call_api(
-                            &GetForwardMsgParams {
-                                message_id: id.to_string(),
-                            },
-                            Echo::new(),
-                        )
-                        .await
-                        .map_err(|e| anyhow!("API 调用失败: {}", e))?;
-
-                    let data = call
-                        .wait_echo()
-                        .await
-                        .map_err(|e| anyhow!("等待回声失败: {}", e))?;
-                    let msg_data = data.data.ok_or(anyhow!("API 返回数据为空"))?.messages;
-
-                    let mut msg = Vec::new();
-                    for m in &msg_data {
-                        let segment_msgs = llm_msg_from_message(client.clone(), m).await;
-                        msg.extend(segment_msgs);
+                info!(message_id = ?id, "本地缓存未命中，尝试查询content");
+                match e.content.as_ref() {
+                    Some(msg_data) => {
+                        debug!(message_id = ?id, "转发消息中包含内容，尝试使用内容生成嵌入");
+                        let mut msg = Vec::new();
+                        for m in msg_data {
+                            let segment_msgs =
+                                llm_msg_from_message_without_archive(client.clone(), m).await;
+                            msg.extend(segment_msgs);
+                        }
+                        MessageStorage::save(id, msg).await;
+                        info!(message_id = ?id, "转发消息获取并存储成功");
                     }
+                    None => {
+                        info!(message_id = ?id, "尝试通过 API 获取转发消息内容");
+                        match async {
+                            let call = client
+                                .call_api(
+                                    &GetForwardMsgParams {
+                                        message_id: id.to_string(),
+                                    },
+                                    Echo::new(),
+                                )
+                                .await
+                                .map_err(|e| anyhow!("API 调用失败: {}", e))?;
 
-                    MessageStorage::save(id, msg).await;
-                    info!(message_id = ?id, "转发消息获取并存储成功");
-                    Ok::<(), anyhow::Error>(())
-                }
-                .await
-                {
-                    Ok(v) => v,
-                    Err(e) => {
-                        error!(error = ?e, message_id = ?id, "获取转发消息失败");
+                            let data = call
+                                .wait_echo()
+                                .await
+                                .map_err(|e| anyhow!("等待回声失败: {}", e))?;
+                            let msg_data = data.data.ok_or(anyhow!("API 返回数据为空"))?.messages;
+
+                            let mut msg = Vec::new();
+                            for m in &msg_data {
+                                let segment_msgs = llm_msg_from_message(client.clone(), m).await;
+                                msg.extend(segment_msgs);
+                            }
+
+                            MessageStorage::save(id, msg).await;
+                            info!(message_id = ?id, "转发消息获取并存储成功");
+                            Ok::<(), anyhow::Error>(())
+                        }
+                        .await
+                        {
+                            Ok(v) => v,
+                            Err(e) => {
+                                error!(error = ?e, message_id = ?id, "获取转发消息失败");
+                            }
+                        }
                     }
                 }
             }

@@ -39,7 +39,7 @@ pub mod message {
 
     use super::*;
 
-    #[derive(Deserialize, Debug, Serialize)]
+    #[derive(Deserialize, Debug, Serialize, Clone)]
     #[serde(tag = "message_type", rename_all = "snake_case")]
     pub enum Message {
         Private(Private),
@@ -95,7 +95,7 @@ pub mod message {
         Other,
     }
 
-    #[derive(Serialize, Deserialize, Debug)]
+    #[derive(Serialize, Deserialize, Debug, Clone)]
     pub struct Private {
         pub time: i64,
         pub self_id: i64,
@@ -125,7 +125,7 @@ pub mod message {
         pub flag: String,
     }
 
-    #[derive(Serialize, Deserialize, Debug)]
+    #[derive(Serialize, Deserialize, Debug, Clone)]
     pub struct Group {
         pub time: i64,
         pub self_id: i64,

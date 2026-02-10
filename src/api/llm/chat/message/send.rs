@@ -14,6 +14,6 @@ where
     M: MessageType + std::fmt::Debug + Send + Sync + 'static,
 {
     let msg = IntoMessageSend::get_message_send(detail_msg).await?;
-    ctx.send_message(msg).await?;
+    ctx.send_message_async(msg);
     Ok(())
 }

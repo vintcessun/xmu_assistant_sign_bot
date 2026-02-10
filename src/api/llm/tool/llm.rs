@@ -11,7 +11,7 @@ use quick_xml::de::from_str;
 use serde::de::DeserializeOwned;
 use tracing::{debug, error, info, trace, warn};
 
-const MODEL_NAME: &str = "gemini-2.5-flash";
+const MODEL_NAME: &str = "gemini-2.0-flash";
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
     info!(model = MODEL_NAME, "初始化 LLM 客户端");
@@ -177,9 +177,10 @@ where
                     "之前回复:{}\n报错:{}\n",
                     xml_content, e
                 )));
-                chat_message.push(ChatMessage::system(
-                    "你上次返回的内容格式有误，请严格按照要求的 XML 格式返回。",
-                ));
+                chat_message.push(ChatMessage::system(format!(
+                    "你上次返回的内容格式有误，请严格按照要求的 XML 格式返回。格式如下: {}",
+                    T::get_prompt_schema(),
+                )));
 
                 err = e;
             }
