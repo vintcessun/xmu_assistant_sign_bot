@@ -190,9 +190,12 @@ jobs:
                   echo "INCLUDE=$VCPKG_INSTALL_PATH\include" >> $env:GITHUB_ENV
                   echo "LIB=$VCPKG_INSTALL_PATH\lib" >> $env:GITHUB_ENV
 
-                  # Also provide pkg-config as a fallback
-                  choco install pkg-config-lite --no-progress
-                  echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
+                  # Also provide pkg-config as a fallback (using pkgconf from vcpkg)
+                  $PKGCONF_PATH = "$VCPKG_INSTALL_PATH\tools\pkgconf"
+                  if (Test-Path "$PKGCONF_PATH\pkgconf.exe") {
+                      Copy-Item "$PKGCONF_PATH\pkgconf.exe" "$PKGCONF_PATH\pkg-config.exe"
+                      echo "$PKGCONF_PATH" >> $env:GITHUB_PATH
+                  }
                   $PKG_CONFIG_PATH = "$VCPKG_INSTALL_PATH\lib\pkgconfig"
                   echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $env:GITHUB_ENV
 
