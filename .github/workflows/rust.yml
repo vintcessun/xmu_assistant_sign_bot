@@ -145,7 +145,6 @@ jobs:
         runs-on: windows-latest
         env:
             VCPKG_ROOT: C:\vcpkg
-            LIBCLANG_PATH: 'C:\Program Files\LLVM\bin'
         strategy:
             fail-fast: false
             matrix:
@@ -186,10 +185,32 @@ jobs:
 
                   # 3. Set environment variables for ffmpeg-sys-next to find vcpkg installation
                   $VCPKG_INSTALL_PATH = "C:\vcpkg\installed\$VCPKG_TRIPLET"
+
+                  # Store original MSVC system paths for clang/bindgen to find system headers (like errno.h)
+                  $OLD_INCLUDE = $env:INCLUDE
+                  $OLD_LIB = $env:LIB
+
                   echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
                   echo "FFMPEG_DIR=$VCPKG_INSTALL_PATH" >> $env:GITHUB_ENV
+
+                  # 4. Set linker/compiler environment variables to point primarily to vcpkg paths
                   echo "INCLUDE=$VCPKG_INSTALL_PATH\include" >> $env:GITHUB_ENV
                   echo "LIB=$VCPKG_INSTALL_PATH\lib" >> $env:GITHUB_ENV
+
+                  # 5. Set BINDGEN_EXTRA_CLANG_ARGS to explicitly include all paths for libclang
+                  # This ensures bindgen finds system headers like errno.h
+                  $BINDGEN_INCLUDE_ARGS = @()
+                  $BINDGEN_INCLUDE_ARGS += "-I`"$VCPKG_INSTALL_PATH\include`""
+
+                  # Convert MSVC system paths (from OLD_INCLUDE) to -I flags and add them
+                  $OLD_INCLUDE.Split(';') | ForEach-Object {
+                      if ($_ -ne "" -and $_ -notlike "*vcpkg*") {
+                          $BINDGEN_INCLUDE_ARGS += "-I`"$_`""
+                      }
+                  }
+
+                  $BINDGEN_ARGS = $BINDGEN_INCLUDE_ARGS -join " "
+                  echo "BINDGEN_EXTRA_CLANG_ARGS=$BINDGEN_ARGS" >> $env:GITHUB_ENV
 
                   # Also provide pkg-config as a fallback (using pkgconf from vcpkg)
                   $PKGCONF_PATH = "$VCPKG_INSTALL_PATH\tools\pkgconf"
