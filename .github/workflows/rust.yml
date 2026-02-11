@@ -177,8 +177,8 @@ jobs:
                   elseif ($TRIPLET -eq 'i686') { $VCPKG_TRIPLET = 'x86-windows' }
                   elseif ($TRIPLET -eq 'aarch64') { $VCPKG_TRIPLET = 'arm64-windows' }
 
-                  # 1. 安装 ffmpeg (强制安装 7.x 版本)
-                  vcpkg install ffmpeg@7 --triplet $VCPKG_TRIPLET --recurse
+                  # 1. 安装 ffmpeg (强制安装 7.x 版本，使用引号防止 PowerShell 解析错误)
+                  vcpkg install "ffmpeg@7" --triplet $VCPKG_TRIPLET --recurse
 
                   # 定义基础路径
                   $VCPKG_ROOT = "C:\vcpkg\installed\$VCPKG_TRIPLET"
