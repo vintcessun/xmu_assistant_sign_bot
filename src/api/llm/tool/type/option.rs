@@ -1,13 +1,12 @@
+use super::Cache;
+use crate::api::llm::tool::LlmPrompt;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{
     fmt,
     ops::{Deref, DerefMut},
-    sync::OnceLock,
 };
 
-use crate::api::llm::tool::LlmPrompt;
-
-#[derive(Debug, Clone, Serialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Default, PartialEq, Hash, Eq, PartialOrd, Ord)]
 #[serde(transparent)]
 pub struct LlmOption<T>(pub Option<T>);
 
@@ -87,11 +86,11 @@ where
     }
 }
 
-impl<T: LlmPrompt> LlmPrompt for LlmOption<T> {
+impl<T: LlmPrompt + 'static> LlmPrompt for LlmOption<T> {
     fn get_prompt_schema() -> &'static str {
         let sub_schema = T::get_prompt_schema();
-        static SCHEMA_CACHE: OnceLock<String> = OnceLock::new();
-        SCHEMA_CACHE.get_or_init(|| {
+        let cache = Cache::<T>::get();
+        cache.prompt_schema.get_or_init(|| {
             format!(
                 "可选，如果不提供就不要出现任何标签，如果提供则格式为: {}",
                 sub_schema
@@ -100,8 +99,10 @@ impl<T: LlmPrompt> LlmPrompt for LlmOption<T> {
     }
     fn root_name() -> &'static str {
         let sub_root_name = T::root_name();
-        static SCHEMA_CACHE: OnceLock<String> = OnceLock::new();
-        SCHEMA_CACHE.get_or_init(|| format!("Option<{}>", sub_root_name))
+        let cache = Cache::<T>::get();
+        cache
+            .root_name
+            .get_or_init(|| format!("Option<{}>", sub_root_name))
     }
 }
 

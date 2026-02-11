@@ -1,11 +1,13 @@
 extern crate proc_macro;
+use core::panic;
+
 use darling::FromMeta;
 use heck::AsPascalCase;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote, quote_spanned};
 use syn::{
-    Data, DeriveInput, Error, Expr, FnArg, Ident, ItemFn, ItemStruct, LitBool, LitStr, Meta, Pat,
-    Path, Result, Token, Type,
+    Attribute, Data, DeriveInput, Error, Expr, FnArg, Ident, ItemFn, ItemStruct, Lit, LitBool,
+    LitStr, Meta, Pat, Path, Result, Token, Type,
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
@@ -717,23 +719,26 @@ pub fn derive_llm_prompt(input: TokenStream) -> TokenStream {
                 let field_type = &field.ty;
 
                 // 提取 #[prompt("...")]
-                let mut user_description = quote! { None };
+                let mut user_description = None;
                 for attr in &field.attrs {
-                    if attr.path().is_ident("prompt") {
-                        let _ = attr.parse_nested_meta(|meta| {
-                            if let Ok(lit) = meta.input.parse::<syn::LitStr>() {
-                                user_description = quote! { Some(#lit) };
-                            }
-                            Ok(())
-                        });
+                    if attr.path().is_ident("prompt")
+                        && let Ok(lit) = attr.parse_args::<syn::LitStr>()
+                    {
+                        user_description = Some(lit);
                     }
                 }
+
+                if user_description.is_none() {
+                    panic!("字段 {} 缺少必需的 #[prompt(\"...\")] 描述", field_name);
+                }
+
+                let user_description = user_description.unwrap();
 
                 // 修正这里的 format! 逻辑，确保占位符和参数一一对应
                 field_generators.push(quote! {
                     {
                         let sub_schema = <#field_type as LlmPrompt>::get_prompt_schema();
-                        let description: Option<&'static str> = #user_description;
+                        let description = #user_description;
 
                         // 处理内部 Schema 的缩进，使其美观
                         let indented_schema = sub_schema.lines()
@@ -741,17 +746,10 @@ pub fn derive_llm_prompt(input: TokenStream) -> TokenStream {
                             .collect::<Vec<_>>()
                             .join("\n");
 
-                        if let Some(desc) = description {
-                            // 修正：如果提供了 desc 参数，必须在字符串中使用 {desc}
-                            format!("<{name}>\n{schema}\n</{name}> <!-- {desc} -->",
-                                name = #field_name,
-                                schema = indented_schema,
-                                desc = desc)
-                        } else {
-                            format!("<{name}>\n{schema}\n</{name}>",
-                                name = #field_name,
-                                schema = indented_schema)
-                        }
+                        format!("<{name}>\n{schema}\n</{name}> <!-- {desc} -->",
+                            name = #field_name,
+                            schema = indented_schema,
+                            desc = description)
                     }
                 });
             }
@@ -781,13 +779,10 @@ pub fn derive_llm_prompt(input: TokenStream) -> TokenStream {
                 // 提取变体上的 #[prompt("...")] 说明
                 let mut v_desc = String::new();
                 for attr in &variant.attrs {
-                    if attr.path().is_ident("prompt") {
-                        let _ = attr.parse_nested_meta(|meta| {
-                            if let Ok(lit) = meta.input.parse::<syn::LitStr>() {
-                                v_desc = lit.value();
-                            }
-                            Ok(())
-                        });
+                    if attr.path().is_ident("prompt")
+                        && let Ok(lit) = attr.parse_args::<syn::LitStr>()
+                    {
+                        v_desc = lit.value();
                     }
                 }
 
@@ -1382,4 +1377,214 @@ pub fn castgc_client_helper(_args: TokenStream, input: TokenStream) -> TokenStre
     };
 
     TokenStream::from(expanded)
+}
+
+struct ToolAttr {
+    name: Option<String>,
+    description: String,
+}
+
+impl Parse for ToolAttr {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let mut name = None;
+        let mut description = None;
+
+        while !input.is_empty() {
+            let ident: Ident = input.parse()?;
+            input.parse::<Token![=]>()?;
+            let value: LitStr = input.parse()?;
+
+            match ident.to_string().as_str() {
+                "name" => name = Some(value.value()),
+                "description" => description = Some(value.value()),
+                _ => {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "unknown tool attribute (expected `name` or `description`)",
+                    ));
+                }
+            }
+
+            let _ = input.parse::<Token![,]>();
+        }
+
+        Ok(Self {
+            name,
+            description: description
+                .ok_or_else(|| syn::Error::new(input.span(), "`description` is required"))?,
+        })
+    }
+}
+
+#[proc_macro_attribute]
+pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attr = parse_macro_input!(attr as ToolAttr);
+    let mut func = parse_macro_input!(item as ItemFn);
+
+    match expand_tool(attr, &mut func) {
+        Ok(ts) => ts.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+fn expand_tool(attr: ToolAttr, func: &mut ItemFn) -> Result<proc_macro2::TokenStream> {
+    let fn_name = func.sig.ident.clone();
+    let fn_name_str = attr.name.unwrap_or_else(|| fn_name.to_string());
+
+    let tool_fn_name = format_ident!("{}_tool", fn_name);
+    let tool_struct = format_ident!(
+        "{}Tool",
+        AsPascalCase(fn_name.to_string()).to_string(),
+        span = fn_name.span()
+    );
+    let args_struct = format_ident!(
+        "{}Args",
+        AsPascalCase(fn_name.to_string()).to_string(),
+        span = fn_name.span()
+    );
+
+    // -------- parameters --------
+    let mut arg_fields = vec![];
+    let mut arg_names = vec![];
+    let mut schema_assignments = vec![];
+    let mut required = vec![];
+
+    for arg in &mut func.sig.inputs {
+        let FnArg::Typed(pat) = arg else {
+            return Err(syn::Error::new_spanned(arg, "self not allowed"));
+        };
+
+        let ident = match &*pat.pat {
+            syn::Pat::Ident(id) => id.ident.clone(),
+            _ => return Err(syn::Error::new_spanned(&pat.pat, "unsupported pattern")),
+        };
+
+        let doc = extract_doc(&pat.attrs);
+
+        // 清除参数上的属性（如文档注释），因为 Rust 不允许在函数参数上使用自定义或文档属性
+        pat.attrs.clear();
+
+        let ty = pat.ty.clone();
+        let doc_attr = match &doc {
+            Some(doc) => quote! { #[doc = #doc] },
+            None => quote! {},
+        };
+
+        let schema = match &doc {
+            Some(doc) => quote! {
+                <#ty as ToolStruct>::schema_with_override(Some(#doc))
+            },
+            None => quote! {
+                <#ty as ToolStruct>::tool_schema()
+            },
+        };
+
+        arg_fields.push(quote! {
+            #doc_attr
+            pub #ident: #ty
+        });
+        schema_assignments.push(schema);
+        if !is_option(&ty) {
+            required.push(ident.clone());
+        }
+        arg_names.push(ident);
+    }
+
+    // 检查返回值类型是否为 Result<String, ...>
+    let mut valid_return = false;
+    if let syn::ReturnType::Type(_, ty) = &func.sig.output
+        && let syn::Type::Path(tp) = ty.as_ref()
+        && let Some(seg) = tp.path.segments.last()
+        && seg.ident == "Result"
+        && let syn::PathArguments::AngleBracketed(args) = &seg.arguments
+        && let Some(syn::GenericArgument::Type(syn::Type::Path(inner_tp))) = args.args.first()
+        && inner_tp.path.is_ident("String")
+    {
+        valid_return = true;
+    }
+    if !valid_return {
+        return Err(syn::Error::new_spanned(
+            &func.sig.output,
+            "tool function must return `anyhow::Result<String>`",
+        ));
+    }
+
+    let description = attr.description;
+
+    let schema_json = quote! {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                #(
+                    stringify!(#arg_names): #schema_assignments,
+                )*
+            },
+            "required": [#(stringify!(#required)),*],
+        })
+    };
+
+    Ok(quote! {
+        use crate::api::llm::chat::tool::{ToolCallback, ToolStruct};
+        use genai::chat::Tool;
+
+        #func
+
+        #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+        pub struct #args_struct {
+            #(#arg_fields,)*
+        }
+
+        pub struct #tool_struct;
+
+        #[async_trait::async_trait]
+        impl ToolCallback for #tool_struct {
+            const FN_NAME: &'static str = #fn_name_str;
+
+            type Output = #args_struct;
+
+            async fn call(args: Self::Output) -> anyhow::Result<String> {
+                #fn_name(#(args.#arg_names),*).await
+            }
+
+            fn tool() -> Tool {
+                #tool_fn_name()
+            }
+        }
+
+        pub fn #tool_fn_name() -> Tool {
+            Tool::new(#fn_name_str)
+                .with_description(#description)
+                .with_schema(#schema_json)
+        }
+    })
+}
+
+fn is_option(ty: &Type) -> bool {
+    if let Type::Path(tp) = ty
+        && let Some(seg) = tp.path.segments.last()
+        && seg.ident == "Option"
+    {
+        return true;
+    }
+    false
+}
+
+fn extract_doc(attrs: &[Attribute]) -> Option<String> {
+    let mut docs = vec![];
+
+    for attr in attrs {
+        if attr.path().is_ident("doc")
+            && let Meta::NameValue(meta) = &attr.meta
+            && let Expr::Lit(expr) = &meta.value
+            && let Lit::Str(s) = &expr.lit
+        {
+            docs.push(s.value());
+        }
+    }
+
+    if docs.is_empty() {
+        None
+    } else {
+        Some(docs.join("\n"))
+    }
 }

@@ -19,7 +19,7 @@ use tracing::{debug, error, info, trace, warn};
 #[derive(Debug, Serialize, Deserialize, LlmPrompt, Clone)]
 struct LlmMessageReply {
     #[prompt(
-        "当前是否需要对用户进行回复，如果用户聊的话题需要你进行回复就设置为 true 其他时候别人在聊天的时候设置为 false"
+        "当前是否需要对用户进行回复，如果用户特别想你回答就 true 大部分情况下都是不需要进行回答的，除非用户的问题非常明确并且你有非常相关的上下文可以用来回答，否则请回复 false"
     )]
     is_match: LlmBool,
     #[prompt("基于当前结果生成一个简短的回复，回复要简洁明了")]

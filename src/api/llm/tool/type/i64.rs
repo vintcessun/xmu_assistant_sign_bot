@@ -8,7 +8,7 @@ use std::{
     ops::{Add, Deref, DerefMut, Div, Mul, Rem, Sub},
 };
 
-#[derive(Debug, Clone, PartialEq, Serialize, Copy, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Copy, Eq, Default, Hash, PartialOrd, Ord)]
 #[serde(transparent)]
 pub struct LlmI64(pub i64);
 
@@ -34,6 +34,12 @@ impl From<i64> for LlmI64 {
 
 impl From<LlmI64> for i64 {
     fn from(v: LlmI64) -> Self {
+        v.0
+    }
+}
+
+impl From<&LlmI64> for i64 {
+    fn from(v: &LlmI64) -> Self {
         v.0
     }
 }

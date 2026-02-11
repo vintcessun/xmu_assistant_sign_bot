@@ -87,8 +87,8 @@ jobs:
             - name: Install Dependencies
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y mold clang pkg-config libssl-dev
-
+                  # Install dependencies for openssl and ffmpeg (via video-rs)
+                  sudo apt-get install -y mold clang pkg-config libssl-dev libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libavfilter-dev libswresample-dev libswscale-dev
             - name: Set up Rust
               uses: dtolnay/rust-toolchain@stable
               with:
@@ -163,6 +163,29 @@ jobs:
                   targets: ${{ matrix.target }}
                   components: rustfmt, clippy
 
+            - name: Install pkg-config and FFmpeg dependencies
+              shell: powershell
+              run: |
+                  # 1. Install pkg-config-lite using Chocolatey
+                  choco install pkg-config-lite --no-progress
+
+                  # 2. Map Rust target to Vcpkg triplet and install ffmpeg
+                  $TRIPLET = "${{ matrix.target }}"
+                  if ($TRIPLET -eq 'x86_64-pc-windows-msvc') { $VCPKG_TRIPLET = 'x64-windows' }
+                  elseif ($TRIPLET -eq 'i686-pc-windows-msvc') { $VCPKG_TRIPLET = 'x86-windows' }
+                  elseif ($TRIPLET -eq 'aarch64-pc-windows-msvc') { $VCPKG_TRIPLET = 'arm64-windows' }
+                  else { $VCPKG_TRIPLET = $TRIPLET } # Fallback
+
+                  Write-Host "Installing ffmpeg for Vcpkg triplet $VCPKG_TRIPLET"
+                  vcpkg install ffmpeg --triplet $VCPKG_TRIPLET --recurse
+
+                  # 3. Configure environment variables (pkg-config path)
+                  # VCPKG_ROOT is typically C:\vcpkg on GitHub runners
+                  $VCPKG_ROOT = "C:\vcpkg" 
+                  $PKG_CONFIG_PATH = Join-Path $VCPKG_ROOT "installed\$VCPKG_TRIPLET\lib\pkgconfig"
+                  Write-Host "Setting PKG_CONFIG_PATH to $PKG_CONFIG_PATH"
+                  echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $env:GITHUB_ENV
+
             - name: Install Windows MSVC toolchain
               run: |
                   rustup target add ${{ matrix.target }}
@@ -227,17 +250,22 @@ jobs:
               run: rustup target add ${{ matrix.target }}
 
             - name: Install and configure dependencies for native crates
-              # Ensure openssl is installed and configure environment variables for native crates
+              # Ensure openssl and ffmpeg are installed and configure environment variables for native crates
               run: |
-                  # Check if openssl is installed before attempting installation to avoid warnings about already being installed.
-                  if ! brew list openssl &>/dev/null; then
-                      brew install openssl
-                  fi
+                  # Install dependencies using Homebrew
+                  brew install openssl ffmpeg
+
+                  # Configure OpenSSL environment variables
                   OPENSSL_DIR=$(brew --prefix openssl)
                   echo "OPENSSL_INCLUDE_DIR=$OPENSSL_DIR/include" >> $GITHUB_ENV
                   echo "OPENSSL_LIB_DIR=$OPENSSL_DIR/lib" >> $GITHUB_ENV
-                  echo "PKG_CONFIG_PATH=$OPENSSL_DIR/lib/pkgconfig" >> $GITHUB_ENV
 
+                  # Configure PKG_CONFIG_PATH to include OpenSSL and FFmpeg paths
+                  FFMPEG_PC_PATH=$(brew --prefix ffmpeg)/lib/pkgconfig
+                  OPENSSL_PC_PATH=$OPENSSL_DIR/lib/pkgconfig
+
+                  # Set PKG_CONFIG_PATH. Explicitly setting it should help with cross-compilation issues.
+                  echo "PKG_CONFIG_PATH=$OPENSSL_PC_PATH:$FFMPEG_PC_PATH" >> $GITHUB_ENV
             - name: Build release binary
               run: cargo build --release --target ${{ matrix.target }} --verbose
               env:

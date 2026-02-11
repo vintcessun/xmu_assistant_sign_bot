@@ -1,23 +1,21 @@
+use crate::api::llm::tool::{CachePair, LlmPrompt};
 use serde::{Deserialize, Deserializer, Serialize};
-use std::collections::HashMap;
+use std::cmp::Ord;
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
-use std::sync::OnceLock;
 
-use crate::api::llm::tool::LlmPrompt;
-
-#[derive(Debug, Clone, Serialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[serde(transparent)]
-pub struct LlmHashMap<K, V>(pub HashMap<K, V>)
-where
-    K: Eq + Hash;
+pub struct LlmHashMap<K: Eq + Hash + Ord, V: Eq + Hash>(pub BTreeMap<K, V>);
 
 impl<K, V> Deref for LlmHashMap<K, V>
 where
-    K: Eq + Hash,
+    K: Eq + Hash + Ord,
+    V: Eq + Hash,
 {
-    type Target = HashMap<K, V>;
+    type Target = BTreeMap<K, V>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -25,26 +23,28 @@ where
 
 impl<K, V> DerefMut for LlmHashMap<K, V>
 where
-    K: Eq + Hash,
+    K: Eq + Hash + Ord,
+    V: Eq + Hash,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl<K, V> From<HashMap<K, V>> for LlmHashMap<K, V>
+impl<K, V> From<BTreeMap<K, V>> for LlmHashMap<K, V>
 where
-    K: Eq + Hash,
+    K: Eq + Hash + Ord,
+    V: Eq + Hash,
 {
-    fn from(m: HashMap<K, V>) -> Self {
+    fn from(m: BTreeMap<K, V>) -> Self {
         LlmHashMap(m)
     }
 }
 
 impl<'de, K, V> Deserialize<'de> for LlmHashMap<K, V>
 where
-    K: Deserialize<'de> + Debug + Eq + Hash,
-    V: Deserialize<'de> + Debug,
+    K: Deserialize<'de> + Debug + Eq + Hash + Ord,
+    V: Deserialize<'de> + Debug + Eq + Hash,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -67,7 +67,7 @@ where
         // 3. 解析并转换成 HashMap
         match XmlMap::<K, V>::deserialize(deserializer) {
             Ok(wrapper) => {
-                let map: HashMap<K, V> = wrapper
+                let map: BTreeMap<K, V> = wrapper
                     .entries
                     .into_iter()
                     .map(|e| (e.key, e.value))
@@ -84,14 +84,14 @@ where
 
 impl<K, V> LlmPrompt for LlmHashMap<K, V>
 where
-    K: LlmPrompt + Eq + Hash,
-    V: LlmPrompt,
+    K: LlmPrompt + Eq + Hash + Ord + 'static,
+    V: LlmPrompt + Eq + Hash + 'static,
 {
     fn get_prompt_schema() -> &'static str {
         let key_schema = K::get_prompt_schema();
         let val_schema = V::get_prompt_schema();
-        static SCHEMA_CACHE: OnceLock<String> = OnceLock::new();
-        SCHEMA_CACHE.get_or_init(|| {
+        let cache = CachePair::<K, V>::get();
+        cache.prompt_schema.get_or_init(|| {
             format!(
                 "一个键值对集合，格式为: <entry><key>{}</key><value>{}</value></entry>，可重复多次。",
                 key_schema, val_schema
@@ -102,8 +102,10 @@ where
     fn root_name() -> &'static str {
         let key_name = K::root_name();
         let val_name = V::root_name();
-        static NAME_CACHE: OnceLock<String> = OnceLock::new();
-        NAME_CACHE.get_or_init(|| format!("HashMap<{}, {}>", key_name, val_name))
+        let cache = CachePair::<K, V>::get();
+        cache
+            .root_name
+            .get_or_init(|| format!("HashMap<{}, {}>", key_name, val_name))
     }
 }
 

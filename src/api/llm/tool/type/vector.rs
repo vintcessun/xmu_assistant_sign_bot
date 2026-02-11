@@ -1,11 +1,10 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
-use std::sync::OnceLock;
 
-use crate::api::llm::tool::LlmPrompt;
+use crate::api::llm::tool::{Cache, LlmPrompt};
 
-#[derive(Debug, Clone, Serialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[serde(transparent)]
 pub struct LlmVec<T>(pub Vec<T>);
 
@@ -99,11 +98,11 @@ where
     }
 }
 
-impl<T: LlmPrompt> LlmPrompt for LlmVec<T> {
+impl<T: LlmPrompt + 'static> LlmPrompt for LlmVec<T> {
     fn get_prompt_schema() -> &'static str {
         let sub_schema = T::get_prompt_schema();
-        static SCHEMA_CACHE: OnceLock<String> = OnceLock::new();
-        SCHEMA_CACHE.get_or_init(|| {
+        let cache = Cache::<T>::get();
+        cache.prompt_schema.get_or_init(|| {
             format!(
                 "一个由零个或多个元素组成的列表，每个元素的格式为: <item>{}</item>，请注意即使是单个item也**必须**用<item></item>标签包括内容",
                 sub_schema
@@ -112,8 +111,10 @@ impl<T: LlmPrompt> LlmPrompt for LlmVec<T> {
     }
     fn root_name() -> &'static str {
         let sub_root_name = T::root_name();
-        static SCHEMA_CACHE: OnceLock<String> = OnceLock::new();
-        SCHEMA_CACHE.get_or_init(|| format!("Vec<{}>", sub_root_name))
+        let cache = Cache::<T>::get();
+        cache
+            .root_name
+            .get_or_init(|| format!("Vec<{}>", sub_root_name))
     }
 }
 
@@ -219,5 +220,49 @@ mod tests {
         println!("Parsed data: {:?}", data);
         let data = from_str::<MessageSendLlmResponse>(CORRECT_COMPLEX_DATA);
         println!("Parsed data: {:?}", data);
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Ord, PartialOrd)]
+    struct TypeA;
+    impl LlmPrompt for TypeA {
+        fn get_prompt_schema() -> &'static str {
+            "这是TypeA的提示词schema"
+        }
+        fn root_name() -> &'static str {
+            "TypeA"
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Ord, PartialOrd)]
+    struct TypeB;
+    impl LlmPrompt for TypeB {
+        fn get_prompt_schema() -> &'static str {
+            "这是TypeB的提示词schema"
+        }
+        fn root_name() -> &'static str {
+            "TypeB"
+        }
+    }
+
+    #[derive(
+        Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Ord, PartialOrd, LlmPrompt,
+    )]
+    struct LlmVecTypeA {
+        #[prompt("A的值")]
+        val: LlmVec<TypeA>,
+    }
+
+    #[derive(
+        Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Ord, PartialOrd, LlmPrompt,
+    )]
+    struct LlmVecTypeB {
+        #[prompt("B的值")]
+        val: LlmVec<TypeB>,
+    }
+
+    #[test]
+    fn test_generic_vec() {
+        println!("LlmVecTypeA schema: {}", LlmVecTypeA::get_prompt_schema());
+        println!("LlmVecTypeB schema: {}", LlmVecTypeB::get_prompt_schema());
     }
 }

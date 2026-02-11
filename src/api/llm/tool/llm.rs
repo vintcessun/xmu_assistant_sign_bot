@@ -29,7 +29,7 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
         if let Some(cfg) = config {
             // 尝试从环境变量读取
             if let Ok(key) = std::env::var(cfg.api_key_env) {
-                info!(
+                debug!(
                     api_key_env = %cfg.api_key_env,
                     "成功从环境变量加载 API 密钥"
                 );
@@ -37,7 +37,7 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
             }
             // 如果环境变量不存在，直接把 api_key_env 字符串本身当作 Key (兼容你目前的写法)
             if cfg.api_key_env.starts_with("sk-") {
-                info!(
+                debug!(
                     api_key_env = %cfg.api_key_env,
                     "成功从硬编码配置加载 API 密钥"
                 );
@@ -113,6 +113,8 @@ where
 
     for attempt in 1..=3 {
         debug!(attempt = attempt, "尝试调用 LLM 获取结构化回复");
+        #[cfg(test)]
+        println!("Attempt {}: Chat Messages: {:?}", attempt, chat_message);
         // 2. 调用 genai
         let chat_req = genai::chat::ChatRequest::new(chat_message.clone());
         let res = CLIENT
@@ -126,6 +128,9 @@ where
             error!(model_name = MODEL_NAME, "LLM 返回空响应，无法获取文本内容");
             anyhow::anyhow!("No response")
         })?;
+
+        #[cfg(test)]
+        println!("Attempt {}: LLM Response Text: {}", attempt, text);
 
         // 3. XML 清洗与反序列化 (根据 root_name 精确截取)
         let root_name = T::root_name();
