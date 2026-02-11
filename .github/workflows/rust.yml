@@ -197,17 +197,27 @@ jobs:
                   echo "INCLUDE=$VCPKG_INSTALL_PATH\include" >> $env:GITHUB_ENV
                   echo "LIB=$VCPKG_INSTALL_PATH\lib" >> $env:GITHUB_ENV
 
-                  # 5. Set BINDGEN_EXTRA_CLANG_ARGS to explicitly include all paths for libclang
+                  # 5. Set BINDGEN_EXTRA_CLANG_ARGS to explicitly include all paths and the target for libclang
                   # This ensures bindgen finds system headers like errno.h
                   $BINDGEN_INCLUDE_ARGS = @()
-                  $BINDGEN_INCLUDE_ARGS += "-I`"$VCPKG_INSTALL_PATH\include`""
 
-                  # Convert MSVC system paths (from OLD_INCLUDE) to -I flags and add them
+                  # Add MSVC compatibility flags
+                  $BINDGEN_INCLUDE_ARGS += "-fms-compatibility"
+                  $BINDGEN_INCLUDE_ARGS += "-fms-compatibility-version=19.30"
+
+                  # Explicitly set the target triple for clang/bindgen
+                  $BINDGEN_INCLUDE_ARGS += "-target"
+                  $BINDGEN_INCLUDE_ARGS += "${{ matrix.target }}"
+
+                  # Convert MSVC system paths (from OLD_INCLUDE) to -I flags and add them (MSVC paths first)
                   ($OLD_INCLUDE -split ';') | ForEach-Object {
                       if ($_ -ne "" -and $_ -notlike "*vcpkg*") {
                           $BINDGEN_INCLUDE_ARGS += "-I`"$_`""
                       }
                   }
+
+                  # Inject vcpkg paths (VCPKG paths last)
+                  $BINDGEN_INCLUDE_ARGS += "-I`"$VCPKG_INSTALL_PATH\include`""
 
                   $BINDGEN_ARGS = $BINDGEN_INCLUDE_ARGS -join " "
                   echo "BINDGEN_EXTRA_CLANG_ARGS=$BINDGEN_ARGS" >> $env:GITHUB_ENV
