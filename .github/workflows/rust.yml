@@ -203,7 +203,7 @@ jobs:
                   $BINDGEN_INCLUDE_ARGS += "-I`"$VCPKG_INSTALL_PATH\include`""
 
                   # Convert MSVC system paths (from OLD_INCLUDE) to -I flags and add them
-                  $OLD_INCLUDE.Split(';') | ForEach-Object {
+                  ($OLD_INCLUDE -split ';') | ForEach-Object {
                       if ($_ -ne "" -and $_ -notlike "*vcpkg*") {
                           $BINDGEN_INCLUDE_ARGS += "-I`"$_`""
                       }
