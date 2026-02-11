@@ -169,29 +169,31 @@ jobs:
                   targets: ${{ matrix.target }}
                   components: rustfmt, clippy
 
-            - name: Install pkg-config and FFmpeg dependencies
+            - name: Install dependencies via vcpkg
               shell: powershell
               run: |
-                  # 1. Install pkg-config-lite using Chocolatey
-                  choco install pkg-config-lite --no-progress
-                  $env:Path += ";C:\ProgramData\chocolatey\bin"
-                  echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
-
-                  # 2. Map Rust target to Vcpkg triplet and install ffmpeg
+                  # 1. Map Rust target to Vcpkg triplet
                   $TRIPLET = "${{ matrix.target }}"
                   if ($TRIPLET -eq 'x86_64-pc-windows-msvc') { $VCPKG_TRIPLET = 'x64-windows' }
                   elseif ($TRIPLET -eq 'i686-pc-windows-msvc') { $VCPKG_TRIPLET = 'x86-windows' }
                   elseif ($TRIPLET -eq 'aarch64-pc-windows-msvc') { $VCPKG_TRIPLET = 'arm64-windows' }
                   else { $VCPKG_TRIPLET = $TRIPLET } # Fallback
 
+                  # 2. Install ffmpeg
                   Write-Host "Installing ffmpeg for Vcpkg triplet $VCPKG_TRIPLET"
                   vcpkg install ffmpeg --triplet $VCPKG_TRIPLET --recurse
 
-                  # 3. Configure environment variables (pkg-config path)
-                  # VCPKG_ROOT is typically C:\vcpkg on GitHub runners
-                  $VCPKG_ROOT = "C:\vcpkg" 
-                  $PKG_CONFIG_PATH = Join-Path $VCPKG_ROOT "installed\$VCPKG_TRIPLET\lib\pkgconfig"
-                  Write-Host "Setting PKG_CONFIG_PATH to $PKG_CONFIG_PATH"
+                  # 3. Set environment variables for ffmpeg-sys-next to find vcpkg installation
+                  $VCPKG_INSTALL_PATH = "C:\vcpkg\installed\$VCPKG_TRIPLET"
+                  echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+                  echo "FFMPEG_DIR=$VCPKG_INSTALL_PATH" >> $env:GITHUB_ENV
+                  echo "INCLUDE=$VCPKG_INSTALL_PATH\include" >> $env:GITHUB_ENV
+                  echo "LIB=$VCPKG_INSTALL_PATH\lib" >> $env:GITHUB_ENV
+
+                  # Also provide pkg-config as a fallback
+                  choco install pkg-config-lite --no-progress
+                  echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
+                  $PKG_CONFIG_PATH = "$VCPKG_INSTALL_PATH\lib\pkgconfig"
                   echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $env:GITHUB_ENV
 
             - name: Install Windows MSVC toolchain
