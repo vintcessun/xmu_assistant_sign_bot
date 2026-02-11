@@ -177,32 +177,35 @@ jobs:
                   elseif ($TRIPLET -eq 'i686') { $VCPKG_TRIPLET = 'x86-windows' }
                   elseif ($TRIPLET -eq 'aarch64') { $VCPKG_TRIPLET = 'arm64-windows' }
 
-                  # 1. 安装 ffmpeg
-                  vcpkg install ffmpeg --triplet $VCPKG_TRIPLET --recurse
+                  # 1. 安装 ffmpeg (强制安装 7.x 版本)
+                  vcpkg install ffmpeg@7 --triplet $VCPKG_TRIPLET --recurse
 
-                  # 定义关键路径变量
+                  # 定义基础路径
                   $VCPKG_ROOT = "C:\vcpkg\installed\$VCPKG_TRIPLET"
-                  $FFMPEG_INCLUDE = "$VCPKG_ROOT\include"
-                  $FFMPEG_LIB = "$VCPKG_ROOT\lib"
 
-                  # 2. 获取 Windows SDK UCRT 路径 (修复 errno.h 问题)
+                  # 2. 关键修复 A：设置 PKG_CONFIG_PATH
+                  # 让 rust 脚本能通过 pkg-config 自动读取头文件路径和版本号
+                  $PKG_PATH = "$VCPKG_ROOT\lib\pkgconfig"
+                  "PKG_CONFIG_PATH=$PKG_PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+                  # 3. 关键修复 B：强制禁用 avfft.h
+                  # 显式告诉 ffmpeg-sys-next 不要包含这个已删除的文件
+                  "FFMPEG_NO_AVFFT=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+                  # 4. 辅助变量：依然保留这些以防万一
+                  "FFMPEG_DIR=$VCPKG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+                  # 5. 获取 Windows SDK UCRT 路径 (解决 errno.h 问题)
                   $SDK_VERSION = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Include").Name | Sort-Object -Descending | Select-Object -First 1
                   $UCRT_PATH = "C:\Program Files (x86)\Windows Kits\10\Include\$SDK_VERSION\ucrt"
 
-                  # 3. 关键修复：显式设置 FFMPEG_DIR 族环境变量
-                  # 这告诉 ffmpeg-sys-next 直接去哪里找，不要瞎猜 /usr/include
-                  "FFMPEG_DIR=$VCPKG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
-                  "FFMPEG_INCLUDE_DIR=$FFMPEG_INCLUDE" | Out-File -FilePath $env:GITHUB_ENV -Append
-                  "FFMPEG_LIB_DIR=$FFMPEG_LIB" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-                  # 4. 关键修复：构建 Bindgen 参数
-                  # 注意：这里使用 Join-Path 和准确的转义，防止 Program Files 空格问题
-                  $CLANG_ARGS = "-I`"$UCRT_PATH`" -I`"$FFMPEG_INCLUDE`""
+                  # 6. Bindgen 参数 (作为 PKG_CONFIG 的补充)
+                  # 只保留 UCRT 路径给 bindgen
+                  $CLANG_ARGS = "-I`"$UCRT_PATH`""
                   "BINDGEN_EXTRA_CLANG_ARGS=$CLANG_ARGS" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-                  # 打印调试信息
-                  Write-Host "Set FFMPEG_DIR to $VCPKG_ROOT"
-                  Write-Host "Set BINDGEN args to $CLANG_ARGS"
+                  Write-Host "Configured PKG_CONFIG_PATH: $PKG_PATH"
+                  Write-Host "Set FFMPEG_NO_AVFFT=1"
 
             - name: Install Windows MSVC toolchain
               run: |
