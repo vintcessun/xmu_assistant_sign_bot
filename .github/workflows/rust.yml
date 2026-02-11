@@ -170,26 +170,39 @@ jobs:
                   components: rustfmt, clippy
 
             - name: Install dependencies via vcpkg
-              shell: pwsh # 明确使用 pwsh
+              shell: pwsh
               run: |
                   $TRIPLET = "${{ matrix.target }}" -replace "-pc-windows-msvc", ""
                   if ($TRIPLET -eq 'x86_64') { $VCPKG_TRIPLET = 'x64-windows' }
                   elseif ($TRIPLET -eq 'i686') { $VCPKG_TRIPLET = 'x86-windows' }
                   elseif ($TRIPLET -eq 'aarch64') { $VCPKG_TRIPLET = 'arm64-windows' }
 
-                  # 安装 ffmpeg
+                  # 1. 安装 ffmpeg
                   vcpkg install ffmpeg --triplet $VCPKG_TRIPLET --recurse
 
-                  $VCPKG_INSTALL_PATH = "C:\vcpkg\installed\$VCPKG_TRIPLET"
+                  # 定义关键路径变量
+                  $VCPKG_ROOT = "C:\vcpkg\installed\$VCPKG_TRIPLET"
+                  $FFMPEG_INCLUDE = "$VCPKG_ROOT\include"
+                  $FFMPEG_LIB = "$VCPKG_ROOT\lib"
 
-                  # 找到最新的 Windows SDK UCRT 路径 (修复 errno.h 找不到的问题)
+                  # 2. 获取 Windows SDK UCRT 路径 (修复 errno.h 问题)
                   $SDK_VERSION = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Include").Name | Sort-Object -Descending | Select-Object -First 1
                   $UCRT_PATH = "C:\Program Files (x86)\Windows Kits\10\Include\$SDK_VERSION\ucrt"
 
-                  # 写入 GITHUB_ENV
-                  "FFMPEG_DIR=$VCPKG_INSTALL_PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
-                  # BINDGEN_EXTRA_CLANG_ARGS: 包含 UCRT 路径（用于系统头文件如 errno.h）和 vcpkg/ffmpeg 的头文件路径
-                  "BINDGEN_EXTRA_CLANG_ARGS=-I`"$UCRT_PATH`" -I`"$VCPKG_INSTALL_PATH\include`"" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  # 3. 关键修复：显式设置 FFMPEG_DIR 族环境变量
+                  # 这告诉 ffmpeg-sys-next 直接去哪里找，不要瞎猜 /usr/include
+                  "FFMPEG_DIR=$VCPKG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  "FFMPEG_INCLUDE_DIR=$FFMPEG_INCLUDE" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  "FFMPEG_LIB_DIR=$FFMPEG_LIB" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+                  # 4. 关键修复：构建 Bindgen 参数
+                  # 注意：这里使用 Join-Path 和准确的转义，防止 Program Files 空格问题
+                  $CLANG_ARGS = "-I`"$UCRT_PATH`" -I`"$FFMPEG_INCLUDE`""
+                  "BINDGEN_EXTRA_CLANG_ARGS=$CLANG_ARGS" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+                  # 打印调试信息
+                  Write-Host "Set FFMPEG_DIR to $VCPKG_ROOT"
+                  Write-Host "Set BINDGEN args to $CLANG_ARGS"
 
             - name: Install Windows MSVC toolchain
               run: |
