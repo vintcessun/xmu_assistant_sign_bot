@@ -163,11 +163,10 @@ jobs:
                   Copy-Item src/api/llm/tool/config-template.rs src/api/llm/tool/config.rs
                   Copy-Item src/api/llm/chat/config-template.rs src/api/llm/chat/config.rs
 
-            - name: Create vcpkg.json for FFmpeg 7.x requirement (Single-line JSON)
-              shell: pwsh
-              run: |
-                  # 添加 builtin-baseline 解决 vcpkg 版本控制错误
-                  '{"name": "xmu-assistant-bot", "version-string": "1.0.0", "builtin-baseline": "388a108154e20790d97275815152ccf84f014e7a", "dependencies": [{"name": "ffmpeg", "version>=": "7.0"}]}' | Out-File -FilePath vcpkg.json -Encoding UTF8
+            - name: Install FFmpeg 7.1 via Action
+              uses: FedericoCarboni/setup-ffmpeg@v3
+              with:
+                  ffmpeg-version: 7.1.0
 
             - name: Set up Rust
               uses: dtolnay/rust-toolchain@stable
@@ -175,42 +174,23 @@ jobs:
                   targets: ${{ matrix.target }}
                   components: rustfmt, clippy
 
-            - name: Install dependencies via vcpkg
+            - name: Configure environment variables for build
               shell: pwsh
               run: |
-                  $TRIPLET = "${{ matrix.target }}" -replace "-pc-windows-msvc", ""
-                  if ($TRIPLET -eq 'x86_64') { $VCPKG_TRIPLET = 'x64-windows' }
-                  elseif ($TRIPLET -eq 'i686') { $VCPKG_TRIPLET = 'x86-windows' }
-                  elseif ($TRIPLET -eq 'aarch64') { $VCPKG_TRIPLET = 'arm64-windows' }
-
-                  # 1. 安装 ffmpeg (使用 vcpkg.json manifest 模式锁定 7.x 版本)
-                  vcpkg install --triplet $VCPKG_TRIPLET --recurse
-
-                  # 定义基础路径
-                  $VCPKG_ROOT = "C:\vcpkg\installed\$VCPKG_TRIPLET"
-
-                  # 2. 关键修复 A：设置 PKG_CONFIG_PATH
-                  # 让 rust 脚本能通过 pkg-config 自动读取头文件路径和版本号
-                  $PKG_PATH = "$VCPKG_ROOT\lib\pkgconfig"
-                  "PKG_CONFIG_PATH=$PKG_PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-                  # 3. 关键修复 B：强制禁用 avfft.h
-                  # 显式告诉 ffmpeg-sys-next 不要包含这个已删除的文件
-                  "FFMPEG_NO_AVFFT=1" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-                  # 4. 辅助变量：依然保留这些以防万一
-                  "FFMPEG_DIR=$VCPKG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-                  # 5. 获取 Windows SDK UCRT 路径 (解决 errno.h 问题)
+                  # 1. 获取 Windows SDK UCRT 路径 (解决 bindgen 找不到 errno.h 的问题)
                   $SDK_VERSION = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Include").Name | Sort-Object -Descending | Select-Object -First 1
                   $UCRT_PATH = "C:\Program Files (x86)\Windows Kits\10\Include\$SDK_VERSION\ucrt"
 
-                  # 6. Bindgen 参数 (作为 PKG_CONFIG 的补充)
-                  # 只保留 UCRT 路径给 bindgen
+                  # 2. Bindgen 参数
+                  # 只将 UCRT 路径传递给 bindgen
                   $CLANG_ARGS = "-I`"$UCRT_PATH`""
                   "BINDGEN_EXTRA_CLANG_ARGS=$CLANG_ARGS" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-                  Write-Host "Configured PKG_CONFIG_PATH: $PKG_PATH"
+                  # 3. 关键修复：强制禁用 avfft.h
+                  # 显式告诉 ffmpeg-sys-next 不要包含这个已删除的文件 (对于 FFmpeg 7.x)
+                  "FFMPEG_NO_AVFFT=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+                  Write-Host "Set BINDGEN_EXTRA_CLANG_ARGS: $CLANG_ARGS"
                   Write-Host "Set FFMPEG_NO_AVFFT=1"
 
             - name: Install Windows MSVC toolchain
