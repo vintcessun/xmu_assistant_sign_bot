@@ -234,7 +234,7 @@ jobs:
     # macOS builds (using macOS runner)
     build-macos:
         name: macOS builds
-        runs-on: ${{ matrix.target == 'x86_64-apple-darwin' && 'macos-13' || 'macos-latest' }}
+        runs-on: ${{ matrix.target == 'x86_64-apple-darwin' && 'macos-15-intel' || 'macos-latest' }}
         strategy:
             fail-fast: false
             matrix:
