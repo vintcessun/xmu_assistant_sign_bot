@@ -166,7 +166,7 @@ jobs:
             - name: Create vcpkg.json for FFmpeg 7.x requirement (Single-line JSON)
               shell: pwsh
               run: |
-                  '{"name": "xmu-assistant-bot", "version-string": "1.0.0", "dependencies": [{"name": "ffmpeg", "version": "7.0"}]}' | Out-File -FilePath vcpkg.json -Encoding UTF8
+                  '{"name": "xmu-assistant-bot", "version-string": "1.0.0", "dependencies": [{"name": "ffmpeg", "version>=": "7.0"}]}' | Out-File -FilePath vcpkg.json -Encoding UTF8
 
             - name: Set up Rust
               uses: dtolnay/rust-toolchain@stable
