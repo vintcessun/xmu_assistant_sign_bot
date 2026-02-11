@@ -27,6 +27,6 @@ image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabihf:edge"
 pre-build = [
     "dpkg --add-architecture armhf",
     "apt-get update",
-    "apt-get install -y pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libc6-dev:armhf clang libclang-dev",
+    "apt-get install -y pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libc6-dev:armhf clang libclang-dev crossbuild-essential-armhf",
 ]
-env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/arm-linux-gnueabihf/include", CC = "arm-linux-gnueabihf-gcc" }
+env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/arm-linux-gnueabihf/include", CC = "arm-linux-gnueabihf-gcc", CFLAGS = "-mfloat-abi=hard" }
