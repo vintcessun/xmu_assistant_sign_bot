@@ -29,4 +29,4 @@ pre-build = [
     "apt-get update",
     "apt-get install -y pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libclang-dev",
 ]
-env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/arm-linux-gnueabihf/include" }
+env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/arm-linux-gnueabihf/include", CC_armv7_unknown_linux_gnueabihf = "arm-linux-gnueabihf-gcc", CFLAGS_armv7_unknown_linux_gnueabihf = "-march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard" }
