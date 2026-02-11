@@ -163,6 +163,12 @@ jobs:
                   Copy-Item src/api/llm/tool/config-template.rs src/api/llm/tool/config.rs
                   Copy-Item src/api/llm/chat/config-template.rs src/api/llm/chat/config.rs
 
+            - name: Create vcpkg.json for FFmpeg 7.x requirement
+              shell: pwsh
+              run: |
+                  # 使用单行 JSON 确保 YAML 解析正确，version<"8.0" 锁定 7.x 版本
+                  '{"name": "xmu-assistant-bot", "version-string": "1.0.0", "dependencies": [{"name": "ffmpeg", "version<": "8.0"}]}' | Out-File -FilePath vcpkg.json -Encoding UTF8
+
             - name: Set up Rust
               uses: dtolnay/rust-toolchain@stable
               with:
@@ -177,8 +183,8 @@ jobs:
                   elseif ($TRIPLET -eq 'i686') { $VCPKG_TRIPLET = 'x86-windows' }
                   elseif ($TRIPLET -eq 'aarch64') { $VCPKG_TRIPLET = 'arm64-windows' }
 
-                  # 1. 安装 ffmpeg (强制安装 7.x 版本，使用引号防止 PowerShell 解析错误)
-                  vcpkg install "ffmpeg@7" --triplet $VCPKG_TRIPLET --recurse
+                  # 1. 安装 ffmpeg (使用 vcpkg.json manifest 模式锁定 7.x 版本)
+                  vcpkg install --triplet $VCPKG_TRIPLET --recurse
 
                   # 定义基础路径
                   $VCPKG_ROOT = "C:\vcpkg\installed\$VCPKG_TRIPLET"
