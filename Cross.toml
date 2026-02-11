@@ -1,26 +1,26 @@
 [target.x86_64-unknown-linux-gnu]
 pre-build = [
     "apt-get update",
-    "apt-get install -y pkg-config libssl-dev mold clang libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libavfilter-dev libswresample-dev libswscale-dev libc6-dev libclang-dev",
+    "apt-get install -y pkg-config libssl-dev mold clang libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libavfilter-dev libswresample-dev libswscale-dev libc6-dev",
 ]
 
 [target.i686-unknown-linux-gnu]
 pre-build = [
     "dpkg --add-architecture i386",
     "apt-get update",
-    "apt-get install -y pkg-config libssl-dev:i386 libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 libavdevice-dev:i386 libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386 libc6-dev:i386 libclang-dev:i386",
+    "apt-get install -y pkg-config libssl-dev:i386 libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 libavdevice-dev:i386 libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386 libc6-dev:i386",
 ]
 
 [target.aarch64-unknown-linux-gnu]
 pre-build = [
     "dpkg --add-architecture arm64",
     "apt-get update",
-    "apt-get install -y pkg-config libssl-dev:arm64 libavcodec-dev:arm64 libavformat-dev:arm64 libavutil-dev:arm64 libavdevice-dev:arm64 libavfilter-dev:arm64 libswresample-dev:arm64 libswscale-dev:arm64 libc6-dev:arm64 libclang-dev:arm64",
+    "apt-get install -y pkg-config libssl-dev:arm64 libavcodec-dev:arm64 libavformat-dev:arm64 libavutil-dev:arm64 libavdevice-dev:arm64 libavfilter-dev:arm64 libswresample-dev:arm64 libswscale-dev:arm64 libc6-dev:arm64",
 ]
 
 [target.armv7-unknown-linux-gnueabihf]
 pre-build = [
     "dpkg --add-architecture armhf",
     "apt-get update",
-    "apt-get install -y pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libc6-dev:armhf libclang-dev:armhf",
+    "apt-get install -y pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libc6-dev:armhf",
 ]

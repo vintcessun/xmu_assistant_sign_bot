@@ -166,8 +166,10 @@ jobs:
             - name: Install pkg-config and FFmpeg dependencies
               shell: powershell
               run: |
-                  # 1. Install pkg-config-lite using Chocolatey
-                  choco install pkg-config-lite --no-progress
+                  # 1. Install pkgconfig using Chocolatey
+                  choco install pkgconfig --no-progress
+                  $env:Path += ";C:\ProgramData\chocolatey\bin"
+                  echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
 
                   # 2. Map Rust target to Vcpkg triplet and install ffmpeg
                   $TRIPLET = "${{ matrix.target }}"
@@ -257,15 +259,20 @@ jobs:
 
                   # Configure OpenSSL environment variables
                   OPENSSL_DIR=$(brew --prefix openssl)
+                  FFMPEG_DIR=$(brew --prefix ffmpeg)
                   echo "OPENSSL_INCLUDE_DIR=$OPENSSL_DIR/include" >> $GITHUB_ENV
                   echo "OPENSSL_LIB_DIR=$OPENSSL_DIR/lib" >> $GITHUB_ENV
 
                   # Configure PKG_CONFIG_PATH to include OpenSSL and FFmpeg paths
-                  FFMPEG_PC_PATH=$(brew --prefix ffmpeg)/lib/pkgconfig
+                  FFMPEG_PC_PATH=$FFMPEG_DIR/lib/pkgconfig
                   OPENSSL_PC_PATH=$OPENSSL_DIR/lib/pkgconfig
 
                   # Set PKG_CONFIG_PATH. Explicitly setting it should help with cross-compilation issues.
                   echo "PKG_CONFIG_PATH=$OPENSSL_PC_PATH:$FFMPEG_PC_PATH" >> $GITHUB_ENV
+
+                  # Set CPATH and LIBRARY_PATH for clang and linker
+                  echo "CPATH=$FFMPEG_DIR/include:$OPENSSL_DIR/include" >> $GITHUB_ENV
+                  echo "LIBRARY_PATH=$FFMPEG_DIR/lib:$OPENSSL_DIR/lib" >> $GITHUB_ENV
             - name: Build release binary
               run: cargo build --release --target ${{ matrix.target }} --verbose
               env:
