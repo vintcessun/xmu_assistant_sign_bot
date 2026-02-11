@@ -41,6 +41,10 @@ jobs:
 
             - name: Build release binary using cross
               run: cross build --release --target ${{ matrix.target }} --verbose
+              env:
+                  # Override .cargo/config.toml to prevent host-specific flags (like target-cpu=native)
+                  # from being leaked into the cross-compilation environment.
+                  RUSTFLAGS: ""
 
             - name: Rename artifact
               shell: bash
@@ -255,11 +259,13 @@ jobs:
               # Ensure openssl and ffmpeg are installed and configure environment variables for native crates
               run: |
                   # Install dependencies using Homebrew
-                  brew install openssl ffmpeg
+                  # Using ffmpeg@6 because ffmpeg 7 removed some headers (like avfft.h) required by ffmpeg-sys-next
+                  brew install openssl ffmpeg@6
+                  brew link ffmpeg@6
 
                   # Configure OpenSSL environment variables
                   OPENSSL_DIR=$(brew --prefix openssl)
-                  FFMPEG_DIR=$(brew --prefix ffmpeg)
+                  FFMPEG_DIR=$(brew --prefix ffmpeg@6)
                   echo "OPENSSL_INCLUDE_DIR=$OPENSSL_DIR/include" >> $GITHUB_ENV
                   echo "OPENSSL_LIB_DIR=$OPENSSL_DIR/lib" >> $GITHUB_ENV
 
