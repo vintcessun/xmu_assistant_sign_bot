@@ -145,6 +145,7 @@ jobs:
         runs-on: windows-latest
         env:
             VCPKG_ROOT: C:\vcpkg
+            LIBCLANG_PATH: 'C:\Program Files\LLVM\bin'
         strategy:
             fail-fast: false
             matrix:
