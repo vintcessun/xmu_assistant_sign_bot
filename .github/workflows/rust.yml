@@ -143,6 +143,8 @@ jobs:
     build-windows-msvc:
         name: Windows MSVC builds
         runs-on: windows-latest
+        env:
+            VCPKG_ROOT: C:\vcpkg
         strategy:
             fail-fast: false
             matrix:
@@ -170,8 +172,8 @@ jobs:
             - name: Install pkg-config and FFmpeg dependencies
               shell: powershell
               run: |
-                  # 1. Install pkgconfig using Chocolatey
-                  choco install pkgconfig --no-progress
+                  # 1. Install pkg-config-lite using Chocolatey
+                  choco install pkg-config-lite --no-progress
                   $env:Path += ";C:\ProgramData\chocolatey\bin"
                   echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
 
