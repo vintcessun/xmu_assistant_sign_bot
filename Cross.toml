@@ -23,10 +23,10 @@ pre-build = [
 env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/aarch64-linux-gnu/include" }
 
 [target.armv7-unknown-linux-gnueabihf]
-image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabihf:latest"
+image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabihf:edge"
 pre-build = [
     "dpkg --add-architecture armhf",
     "apt-get update",
-    "apt-get install -y pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libclang-dev",
+    "apt-get install -y pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libclang-dev libc6-dev-armhf-cross",
 ]
-env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/arm-linux-gnueabihf/include", CC_armv7_unknown_linux_gnueabihf = "arm-linux-gnueabihf-gcc", CFLAGS_armv7_unknown_linux_gnueabihf = "-march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard" }
+env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/arm-linux-gnueabihf/include" }
