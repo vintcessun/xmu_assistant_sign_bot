@@ -163,11 +163,28 @@ jobs:
                   Copy-Item src/api/llm/tool/config-template.rs src/api/llm/tool/config.rs
                   Copy-Item src/api/llm/chat/config-template.rs src/api/llm/chat/config.rs
 
-            - name: Install FFmpeg 7.1 via Action
-              id: setup-ffmpeg
-              uses: FedericoCarboni/setup-ffmpeg@v3
-              with:
-                  ffmpeg-version: 7.1.0
+            - name: Download and Install FFmpeg 7.1 Shared (BtbN)
+              shell: pwsh
+              run: |
+                  $TARGET = "${{ matrix.target }}"
+                  if ($TARGET -like "*aarch64*") {
+                    $URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-winarm64-gpl-shared-7.1.zip"
+                  } else {
+                    $URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-win64-gpl-shared-7.1.zip"
+                  }
+
+                  Write-Host "Downloading FFmpeg from $URL"
+                  Invoke-WebRequest -Uri $URL -OutFile ffmpeg.zip
+                  Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg_temp
+
+                  # 找到解压后的实际目录 (通常是 ffmpeg-n7.1-latest-win64-gpl-shared-7.1)
+                  $FFMPEG_EXTRACTED_DIR = Get-ChildItem -Path ffmpeg_temp -Directory | Select-Object -First 1
+                  if (Test-Path -Path "C:\ffmpeg") { Remove-Item -Recurse -Force "C:\ffmpeg" }
+                  Move-Item -Path $FFMPEG_EXTRACTED_DIR.FullName -Destination "C:\ffmpeg"
+
+                  # 将 bin 添加到 PATH 以便后续步骤可用
+                  "C:\ffmpeg\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+                  "FFMPEG_BIN_PATH=C:\ffmpeg\bin" | Out-File -FilePath $env:GITHUB_ENV -Append
 
             - name: Set up Rust
               uses: dtolnay/rust-toolchain@stable
@@ -183,45 +200,34 @@ jobs:
                   $UCRT_PATH = "C:\Program Files (x86)\Windows Kits\10\Include\$SDK_VERSION\ucrt"
 
                   # 2. Bindgen 参数
-                  # 只将 UCRT 路径传递给 bindgen
                   $CLANG_ARGS = "-I`"$UCRT_PATH`""
                   "BINDGEN_EXTRA_CLANG_ARGS=$CLANG_ARGS" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-                  # 3. 关键修复：强制禁用 avfft.h
-                  # 显式告诉 ffmpeg-sys-next 不要包含这个已删除的文件 (对于 FFmpeg 7.x)
-                  "FFMPEG_NO_AVFFT=1" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-                  # 4. 设置 FFMPEG_DIR 解决编译找不到 ffmpeg 库的问题
-                  # 根据 setup-ffmpeg 的 action.yml，输出参数为 ffmpeg-path
-                  $FFMPEG_BIN_PATH = "${{ steps.setup-ffmpeg.outputs.ffmpeg-path }}"
-
-                  # 递归列出目录结构以供调试
-                  Write-Host "Scanning FFmpeg installation directory structure..."
-                  Get-ChildItem -Path (Split-Path -Path $FFMPEG_BIN_PATH -Parent) -Recurse -Directory | Select-Object FullName
+                  # 4. 设置 FFMPEG_DIR
+                  $FFMPEG_BIN_PATH = "C:\ffmpeg\bin"
 
                   # 探测真正的 FFMPEG_DIR (必须是包含 include 和 lib 的根目录)
-                  # 优先检查 bin 目录同级是否存在 include
-                  $PROBE_INCLUDE = Get-ChildItem -Path (Split-Path -Path $FFMPEG_BIN_PATH -Parent) -Recurse -Filter "include" -Directory | Select-Object -First 1
-                  if ($PROBE_INCLUDE) {
-                      $FFMPEG_ROOT = Split-Path -Path $PROBE_INCLUDE.FullName -Parent
-                  } else {
-                      # 如果找不到 include 目录，回退到使用 ffmpeg-path 输出的目录
+                  $BIN_LEVEL_INCLUDE = Join-Path -Path $FFMPEG_BIN_PATH -ChildPath "include"
+                  $PARENT_LEVEL_INCLUDE = Join-Path -Path (Split-Path -Path $FFMPEG_BIN_PATH -Parent) -ChildPath "include"
+
+                  if (Test-Path -Path $BIN_LEVEL_INCLUDE) {
                       $FFMPEG_ROOT = $FFMPEG_BIN_PATH
+                  } elseif (Test-Path -Path $PARENT_LEVEL_INCLUDE) {
+                      $FFMPEG_ROOT = Split-Path -Path $FFMPEG_BIN_PATH -Parent
+                  } else {
+                      $FFMPEG_ROOT = "C:\ffmpeg"
                   }
 
-                  # 注入环境变量供 Rust 编译脚本使用
                   "FFMPEG_DIR=$FFMPEG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
 
                   # 针对 MSVC 编译器，显式添加 INCLUDE 和 LIB 路径
                   $FFMPEG_INCLUDE = Join-Path -Path $FFMPEG_ROOT -ChildPath "include"
                   $FFMPEG_LIB = Join-Path -Path $FFMPEG_ROOT -ChildPath "lib"
 
-                  # 确保环境变量被正确注入
                   if (Test-Path -Path $FFMPEG_INCLUDE) {
                       "INCLUDE=$env:INCLUDE;$FFMPEG_INCLUDE" | Out-File -FilePath $env:GITHUB_ENV -Append
                   }
                   if (Test-Path -Path $FFMPEG_LIB) {
-                      # 有些构建库文件在 lib 目录下，有些在 lib/x64 下，全部加入
                       $LIB_PATHS = @($FFMPEG_LIB)
                       $FFMPEG_LIB_X64 = Join-Path -Path $FFMPEG_LIB -ChildPath "x64"
                       if (Test-Path -Path $FFMPEG_LIB_X64) { $LIB_PATHS += $FFMPEG_LIB_X64 }
@@ -230,13 +236,11 @@ jobs:
                       "LIB=$NEW_LIB" | Out-File -FilePath $env:GITHUB_ENV -Append
                   }
 
-                  # 5. 允许跨平台编译（pkg-config 检查）
+                  # 5. 允许跨平台编译
                   "PKG_CONFIG_ALLOW_CROSS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
 
                   # 输出调试信息
-                  $INSTALLED_VERSION = "${{ steps.setup-ffmpeg.outputs.ffmpeg-version }}"
-                  Write-Host "FFmpeg version: $INSTALLED_VERSION"
-                  Write-Host "FFmpeg outputs bin path: $FFMPEG_BIN_PATH"
+                  Write-Host "FFmpeg bin path: $FFMPEG_BIN_PATH"
                   Write-Host "Detected FFMPEG_DIR: $FFMPEG_ROOT"
                   Write-Host "Detected include path: $FFMPEG_INCLUDE"
                   Write-Host "Detected lib path: $FFMPEG_LIB"
