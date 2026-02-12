@@ -179,9 +179,9 @@ jobs:
                   if ($TARGET -like "i686*") {
                       Write-Host "Target is i686. Starting minimal FFmpeg 7.1 compilation for Win32..."
                       
-                      # 1. 安装 MSYS2 编译工具
+                      # 1. 安装 MSYS2 编译工具和 MinGW GCC (为了修复 aws-lc-sys)
                       $MSYS2_PATH = "C:\msys64"
-                      & "$MSYS2_PATH\usr\bin\bash.exe" -lc "pacman -S --noconfirm nasm make pkgconf"
+                      & "$MSYS2_PATH\usr\bin\bash.exe" -lc "pacman -S --noconfirm nasm make pkgconf mingw-w64-i686-gcc"
 
                       # 2. 下载并解压 FFmpeg 源码
                       Invoke-WebRequest -Uri https://ffmpeg.org/releases/ffmpeg-7.1.tar.bz2 -OutFile ffmpeg.tar.bz2
@@ -301,10 +301,9 @@ jobs:
             - name: Build release binary
               run: cargo build --release --target ${{ matrix.target }} --verbose
               env:
-                  # 修复 i686 编译 aws-lc-sys 时的 C99 参数错误和汇编器问题
-                  CFLAGS: ${{ matrix.target == 'i686-pc-windows-msvc' && '/std:c11' || '' }}
-                  CMAKE_GENERATOR: "Visual Studio 17 2022"
-                  CMAKE_GENERATOR_PLATFORM: ${{ matrix.target == 'i686-pc-windows-msvc' && 'Win32' || 'x64' }}
+                  # 修复 i686 编译 aws-lc-sys 时的 C99 参数错误和汇编器问题 (仅针对 i686)
+                  AWS_LC_SYS_NO_ASM: ${{ matrix.target == 'i686-pc-windows-msvc' && '1' || '' }}
+                  CMAKE_GENERATOR_PLATFORM: ${{ matrix.target == 'i686-pc-windows-msvc' && 'Win32' || '' }}
                   RUSTFLAGS: >-
                       -C link-arg=-fuse-ld=lld-link 
                       ${{ contains(matrix.target, 'x86_64') && '-C target-cpu=x86-64-v3' || '' }}
