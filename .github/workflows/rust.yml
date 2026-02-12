@@ -223,34 +223,30 @@ jobs:
                   }
                   "BINDGEN_EXTRA_CLANG_ARGS=$CLANG_ARGS" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-                  # 4. 设置 FFmpeg 环境变量
-                  "FFMPEG_DIR=C:\ffmpeg" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  # 4. 设置 FFmpeg 相关路径 (直接使用 C:\ffmpeg 提升可靠性)
+                  $FFMPEG_ROOT = "C:\ffmpeg"
+                  $FFMPEG_BIN = "C:\ffmpeg\bin"
+                  $FFMPEG_LIB = "C:\ffmpeg\lib"
+
+                  "FFMPEG_DIR=$FFMPEG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
                   "FFMPEG_NO_AVFFT=1" | Out-File -FilePath $env:GITHUB_ENV -Append
 
                   # 5. 修复 INCLUDE 和 LIB 环境变量 (追加模式)
-                  $NEW_INCLUDE = "C:\ffmpeg\include"
-                  if ($MSVC_INCLUDE) { $NEW_INCLUDE += ";$MSVC_INCLUDE" }
-                  if ($env:INCLUDE) { $NEW_INCLUDE += ";$env:INCLUDE" }
-                  "INCLUDE=$NEW_INCLUDE" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  $CURRENT_INCLUDE = if ($env:INCLUDE) { $env:INCLUDE } else { "" }
+                  "INCLUDE=$FFMPEG_INC;$MSVC_INCLUDE;$CURRENT_INCLUDE" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-                  $NEW_LIB = "C:\ffmpeg\lib;C:\ffmpeg\lib\x64"
-                  if ($env:LIB) { $NEW_LIB += ";$env:LIB" }
-                  "LIB=$NEW_LIB" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-                  # 6. 其他标志
-                  "PKG_CONFIG_ALLOW_CROSS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-                  # 输出调试
-                  Write-Host "Final BINDGEN_EXTRA_CLANG_ARGS: $CLANG_ARGS"
+                  $LIB_PATHS = "C:\ffmpeg\lib;C:\ffmpeg\lib\x64"
+                  $CURRENT_LIB = if ($env:LIB) { $env:LIB } else { "" }
+                  "LIB=$LIB_PATHS;$CURRENT_LIB" | Out-File -FilePath $env:GITHUB_ENV -Append
 
                   # 6. 允许跨平台编译
                   "PKG_CONFIG_ALLOW_CROSS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
 
                   # 输出调试信息
-                  Write-Host "FFmpeg bin path: $FFMPEG_BIN_PATH"
-                  Write-Host "Detected FFMPEG_DIR: $FFMPEG_ROOT"
-                  Write-Host "Detected include path: $FFMPEG_INCLUDE"
-                  Write-Host "Detected lib path: $FFMPEG_LIB"
+                  Write-Host "FFmpeg root path: $FFMPEG_ROOT"
+                  Write-Host "FFmpeg bin path: $FFMPEG_BIN"
+                  Write-Host "FFmpeg include path: $FFMPEG_INC"
+                  Write-Host "FFmpeg lib path: $LIB_PATHS"
                   Write-Host "Set BINDGEN_EXTRA_CLANG_ARGS: $CLANG_ARGS"
 
             - name: Install Windows MSVC toolchain
