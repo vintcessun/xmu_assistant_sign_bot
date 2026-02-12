@@ -195,17 +195,18 @@ jobs:
                   # 根据 setup-ffmpeg 的 action.yml，输出参数为 ffmpeg-path
                   $FFMPEG_BIN_PATH = "${{ steps.setup-ffmpeg.outputs.ffmpeg-path }}"
 
-                  # 探测真正的 FFMPEG_DIR (必须是包含 include 和 lib 的根目录)
-                  $BIN_LEVEL_INCLUDE = Join-Path -Path $FFMPEG_BIN_PATH -ChildPath "include"
-                  $PARENT_LEVEL_INCLUDE = Join-Path -Path (Split-Path -Path $FFMPEG_BIN_PATH -Parent) -ChildPath "include"
+                  # 递归列出目录结构以供调试
+                  Write-Host "Scanning FFmpeg installation directory structure..."
+                  Get-ChildItem -Path (Split-Path -Path $FFMPEG_BIN_PATH -Parent) -Recurse -Directory | Select-Object FullName
 
-                  if (Test-Path -Path $BIN_LEVEL_INCLUDE) {
-                      $FFMPEG_ROOT = $FFMPEG_BIN_PATH
-                  } elseif (Test-Path -Path $PARENT_LEVEL_INCLUDE) {
-                      $FFMPEG_ROOT = Split-Path -Path $FFMPEG_BIN_PATH -Parent
+                  # 探测真正的 FFMPEG_DIR (必须是包含 include 和 lib 的根目录)
+                  # 优先检查 bin 目录同级是否存在 include
+                  $PROBE_INCLUDE = Get-ChildItem -Path (Split-Path -Path $FFMPEG_BIN_PATH -Parent) -Recurse -Filter "include" -Directory | Select-Object -First 1
+                  if ($PROBE_INCLUDE) {
+                      $FFMPEG_ROOT = Split-Path -Path $PROBE_INCLUDE.FullName -Parent
                   } else {
-                      # 如果都没找到，默认使用父目录（最常见的情况）
-                      $FFMPEG_ROOT = Split-Path -Path $FFMPEG_BIN_PATH -Parent
+                      # 如果找不到 include 目录，回退到使用 ffmpeg-path 输出的目录
+                      $FFMPEG_ROOT = $FFMPEG_BIN_PATH
                   }
 
                   # 注入环境变量供 Rust 编译脚本使用
@@ -235,13 +236,12 @@ jobs:
                   # 输出调试信息
                   $INSTALLED_VERSION = "${{ steps.setup-ffmpeg.outputs.ffmpeg-version }}"
                   Write-Host "FFmpeg version: $INSTALLED_VERSION"
-                  Write-Host "FFmpeg bin path: $FFMPEG_BIN_PATH"
-                  Write-Host "FFmpeg root path: $FFMPEG_ROOT"
-                  if (Test-Path -Path $FFMPEG_INCLUDE) { Write-Host "FFmpeg include path: $FFMPEG_INCLUDE" }
-                  if (Test-Path -Path $FFMPEG_LIB) { Write-Host "FFmpeg lib path: $FFMPEG_LIB" }
+                  Write-Host "FFmpeg outputs bin path: $FFMPEG_BIN_PATH"
+                  Write-Host "Detected FFMPEG_DIR: $FFMPEG_ROOT"
+                  Write-Host "Detected include path: $FFMPEG_INCLUDE"
+                  Write-Host "Detected lib path: $FFMPEG_LIB"
                   Write-Host "Set BINDGEN_EXTRA_CLANG_ARGS: $CLANG_ARGS"
                   Write-Host "Set FFMPEG_NO_AVFFT=1"
-                  Write-Host "Set FFMPEG_DIR: $FFMPEG_ROOT"
 
             - name: Install Windows MSVC toolchain
               run: |
