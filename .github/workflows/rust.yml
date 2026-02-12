@@ -164,6 +164,7 @@ jobs:
                   Copy-Item src/api/llm/chat/config-template.rs src/api/llm/chat/config.rs
 
             - name: Install FFmpeg 7.1 via Action
+              id: setup-ffmpeg
               uses: FedericoCarboni/setup-ffmpeg@v3
               with:
                   ffmpeg-version: 7.1.0
@@ -191,13 +192,24 @@ jobs:
                   "FFMPEG_NO_AVFFT=1" | Out-File -FilePath $env:GITHUB_ENV -Append
 
                   # 4. 设置 FFMPEG_DIR 解决编译找不到 ffmpeg 库的问题
-                  # setup-ffmpeg 默认将 FFmpeg 安装在 $env:FFMPEG_PATH 所在的目录
-                  $FFMPEG_ROOT = Split-Path -Path $env:FFMPEG_PATH -Parent
+                  # 根据 setup-ffmpeg 的 action.yml，输出参数为 ffmpeg-path
+                  $FFMPEG_BIN_PATH = "${{ steps.setup-ffmpeg.outputs.ffmpeg-path }}"
+
+                  # ffmpeg-path 指向包含二进制文件的目录（例如 .../bin）
+                  # 对于 ffmpeg-sys-next 编译，通常需要指向包含 include/lib 的根目录
+                  $FFMPEG_ROOT = Split-Path -Path $FFMPEG_BIN_PATH -Parent
+
+                  # 注入环境变量供 Rust 编译脚本使用
                   "FFMPEG_DIR=$FFMPEG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
 
                   # 5. 允许跨平台编译（pkg-config 检查）
                   "PKG_CONFIG_ALLOW_CROSS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
 
+                  # 输出调试信息
+                  $INSTALLED_VERSION = "${{ steps.setup-ffmpeg.outputs.ffmpeg-version }}"
+                  Write-Host "FFmpeg version: $INSTALLED_VERSION"
+                  Write-Host "FFmpeg bin path: $FFMPEG_BIN_PATH"
+                  Write-Host "FFmpeg root path: $FFMPEG_ROOT"
                   Write-Host "Set BINDGEN_EXTRA_CLANG_ARGS: $CLANG_ARGS"
                   Write-Host "Set FFMPEG_NO_AVFFT=1"
                   Write-Host "Set FFMPEG_DIR: $FFMPEG_ROOT"
