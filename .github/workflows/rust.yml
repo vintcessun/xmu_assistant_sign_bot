@@ -316,6 +316,9 @@ jobs:
               env:
                   # 恢复干净的编译环境
                   CMAKE_GENERATOR_PLATFORM: ${{ matrix.target == 'i686-pc-windows-msvc' && 'Win32' || '' }}
+                  # 强制修复 aws-lc-sys/cc-rs 在 i686 MSVC 下错误使用 -std:c99 的问题
+                  CMAKE_C_FLAGS: ${{ matrix.target == 'i686-pc-windows-msvc' && '/std:c99' || '' }}
+                  CMAKE_CXX_FLAGS: ${{ matrix.target == 'i686-pc-windows-msvc' && '/std:c99' || '' }}
                   RUSTFLAGS: >-
                       -C link-arg=-fuse-ld=lld-link 
                       ${{ contains(matrix.target, 'x86_64') && '-C target-cpu=x86-64-v3' || '' }}
