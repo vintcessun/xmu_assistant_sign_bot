@@ -203,28 +203,45 @@ jobs:
                   New-Item -ItemType Directory -Path "C:\ffmpeg"
 
                   if ($TARGET -like "i686*") {
-                    # 1. 创建临时工具目录
+                    # 1. 创建临时工具目录并准备 MSVC 环境
                     $TEMP_TOOLS = "C:\temp_tools"
                     New-Item -ItemType Directory -Path $TEMP_TOOLS -Force
-                        
-                    # 2. 备份当前的 PATH，以便稍后还原
-                    $ORIGINAL_PATH = $env:PATH
+                    
+                    # 导入 32 位 MSVC 环境变量
+                    $VS_INSTALL_DIR = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+                    $VCVARS = "$VS_INSTALL_DIR\VC\Auxiliary\Build\vcvars32.bat"
+                    $tmpFile = New-TemporaryFile
+                    cmd /c "`"$VCVARS`" && set" > $tmpFile
+                    Get-Content $tmpFile | ForEach-Object {
+                        if ($_ -match "^(.*?)=(.*)$") {
+                            $name = $matches[1]
+                            $value = $matches[2]
+                            if ($name -ieq "PATH") { $env:PATH = $value }
+                            else { [System.Environment]::SetEnvironmentVariable($name, $value, "Process") }
+                        }
+                    }
+                    Remove-Item $tmpFile
 
-                    # 3. 在 MSYS2 内部进行编译 (保持隔离)
+                    # 2. 在 MSYS2 内部安装工具
                     $MSYS2_PATH = "C:\msys64"
-                    # 仅在编译期间安装工具，编译完后我们不把这些路径永久存入 GITHUB_PATH
-                    & "$MSYS2_PATH\usr\bin\bash.exe" -lc "pacman -S --noconfirm nasm make pkgconf mingw-w64-i686-gcc"
+                    # 设置 MSYS2 继承父进程环境，确保能找到 cl.exe
+                    $env:MSYS2_PATH_TYPE = "inherit"
+                    & "$MSYS2_PATH\usr\bin\bash.exe" -lc "pacman -S --noconfirm nasm make pkgconf"
 
-                    # 4. 执行 FFmpeg 编译
+                    # 3. 下载并编译 FFmpeg
                     Invoke-WebRequest -Uri https://ffmpeg.org/releases/ffmpeg-7.1.tar.bz2 -OutFile ffmpeg.tar.bz2
                     tar -xf ffmpeg.tar.bz2
                     Set-Location ffmpeg-7.1
-                        
-                    $env:MSYS2_PATH_TYPE = "inherit"
-                    $CONFIG_ARGS = "--arch=x86 --target-os=win32 --toolchain=msvc --enable-shared --disable-static --disable-programs --disable-doc"
-                    & "$MSYS2_PATH\usr\bin\bash.exe" -lc "cd `"$PWD`" && ./configure $CONFIG_ARGS && make -j$(nproc)"
+                    
+                    # 修正 cl.exe 无法创建可执行文件的问题：显式指定 CC/CXX
+                    $CONFIG_ARGS = "--arch=x86 --target-os=win32 --toolchain=msvc --enable-shared --disable-static --disable-programs --disable-doc --cc=cl --cxx=cl"
+                    & "$MSYS2_PATH\usr\bin\bash.exe" -lc "cd `"$PWD`" && ./configure $CONFIG_ARGS && make -j$env:NUMBER_OF_PROCESSORS"
 
-                        # 5. 提取产物到最终目录
+                    # 4. 卸载临时工具
+                    & "$MSYS2_PATH\usr\bin\bash.exe" -lc "pacman -Rs --noconfirm nasm make pkgconf"
+                    Remove-Item -Recurse -Force $TEMP_TOOLS
+
+                    # 5. 提取产物到最终目录
                     New-Item -ItemType Directory -Path "C:\ffmpeg\lib" -Force
                     New-Item -ItemType Directory -Path "C:\ffmpeg\include" -Force
                     New-Item -ItemType Directory -Path "C:\ffmpeg\bin" -Force
@@ -236,7 +253,7 @@ jobs:
                     Set-Location ..
                     Remove-Item -Recurse -Force ffmpeg-7.1
                     Remove-Item -Force ffmpeg.tar.bz2
-                        
+                    
                     # 还原环境变量，确保 aws-lc-sys 编译时看不到 MSYS2
                     $env:PATH = $ORIGINAL_PATH
                     $env:MSYS2_PATH_TYPE = $null
