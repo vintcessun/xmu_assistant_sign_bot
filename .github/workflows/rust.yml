@@ -195,13 +195,16 @@ jobs:
                   # 根据 setup-ffmpeg 的 action.yml，输出参数为 ffmpeg-path
                   $FFMPEG_BIN_PATH = "${{ steps.setup-ffmpeg.outputs.ffmpeg-path }}"
 
-                  # 探测真正的 FFMPEG_DIR (包含 include/lib 的目录)
-                  # 优先检查 bin 目录同级是否存在 include
-                  $PROBE_INCLUDE = Join-Path -Path $FFMPEG_BIN_PATH -ChildPath "include"
-                  if (Test-Path -Path $PROBE_INCLUDE) {
+                  # 探测真正的 FFMPEG_DIR (必须是包含 include 和 lib 的根目录)
+                  $BIN_LEVEL_INCLUDE = Join-Path -Path $FFMPEG_BIN_PATH -ChildPath "include"
+                  $PARENT_LEVEL_INCLUDE = Join-Path -Path (Split-Path -Path $FFMPEG_BIN_PATH -Parent) -ChildPath "include"
+
+                  if (Test-Path -Path $BIN_LEVEL_INCLUDE) {
                       $FFMPEG_ROOT = $FFMPEG_BIN_PATH
+                  } elseif (Test-Path -Path $PARENT_LEVEL_INCLUDE) {
+                      $FFMPEG_ROOT = Split-Path -Path $FFMPEG_BIN_PATH -Parent
                   } else {
-                      # 否则检查上一级目录
+                      # 如果都没找到，默认使用父目录（最常见的情况）
                       $FFMPEG_ROOT = Split-Path -Path $FFMPEG_BIN_PATH -Parent
                   }
 
@@ -212,11 +215,12 @@ jobs:
                   $FFMPEG_INCLUDE = Join-Path -Path $FFMPEG_ROOT -ChildPath "include"
                   $FFMPEG_LIB = Join-Path -Path $FFMPEG_ROOT -ChildPath "lib"
 
+                  # 确保环境变量被正确注入
                   if (Test-Path -Path $FFMPEG_INCLUDE) {
                       "INCLUDE=$env:INCLUDE;$FFMPEG_INCLUDE" | Out-File -FilePath $env:GITHUB_ENV -Append
                   }
                   if (Test-Path -Path $FFMPEG_LIB) {
-                      # 同时添加 $FFMPEG_LIB 和可能的 $FFMPEG_LIB/x64
+                      # 有些构建库文件在 lib 目录下，有些在 lib/x64 下，全部加入
                       $LIB_PATHS = @($FFMPEG_LIB)
                       $FFMPEG_LIB_X64 = Join-Path -Path $FFMPEG_LIB -ChildPath "x64"
                       if (Test-Path -Path $FFMPEG_LIB_X64) { $LIB_PATHS += $FFMPEG_LIB_X64 }
@@ -233,6 +237,8 @@ jobs:
                   Write-Host "FFmpeg version: $INSTALLED_VERSION"
                   Write-Host "FFmpeg bin path: $FFMPEG_BIN_PATH"
                   Write-Host "FFmpeg root path: $FFMPEG_ROOT"
+                  if (Test-Path -Path $FFMPEG_INCLUDE) { Write-Host "FFmpeg include path: $FFMPEG_INCLUDE" }
+                  if (Test-Path -Path $FFMPEG_LIB) { Write-Host "FFmpeg lib path: $FFMPEG_LIB" }
                   Write-Host "Set BINDGEN_EXTRA_CLANG_ARGS: $CLANG_ARGS"
                   Write-Host "Set FFMPEG_NO_AVFFT=1"
                   Write-Host "Set FFMPEG_DIR: $FFMPEG_ROOT"
