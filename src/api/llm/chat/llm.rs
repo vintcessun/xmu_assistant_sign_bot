@@ -1,12 +1,15 @@
 use super::config::MODEL_MAP;
 use crate::api::llm::{
-    chat::file::LlmFile,
+    chat::{
+        file::LlmFile,
+        tool::{get_tools, handle_tool},
+    },
     tool::{LlmPrompt, LlmVec, ask_as},
 };
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use genai::{
     Client, ModelIden, ServiceTarget,
-    chat::{Binary, ChatMessage, ChatResponse, ContentPart},
+    chat::{Binary, ChatMessage, ChatOptions, ChatRequest, ChatResponse, ContentPart},
     resolver::{AuthData, AuthResolver, Endpoint, ServiceTargetResolver},
 };
 use helper::LlmPrompt;
@@ -28,7 +31,7 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
         if let Some(cfg) = config {
             // 优先读取环境变量
             if let Ok(key) = std::env::var(cfg.api_key_env) {
-                info!(
+                debug!(
                     model_kind = %model_id.adapter_kind,
                     env_var = %cfg.api_key_env,
                     "已通过环境变量加载 LLM API Key"
@@ -37,7 +40,7 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
             }
             // 兼容明文 sk- 写入
             if cfg.api_key_env.starts_with("sk-") {
-                info!(
+                debug!(
                     api_key_env = %cfg.api_key_env,
                     "成功从硬编码配置加载 API 密钥"
                 );
@@ -186,16 +189,44 @@ pub async fn get_chat_embedding(messages: Vec<ChatMessage>) -> Result<Vec<f32>> 
 
 pub async fn ask_llm(chat_message: Vec<ChatMessage>) -> Result<ChatResponse> {
     debug!(messages_count = ?chat_message.len(), model = %CHAT_MODEL, "向 LLM 发送聊天请求");
-    let chat_req = genai::chat::ChatRequest::new(chat_message);
-    let res = CLIENT
-        .exec_chat(CHAT_MODEL, chat_req, None)
-        .await
-        .map_err(|e| {
-            error!(error = ?e, "LLM 聊天请求失败");
-            e
-        })?;
-    info!(model = %CHAT_MODEL, "LLM 聊天请求成功");
-    Ok(res)
+    let tools = get_tools();
+    let options = ChatOptions::default().with_capture_tool_calls(true);
+    let mut chat_req = ChatRequest::new(chat_message).with_tools(tools);
+    for _ in 0..10 {
+        #[cfg(test)]
+        println!("发送聊天请求: {:?}", chat_req);
+        let res = CLIENT
+            .exec_chat(CHAT_MODEL, chat_req.clone(), Some(&options))
+            .await
+            .map_err(|e| {
+                error!(error = ?e, "LLM 聊天请求失败");
+                e
+            })?;
+        debug!(model = %CHAT_MODEL, "LLM 聊天请求成功");
+        if res.tool_calls().is_empty() {
+            return Ok(res);
+        } else {
+            let tool_calls = res.into_tool_calls();
+            #[cfg(test)]
+            println!("工具调用请求: {:?}", tool_calls);
+
+            info!(tool_calls_count = ?tool_calls.len(), "LLM 返回了工具调用请求，准备处理工具调用");
+            chat_req = chat_req.append_message(ChatMessage::assistant(
+                tool_calls
+                    .iter()
+                    .map(|t| ContentPart::ToolCall(t.clone()))
+                    .collect::<Vec<_>>(),
+            ));
+            for tool in tool_calls {
+                debug!(fn_name = %tool.fn_name, "LLM 请求调用工具");
+                let res_tool = handle_tool(tool).await;
+                #[cfg(test)]
+                println!("工具调用结果: {:?}", res_tool);
+                chat_req = chat_req.append_message(res_tool);
+            }
+        }
+    }
+    bail!("调用次数太多，可能存在死循环");
 }
 
 #[cfg(test)]
@@ -218,6 +249,16 @@ mod tests {
         .await?;
         let file = file.embedded().await?;
         println!("File embedding result: {:?}", file);
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_chat_tool() -> Result<()> {
+        let messages = vec![ChatMessage::user(
+            "调用工具并使用 Python 计算斐波那契数列的第10个数字",
+        )];
+        let ret = ask_llm(messages).await?;
+        println!("Chat tool test result: {:?}", ret);
         Ok(())
     }
 }

@@ -18,8 +18,9 @@ const MAX_REDIRECTS: u8 = 20;
 static GLOBAL_CLIENT: LazyLock<Client> = LazyLock::new(|| {
     info!("初始化全局 Reqwest HTTP 客户端");
     Client::builder()
-        .tcp_keepalive(std::time::Duration::from_secs(60))
+        .tcp_keepalive(std::time::Duration::from_secs(3600))
         .redirect(reqwest::redirect::Policy::none()) // 必须手动处理重定向，才能跨请求同步 Cookie
+        .pool_max_idle_per_host(100)
         .build()
         .unwrap_or_else(|e| {
             error!(error = ?e, "初始化全局 Reqwest HTTP 客户端失败");

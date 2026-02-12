@@ -41,6 +41,10 @@ jobs:
 
             - name: Build release binary using cross
               run: cross build --release --target ${{ matrix.target }} --verbose
+              env:
+                  # Override .cargo/config.toml to prevent host-specific flags (like target-cpu=native)
+                  # from being leaked into the cross-compilation environment.
+                  RUSTFLAGS: ""
 
             - name: Rename artifact
               shell: bash
@@ -87,8 +91,8 @@ jobs:
             - name: Install Dependencies
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y mold clang pkg-config libssl-dev
-
+                  # Install dependencies for openssl and ffmpeg (via video-rs)
+                  sudo apt-get install -y mold clang pkg-config libssl-dev libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libavfilter-dev libswresample-dev libswscale-dev
             - name: Set up Rust
               uses: dtolnay/rust-toolchain@stable
               with:
@@ -139,6 +143,8 @@ jobs:
     build-windows-msvc:
         name: Windows MSVC builds
         runs-on: windows-latest
+        env:
+            VCPKG_ROOT: C:\vcpkg
         strategy:
             fail-fast: false
             matrix:
@@ -157,11 +163,35 @@ jobs:
                   Copy-Item src/api/llm/tool/config-template.rs src/api/llm/tool/config.rs
                   Copy-Item src/api/llm/chat/config-template.rs src/api/llm/chat/config.rs
 
+            - name: Install FFmpeg 7.1 via Action
+              uses: FedericoCarboni/setup-ffmpeg@v3
+              with:
+                  ffmpeg-version: 7.1.0
+
             - name: Set up Rust
               uses: dtolnay/rust-toolchain@stable
               with:
                   targets: ${{ matrix.target }}
                   components: rustfmt, clippy
+
+            - name: Configure environment variables for build
+              shell: pwsh
+              run: |
+                  # 1. 获取 Windows SDK UCRT 路径 (解决 bindgen 找不到 errno.h 的问题)
+                  $SDK_VERSION = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Include").Name | Sort-Object -Descending | Select-Object -First 1
+                  $UCRT_PATH = "C:\Program Files (x86)\Windows Kits\10\Include\$SDK_VERSION\ucrt"
+
+                  # 2. Bindgen 参数
+                  # 只将 UCRT 路径传递给 bindgen
+                  $CLANG_ARGS = "-I`"$UCRT_PATH`""
+                  "BINDGEN_EXTRA_CLANG_ARGS=$CLANG_ARGS" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+                  # 3. 关键修复：强制禁用 avfft.h
+                  # 显式告诉 ffmpeg-sys-next 不要包含这个已删除的文件 (对于 FFmpeg 7.x)
+                  "FFMPEG_NO_AVFFT=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+                  Write-Host "Set BINDGEN_EXTRA_CLANG_ARGS: $CLANG_ARGS"
+                  Write-Host "Set FFMPEG_NO_AVFFT=1"
 
             - name: Install Windows MSVC toolchain
               run: |
@@ -203,7 +233,7 @@ jobs:
     # macOS builds (using macOS runner)
     build-macos:
         name: macOS builds
-        runs-on: macos-latest
+        runs-on: ${{ matrix.target == 'x86_64-apple-darwin' && 'macos-15-intel' || 'macos-latest' }}
         strategy:
             fail-fast: false
             matrix:
@@ -227,20 +257,33 @@ jobs:
               run: rustup target add ${{ matrix.target }}
 
             - name: Install and configure dependencies for native crates
-              # Ensure openssl is installed and configure environment variables for native crates
+              # Ensure openssl and ffmpeg are installed and configure environment variables for native crates
               run: |
-                  # Check if openssl is installed before attempting installation to avoid warnings about already being installed.
-                  if ! brew list openssl &>/dev/null; then
-                      brew install openssl
-                  fi
+                  # Install dependencies using Homebrew
+                  # Using ffmpeg@6 because ffmpeg 7 removed some headers (like avfft.h) required by ffmpeg-sys-next
+                  brew install openssl ffmpeg@6
+                  brew link ffmpeg@6
+
+                  # Configure OpenSSL environment variables
                   OPENSSL_DIR=$(brew --prefix openssl)
+                  FFMPEG_DIR=$(brew --prefix ffmpeg@6)
                   echo "OPENSSL_INCLUDE_DIR=$OPENSSL_DIR/include" >> $GITHUB_ENV
                   echo "OPENSSL_LIB_DIR=$OPENSSL_DIR/lib" >> $GITHUB_ENV
-                  echo "PKG_CONFIG_PATH=$OPENSSL_DIR/lib/pkgconfig" >> $GITHUB_ENV
 
+                  # Configure PKG_CONFIG_PATH to include OpenSSL and FFmpeg paths
+                  FFMPEG_PC_PATH=$FFMPEG_DIR/lib/pkgconfig
+                  OPENSSL_PC_PATH=$OPENSSL_DIR/lib/pkgconfig
+
+                  # Set PKG_CONFIG_PATH. Explicitly setting it should help with cross-compilation issues.
+                  echo "PKG_CONFIG_PATH=$OPENSSL_PC_PATH:$FFMPEG_PC_PATH" >> $GITHUB_ENV
+
+                  # Set CPATH and LIBRARY_PATH for clang and linker
+                  echo "CPATH=$FFMPEG_DIR/include:$OPENSSL_DIR/include" >> $GITHUB_ENV
+                  echo "LIBRARY_PATH=$FFMPEG_DIR/lib:$OPENSSL_DIR/lib" >> $GITHUB_ENV
             - name: Build release binary
               run: cargo build --release --target ${{ matrix.target }} --verbose
               env:
+                  PKG_CONFIG_ALLOW_CROSS: 1
                   RUSTFLAGS: >-
                       ${{ matrix.target == 'aarch64-apple-darwin' && '-C target-cpu=apple-m1' || '-C target-cpu=x86-64-v3' }}
 

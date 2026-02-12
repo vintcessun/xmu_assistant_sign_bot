@@ -14,7 +14,7 @@ use crate::{
                 llm::ask_llm,
                 repeat::reply::MessageAbstract,
             },
-            tool::{LlmBool, LlmOption, LlmPrompt, ask_as},
+            tool::{LlmBool, LlmOption, LlmPrompt, LlmVec, ask_as},
         },
         storage::ColdTable,
     },
@@ -108,7 +108,7 @@ pub struct AuditLlmResponse {
     #[prompt("如果该回答具有惩罚性，请描述该回复触犯群聊潜规则的具体原因是什么？")]
     pub bad_reason: LlmOption<String>,
     #[prompt("如果该回答具有惩罚性，请给出改进建议，帮助 Bot 更好地融入群聊氛围，请用换行符分割每个建议")]
-    pub suggestions: LlmOption<String>,
+    pub suggestions: LlmOption<LlmVec<String>>,
 }
 
 impl AuditTask {
@@ -245,7 +245,7 @@ impl AuditTask {
             if let Some(fast_key) = &task.fast_key {
                 let bad_detail = audit_data.bad_detail.clone().unwrap_or_default();
                 let bad_reason = audit_data.bad_reason.clone().unwrap_or_default();
-                let suggestions = audit_data.suggestions.clone().unwrap_or_default().lines().map(|s| s.to_string()).collect::<Vec<_>>();
+                let suggestions = audit_data.suggestions.clone().unwrap_or_default().into_iter().map(|s| s.to_string()).collect::<Vec<_>>();
                 let entry = Arc::new(BlacklistEntry {
                     bad_detail,
                     bad_reason,
@@ -261,7 +261,7 @@ impl AuditTask {
             } else if let Some(search_key) = &task.search_key {
                 let bad_detail = audit_data.bad_detail.clone().unwrap_or_default();
                 let bad_reason = audit_data.bad_reason.clone().unwrap_or_default();
-                let suggestions = audit_data.suggestions.clone().unwrap_or_default().lines().map(|s| s.to_string()).collect::<Vec<_>>();
+                let suggestions = audit_data.suggestions.clone().unwrap_or_default().into_iter().map(|s| s.to_string()).collect::<Vec<_>>();
                 let entry = Arc::new(BlacklistEntry {
                     bad_detail,
                     bad_reason,

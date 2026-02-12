@@ -1,14 +1,18 @@
+use std::sync::LazyLock;
+
 use crate::abi::utils::SmartJsonExt;
+use chrono::{DateTime, FixedOffset, Utc};
 use helper::lnt_get_api;
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Exam {
     pub title: String,
     pub id: i64,
     pub is_started: bool,
-    pub start_time: String,
-    pub end_time: String,
+    pub start_time: DateTime<Utc>,
+    pub end_time: DateTime<Utc>,
     //pub announce_answer_status:IgnoredAny,
     //pub announce_answer_time: IgnoredAny,
     //pub announce_answer_type: IgnoredAny,
@@ -86,6 +90,21 @@ pub struct ExamResponse {
 )]
 pub struct Exams;
 
+static BEIJING_OFFSET: LazyLock<FixedOffset> = LazyLock::new(|| {
+    FixedOffset::east_opt(8 * 3600).unwrap_or_else(|| {
+        error!("无法创建北京时间偏移");
+        panic!("无法创建北京时间偏移")
+    })
+});
+
+impl Exams {
+    pub fn to_beijing_date(time: &DateTime<Utc>) -> String {
+        time.with_timezone(&*BEIJING_OFFSET)
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::api::xmu_service::login::castgc_get_session;
@@ -95,7 +114,7 @@ mod tests {
 
     #[tokio::test]
     async fn test() -> Result<()> {
-        let castgc = "TGT-2573461-NzJdqBAiUk7XIiX4bM-zAKMKJ-BVKIworT50c1XW-Ot904sgTtAJAF3trrQr56QGraInull_main";
+        let castgc = "TGT-4217253-xbc8sI9hkW3Zy7mhq0FpB8NVfFIjmHobl3I7AUfadKSYerFmOpRsPpwAdjSVuI1V--0null_main";
         let session = castgc_get_session(castgc).await?;
         let data = Exams::get(&session, 78180).await?;
         println!("Exams: {:?}", data);

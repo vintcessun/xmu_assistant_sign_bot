@@ -1,26 +1,32 @@
 [target.x86_64-unknown-linux-gnu]
 pre-build = [
     "apt-get update",
-    "apt-get install -y pkg-config libssl-dev mold clang",
+    "apt-get install -y pkg-config libssl-dev mold clang libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libavfilter-dev libswresample-dev libswscale-dev libc6-dev",
 ]
 
 [target.i686-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/i686-unknown-linux-gnu:edge"
 pre-build = [
     "dpkg --add-architecture i386",
     "apt-get update",
-    "apt-get install -y pkg-config libssl-dev:i386",
+    "apt-get install -y pkg-config libssl-dev:i386 libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 libavdevice-dev:i386 libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386 libc6-dev:i386 clang libclang-dev",
 ]
+env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/i686-linux-gnu/include" }
 
 [target.aarch64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:edge"
 pre-build = [
     "dpkg --add-architecture arm64",
     "apt-get update",
-    "apt-get install -y pkg-config libssl-dev:arm64",
+    "apt-get install -y pkg-config libssl-dev:arm64 libavcodec-dev:arm64 libavformat-dev:arm64 libavutil-dev:arm64 libavdevice-dev:arm64 libavfilter-dev:arm64 libswresample-dev:arm64 libswscale-dev:arm64 libc6-dev:arm64 clang libclang-dev",
 ]
+env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/aarch64-linux-gnu/include" }
 
 [target.armv7-unknown-linux-gnueabihf]
+image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabihf:edge"
 pre-build = [
     "dpkg --add-architecture armhf",
     "apt-get update",
-    "apt-get install -y pkg-config libssl-dev:armhf",
+    "apt-get install -y pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libclang-dev libc6-dev-armhf-cross",
 ]
+env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/arm-linux-gnueabihf/include" }

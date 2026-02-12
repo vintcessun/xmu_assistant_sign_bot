@@ -59,7 +59,7 @@ mime_guess = "2.0.5"
 futures = "0.3.31"
 uuid = { version = "1.19.0", features = ["serde", "v4"] }
 tokio-util = "0.7.18"
-genai = "0.5.0"
+genai = { git = "https://github.com/vintcessun/rust-genai", branch = "main" }
 quick-xml = { version = "0.38.4", features = ["serde", "serialize", "tokio"] }
 phf = "0.13.1"
 sha2 = "0.10.9"
@@ -71,10 +71,14 @@ base64 = "0.22.1"
 pulldown-cmark = "0.11.0"
 headless_chrome = "1.0.20"
 urlencoding = "2.1.3"
-chrono = "0.4.43"
+chrono = { version = "0.4.43", features = ["serde"] }
 derive_more = { version = "2.1.1", features = ["from"] }
 infer = "0.19.0"
 video-rs = { version = "0.10.5", features = ["ndarray"] }
+searxng-client = "0.1.0"
+monty = { git = "https://github.com/pydantic/monty", branch = "main" }
+ordered-float = { version = "5.1.0", features = ["serde"] }
+schemars = "1.2.1"
 
 [build-dependencies]
 base64 = "0.22.1"

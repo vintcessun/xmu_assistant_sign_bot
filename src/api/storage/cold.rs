@@ -39,10 +39,29 @@ where
     V: Serialize + DeserializeOwned + Send + Sync + 'static,
 {
     pub fn new(table_name: &'static str) -> Self {
-        Self {
+        let ret = Self {
             table_name,
             _phantom: std::marker::PhantomData,
+        };
+        if let Err(e) = ret.ensure_table() {
+            warn!(table = table_name, error = ?e, "Cold 存储确保表存在失败");
         }
+        ret
+    }
+
+    fn ensure_table(&self) -> Result<()> {
+        let table_name = self.table_name;
+        let db = &COLD_ENGINE;
+        let txn = db.begin_write().map_err(|e| {
+            error!(table = table_name, error = ?e, "Cold 存储开启写事务失败");
+            e
+        })?;
+        let definition: TableDefinition<&[u8], &[u8]> = TableDefinition::new(table_name);
+        let _table = txn.open_table(definition).map_err(|e| {
+            error!(table = table_name, error = ?e, "Cold 存储打开表失败");
+            e
+        })?;
+        Ok(())
     }
 
     /// 异步插入：不阻塞主事件循环，保证磁盘同步性

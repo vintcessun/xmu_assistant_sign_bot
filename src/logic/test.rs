@@ -48,7 +48,11 @@ pub async fn test(ctx: Context) -> Result<()> {
 小测结束时间: {}
 小测是否开始: {}
 小测ID: {}"#,
-            exam.title, exam.start_time, exam.end_time, exam.is_started, exam.id
+            exam.title,
+            Exams::to_beijing_date(&exam.start_time),
+            Exams::to_beijing_date(&exam.end_time),
+            exam.is_started,
+            exam.id
         )));
     }
 

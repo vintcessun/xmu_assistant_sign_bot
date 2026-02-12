@@ -59,11 +59,15 @@ where
 
         // 从 redb 读取所有数据
         let all_records = kv_table.get_all().unwrap_or_else(|e| {
-            error!(table_name = table_name, error = ?e, "从 ColdTable 读取所有记录失败，返回空集");
+            debug!(table_name = table_name, error = ?e, "从 ColdTable 读取所有记录失败，返回空集");
             Vec::new()
         });
 
-        info!(count = all_records.len(), "正在重建向量索引");
+        info!(
+            table_name = table_name,
+            count = all_records.len(),
+            "正在重建向量索引"
+        );
 
         let (index, id_map) = Self::build_index_sync(all_records);
 

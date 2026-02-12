@@ -1,9 +1,8 @@
+use crate::api::llm::tool::LlmPrompt;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::ops::{Deref, DerefMut};
 
-use crate::api::llm::tool::LlmPrompt;
-
-#[derive(Debug, Clone, Copy, Serialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[serde(transparent)]
 pub struct LlmBool(pub bool);
 
@@ -28,6 +27,12 @@ impl From<bool> for LlmBool {
 
 impl From<LlmBool> for bool {
     fn from(lb: LlmBool) -> Self {
+        lb.0
+    }
+}
+
+impl From<&LlmBool> for bool {
+    fn from(lb: &LlmBool) -> Self {
         lb.0
     }
 }
