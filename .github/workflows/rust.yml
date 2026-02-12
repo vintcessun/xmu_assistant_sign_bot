@@ -203,38 +203,44 @@ jobs:
                   New-Item -ItemType Directory -Path "C:\ffmpeg"
 
                   if ($TARGET -like "i686*") {
-                      Write-Host "Target is i686. Starting minimal FFmpeg 7.1 compilation for Win32..."
-                      
-                      # 1. 局部配置 MSVC 32 位环境用于 FFmpeg 编译
-                      # 我们不使用全局 action 而是直接在脚本中临时调用，防止环境污染
-                      $MSVC_ENV_CMD = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
-                      $MSVC_ENV_CMD = Join-Path $MSVC_ENV_CMD "VC\Auxiliary\Build\vcvars32.bat"
+                    # 1. 创建临时工具目录
+                    $TEMP_TOOLS = "C:\temp_tools"
+                    New-Item -ItemType Directory -Path $TEMP_TOOLS -Force
+                        
+                    # 2. 备份当前的 PATH，以便稍后还原
+                    $ORIGINAL_PATH = $env:PATH
 
-                      # 2. 安装 MSYS2 编译工具
-                      $MSYS2_PATH = "C:\msys64"
-                      & "$MSYS2_PATH\usr\bin\bash.exe" -lc "pacman -S --noconfirm nasm make pkgconf mingw-w64-i686-gcc"
+                    # 3. 在 MSYS2 内部进行编译 (保持隔离)
+                    $MSYS2_PATH = "C:\msys64"
+                    # 仅在编译期间安装工具，编译完后我们不把这些路径永久存入 GITHUB_PATH
+                    & "$MSYS2_PATH\usr\bin\bash.exe" -lc "pacman -S --noconfirm nasm make pkgconf mingw-w64-i686-gcc"
 
-                      # 3. 下载并解压 FFmpeg 源码
-                      Invoke-WebRequest -Uri https://ffmpeg.org/releases/ffmpeg-7.1.tar.bz2 -OutFile ffmpeg.tar.bz2
-                      tar -xf ffmpeg.tar.bz2
-                      Set-Location ffmpeg-7.1
+                    # 4. 执行 FFmpeg 编译
+                    Invoke-WebRequest -Uri https://ffmpeg.org/releases/ffmpeg-7.1.tar.bz2 -OutFile ffmpeg.tar.bz2
+                    tar -xf ffmpeg.tar.bz2
+                    Set-Location ffmpeg-7.1
+                        
+                    $env:MSYS2_PATH_TYPE = "inherit"
+                    $CONFIG_ARGS = "--arch=x86 --target-os=win32 --toolchain=msvc --enable-shared --disable-static --disable-programs --disable-doc"
+                    & "$MSYS2_PATH\usr\bin\bash.exe" -lc "cd `"$PWD`" && ./configure $CONFIG_ARGS && make -j$(nproc)"
 
-                      # 4. 编译配置 (在临时 MSVC 环境下调用)
-                      $CONFIG_ARGS = "--arch=x86 --target-os=win32 --toolchain=msvc --enable-shared --disable-static --disable-programs --disable-doc --enable-cross-compile"
-                      & cmd /c "`"$MSVC_ENV_CMD`" && `"$MSYS2_PATH\usr\bin\bash.exe`" -lc `"cd '$((Get-Item .).FullName.Replace('\','/'))' && ./configure $CONFIG_ARGS && make -j$((Get-WmiObject Win32_Processor).NumberOfCores)`""
+                        # 5. 提取产物到最终目录
+                    New-Item -ItemType Directory -Path "C:\ffmpeg\lib" -Force
+                    New-Item -ItemType Directory -Path "C:\ffmpeg\include" -Force
+                    New-Item -ItemType Directory -Path "C:\ffmpeg\bin" -Force
+                    Copy-Item -Path "libav*/*.lib", "libsw*/*.lib" -Destination "C:\ffmpeg\lib"
+                    Copy-Item -Path "libav*/*.h", "libsw*/*.h" -Destination "C:\ffmpeg\include" -Recurse
+                    Copy-Item -Path "libav*/*.dll", "libsw*/*.dll" -Destination "C:\ffmpeg\bin"
 
-                      # 5. 将产物移动到 C:\ffmpeg
-                      New-Item -ItemType Directory -Path "C:\ffmpeg\lib"
-                      New-Item -ItemType Directory -Path "C:\ffmpeg\include"
-                      New-Item -ItemType Directory -Path "C:\ffmpeg\bin"
-                      
-                      Copy-Item -Path "libav*/*.lib", "libsw*/*.lib" -Destination "C:\ffmpeg\lib"
-                      Copy-Item -Path "libav*/*.h", "libsw*/*.h" -Destination "C:\ffmpeg\include" -Recurse
-                      Copy-Item -Path "libav*/*.dll", "libsw*/*.dll" -Destination "C:\ffmpeg\bin"
-
-                      Set-Location ..
-                      # 清理源码防止污染
-                      Remove-Item -Recurse -Force ffmpeg-7.1
+                    # 6. !!! 彻底清理 !!!
+                    Set-Location ..
+                    Remove-Item -Recurse -Force ffmpeg-7.1
+                    Remove-Item -Force ffmpeg.tar.bz2
+                        
+                    # 还原环境变量，确保 aws-lc-sys 编译时看不到 MSYS2
+                    $env:PATH = $ORIGINAL_PATH
+                    $env:MSYS2_PATH_TYPE = $null
+                    Write-Host "MSYS2 environment cleared. Ready for clean Rust build."
                   } else {
                       if ($TARGET -like "*aarch64*") {
                         $URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-winarm64-gpl-shared-7.1.zip"
@@ -254,12 +260,6 @@ jobs:
                   # 统一配置路径
                   "C:\ffmpeg\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
                   "FFMPEG_BIN_PATH=C:\ffmpeg\bin" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-            - name: Set up MSVC (x86) for i686 target
-              if: matrix.target == 'i686-pc-windows-msvc'
-              uses: ilammy/msvc-dev-cmd@v1
-              with:
-                  arch: x86
 
             - name: Prepare LLM tool config
               run: |
@@ -335,20 +335,9 @@ jobs:
                   rustc -V
                   cargo -V
 
-            - name: Install NASM
-              if: matrix.target == 'i686-pc-windows-msvc'
-              uses: ilammy/setup-nasm@v1
-
-            - name: Install CMake
-              if: matrix.target == 'i686-pc-windows-msvc'
-              uses: jwlawson/actions-setup-cmake@v2
-
             - name: Build release binary
               run: cargo build --release --target ${{ matrix.target }} --verbose
               env:
-                  CMAKE_GENERATOR_PLATFORM: ${{ matrix.target == 'i686-pc-windows-msvc' && 'Win32' || '' }}
-                  CMAKE_C_FLAGS: ${{ matrix.target == 'i686-pc-windows-msvc' && '/std:c11' || '' }}
-                  CMAKE_CXX_FLAGS: ${{ matrix.target == 'i686-pc-windows-msvc' && '/std:c11' || '' }}
                   RUSTFLAGS: >-
                       -C link-arg=-fuse-ld=lld-link 
                       ${{ contains(matrix.target, 'x86_64') && '-C target-cpu=x86-64-v3' || '' }}
