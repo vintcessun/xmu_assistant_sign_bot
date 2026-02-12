@@ -208,6 +208,11 @@ jobs:
                       
                       # 为 i686 增加汇编器路径支持
                       "C:\msys64\usr\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+                      
+                      # 清理编译环境，防止干扰后续 Rust 编译
+                      Remove-Item -Path $env:MSYS2_PATH_TYPE -ErrorAction SilentlyContinue
+                      $env:MSYS2_PATH_TYPE = $null
+                      $env:CHERE_INVOKING = $null
                   } else {
                       if ($TARGET -like "*aarch64*") {
                         $URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-winarm64-gpl-shared-7.1.zip"
@@ -301,10 +306,8 @@ jobs:
             - name: Build release binary
               run: cargo build --release --target ${{ matrix.target }} --verbose
               env:
-                  # 修复 i686 编译 aws-lc-sys 时的 C99 参数错误和汇编器问题 (仅针对 i686)
-                  # AWS_LC_SYS_NO_ASM 在 Release 下不被允许，因此我们移除它，改用显式指定汇编器
+                  # 恢复干净的编译环境
                   CMAKE_GENERATOR_PLATFORM: ${{ matrix.target == 'i686-pc-windows-msvc' && 'Win32' || '' }}
-                  AS: ${{ matrix.target == 'i686-pc-windows-msvc' && 'nasm' || '' }}
                   RUSTFLAGS: >-
                       -C link-arg=-fuse-ld=lld-link 
                       ${{ contains(matrix.target, 'x86_64') && '-C target-cpu=x86-64-v3' || '' }}
