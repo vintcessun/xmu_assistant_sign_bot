@@ -190,8 +190,17 @@ jobs:
                   # 显式告诉 ffmpeg-sys-next 不要包含这个已删除的文件 (对于 FFmpeg 7.x)
                   "FFMPEG_NO_AVFFT=1" | Out-File -FilePath $env:GITHUB_ENV -Append
 
+                  # 4. 设置 FFMPEG_DIR 解决编译找不到 ffmpeg 库的问题
+                  # setup-ffmpeg 默认将 FFmpeg 安装在 $env:FFMPEG_PATH 所在的目录
+                  $FFMPEG_ROOT = Split-Path -Path $env:FFMPEG_PATH -Parent
+                  "FFMPEG_DIR=$FFMPEG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+                  # 5. 允许跨平台编译（pkg-config 检查）
+                  "PKG_CONFIG_ALLOW_CROSS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+
                   Write-Host "Set BINDGEN_EXTRA_CLANG_ARGS: $CLANG_ARGS"
                   Write-Host "Set FFMPEG_NO_AVFFT=1"
+                  Write-Host "Set FFMPEG_DIR: $FFMPEG_ROOT"
 
             - name: Install Windows MSVC toolchain
               run: |
