@@ -303,6 +303,14 @@ jobs:
                   rustc -V
                   cargo -V
 
+            - name: Install NASM
+              if: matrix.target == 'i686-pc-windows-msvc'
+              uses: ilammy/setup-nasm@v1
+
+            - name: Install CMake
+              if: matrix.target == 'i686-pc-windows-msvc'
+              uses: jwlawson/actions-setup-cmake@v2
+
             - name: Build release binary
               run: cargo build --release --target ${{ matrix.target }} --verbose
               env:
