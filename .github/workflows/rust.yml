@@ -195,64 +195,53 @@ jobs:
             - name: Configure environment variables for build
               shell: pwsh
               run: |
-                  # 1. 获取 Windows SDK UCRT 路径 (解决 bindgen 找不到 errno.h 的问题)
-                  $SDK_VERSION = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Include").Name | Sort-Object -Descending | Select-Object -First 1
-                  $UCRT_PATH = "C:\Program Files (x86)\Windows Kits\10\Include\$SDK_VERSION\ucrt"
+                  # 1. 自动寻找 Windows SDK UCRT 路径
+                  $SDK_ROOT = "C:\Program Files (x86)\Windows Kits\10\Include"
+                  $SDK_VERSION = (Get-ChildItem $SDK_ROOT).Name | Sort-Object {[version]$_} -Descending | Select-Object -First 1
+                  $UCRT_PATH = "$SDK_ROOT\$SDK_VERSION\ucrt"
+                  Write-Host "UCRT path: $UCRT_PATH"
 
-                  # 2. 获取 MSVC include 路径 (解决 bindgen 找不到 vcruntime.h 的问题)
-                  # 查找 cl.exe 的位置
-                  $CL_PATH = (Get-Command cl.exe -ErrorAction SilentlyContinue).Source
-                  if ($CL_PATH) {
-                      $MSVC_ROOT = Split-Path -Path $CL_PATH -Parent # x64
-                      $MSVC_ROOT = Split-Path -Path $MSVC_ROOT -Parent # Hostx64
-                      $MSVC_ROOT = Split-Path -Path $MSVC_ROOT -Parent # bin
-                      $MSVC_ROOT = Split-Path -Path $MSVC_ROOT -Parent # MSVC/VERSION
-                      $MSVC_INCLUDE = Join-Path -Path $MSVC_ROOT -ChildPath "include"
+                  # 2. 自动寻找 MSVC Include 路径 (寻找 vcruntime.h)
+                  $VS_INSTALL_DIR = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+                  $MSVC_INCLUDE = ""
+                  if ($VS_INSTALL_DIR) {
+                      $MSVC_TOOLS_ROOT = "$VS_INSTALL_DIR\VC\Tools\MSVC"
+                      # 直接搜索 vcruntime.h 所在的最深目录
+                      $FOUND_FILE = Get-ChildItem -Path $MSVC_TOOLS_ROOT -Filter "vcruntime.h" -Recurse | Select-Object -First 1
+                      if ($FOUND_FILE) {
+                          $MSVC_INCLUDE = $FOUND_FILE.DirectoryName
+                      }
                   }
+                  Write-Host "MSVC include path: $MSVC_INCLUDE"
 
-                  # 3. Bindgen 参数
-                  $CLANG_ARGS = "-I`"$UCRT_PATH`""
-                  if ($MSVC_INCLUDE -and (Test-Path -Path $MSVC_INCLUDE)) {
+                  # 3. 设置 BINDGEN_EXTRA_CLANG_ARGS
+                  # 必须包含 UCRT, MSVC 和 FFMPEG 头文件
+                  $FFMPEG_INC = "C:\ffmpeg\include"
+                  $CLANG_ARGS = "-I`"$UCRT_PATH`" -I`"$FFMPEG_INC`""
+                  if ($MSVC_INCLUDE) {
                       $CLANG_ARGS += " -I`"$MSVC_INCLUDE`""
-                      Write-Host "Detected MSVC include path: $MSVC_INCLUDE"
                   }
                   "BINDGEN_EXTRA_CLANG_ARGS=$CLANG_ARGS" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-                  # 4. 关键修复：强制禁用 avfft.h (对于 FFmpeg 7.x)
+                  # 4. 设置 FFmpeg 环境变量
+                  "FFMPEG_DIR=C:\ffmpeg" | Out-File -FilePath $env:GITHUB_ENV -Append
                   "FFMPEG_NO_AVFFT=1" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-                  # 5. 设置 FFMPEG_DIR
-                  $FFMPEG_BIN_PATH = "C:\ffmpeg\bin"
+                  # 5. 修复 INCLUDE 和 LIB 环境变量 (追加模式)
+                  $NEW_INCLUDE = "C:\ffmpeg\include"
+                  if ($MSVC_INCLUDE) { $NEW_INCLUDE += ";$MSVC_INCLUDE" }
+                  if ($env:INCLUDE) { $NEW_INCLUDE += ";$env:INCLUDE" }
+                  "INCLUDE=$NEW_INCLUDE" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-                  # 探测真正的 FFMPEG_DIR (必须是包含 include 和 lib 的根目录)
-                  $BIN_LEVEL_INCLUDE = Join-Path -Path $FFMPEG_BIN_PATH -ChildPath "include"
-                  $PARENT_LEVEL_INCLUDE = Join-Path -Path (Split-Path -Path $FFMPEG_BIN_PATH -Parent) -ChildPath "include"
+                  $NEW_LIB = "C:\ffmpeg\lib;C:\ffmpeg\lib\x64"
+                  if ($env:LIB) { $NEW_LIB += ";$env:LIB" }
+                  "LIB=$NEW_LIB" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-                  if (Test-Path -Path $BIN_LEVEL_INCLUDE) {
-                      $FFMPEG_ROOT = $FFMPEG_BIN_PATH
-                  } elseif (Test-Path -Path $PARENT_LEVEL_INCLUDE) {
-                      $FFMPEG_ROOT = Split-Path -Path $FFMPEG_BIN_PATH -Parent
-                  } else {
-                      $FFMPEG_ROOT = "C:\ffmpeg"
-                  }
+                  # 6. 其他标志
+                  "PKG_CONFIG_ALLOW_CROSS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-                  "FFMPEG_DIR=$FFMPEG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-                  # 针对 MSVC 编译器，显式添加 INCLUDE 和 LIB 路径
-                  $FFMPEG_INCLUDE = Join-Path -Path $FFMPEG_ROOT -ChildPath "include"
-                  $FFMPEG_LIB = Join-Path -Path $FFMPEG_ROOT -ChildPath "lib"
-
-                  if (Test-Path -Path $FFMPEG_INCLUDE) {
-                      "INCLUDE=$env:INCLUDE;$FFMPEG_INCLUDE" | Out-File -FilePath $env:GITHUB_ENV -Append
-                  }
-                  if (Test-Path -Path $FFMPEG_LIB) {
-                      $LIB_PATHS = @($FFMPEG_LIB)
-                      $FFMPEG_LIB_X64 = Join-Path -Path $FFMPEG_LIB -ChildPath "x64"
-                      if (Test-Path -Path $FFMPEG_LIB_X64) { $LIB_PATHS += $FFMPEG_LIB_X64 }
-                      
-                      $NEW_LIB = ($LIB_PATHS + $env:LIB) -join ";"
-                      "LIB=$NEW_LIB" | Out-File -FilePath $env:GITHUB_ENV -Append
-                  }
+                  # 输出调试
+                  Write-Host "Final BINDGEN_EXTRA_CLANG_ARGS: $CLANG_ARGS"
 
                   # 6. 允许跨平台编译
                   "PKG_CONFIG_ALLOW_CROSS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
