@@ -199,11 +199,29 @@ jobs:
                   $SDK_VERSION = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Include").Name | Sort-Object -Descending | Select-Object -First 1
                   $UCRT_PATH = "C:\Program Files (x86)\Windows Kits\10\Include\$SDK_VERSION\ucrt"
 
-                  # 2. Bindgen 参数
+                  # 2. 获取 MSVC include 路径 (解决 bindgen 找不到 vcruntime.h 的问题)
+                  # 查找 cl.exe 的位置
+                  $CL_PATH = (Get-Command cl.exe -ErrorAction SilentlyContinue).Source
+                  if ($CL_PATH) {
+                      $MSVC_ROOT = Split-Path -Path $CL_PATH -Parent # x64
+                      $MSVC_ROOT = Split-Path -Path $MSVC_ROOT -Parent # Hostx64
+                      $MSVC_ROOT = Split-Path -Path $MSVC_ROOT -Parent # bin
+                      $MSVC_ROOT = Split-Path -Path $MSVC_ROOT -Parent # MSVC/VERSION
+                      $MSVC_INCLUDE = Join-Path -Path $MSVC_ROOT -ChildPath "include"
+                  }
+
+                  # 3. Bindgen 参数
                   $CLANG_ARGS = "-I`"$UCRT_PATH`""
+                  if ($MSVC_INCLUDE -and (Test-Path -Path $MSVC_INCLUDE)) {
+                      $CLANG_ARGS += " -I`"$MSVC_INCLUDE`""
+                      Write-Host "Detected MSVC include path: $MSVC_INCLUDE"
+                  }
                   "BINDGEN_EXTRA_CLANG_ARGS=$CLANG_ARGS" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-                  # 4. 设置 FFMPEG_DIR
+                  # 4. 关键修复：强制禁用 avfft.h (对于 FFmpeg 7.x)
+                  "FFMPEG_NO_AVFFT=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+                  # 5. 设置 FFMPEG_DIR
                   $FFMPEG_BIN_PATH = "C:\ffmpeg\bin"
 
                   # 探测真正的 FFMPEG_DIR (必须是包含 include 和 lib 的根目录)
@@ -236,7 +254,7 @@ jobs:
                       "LIB=$NEW_LIB" | Out-File -FilePath $env:GITHUB_ENV -Append
                   }
 
-                  # 5. 允许跨平台编译
+                  # 6. 允许跨平台编译
                   "PKG_CONFIG_ALLOW_CROSS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
 
                   # 输出调试信息
@@ -245,7 +263,6 @@ jobs:
                   Write-Host "Detected include path: $FFMPEG_INCLUDE"
                   Write-Host "Detected lib path: $FFMPEG_LIB"
                   Write-Host "Set BINDGEN_EXTRA_CLANG_ARGS: $CLANG_ARGS"
-                  Write-Host "Set FFMPEG_NO_AVFFT=1"
 
             - name: Install Windows MSVC toolchain
               run: |
