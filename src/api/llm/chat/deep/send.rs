@@ -1,11 +1,13 @@
-use crate::abi::message::Target;
+use crate::abi::message::{MessageType, Target};
 use crate::api::llm::chat::archive::bridge::llm_msg_from_message_without_archive;
 use crate::api::llm::chat::archive::message_storage::MessageStorage;
 use crate::api::llm::chat::audit::audit_test_deep;
 use crate::api::llm::chat::audit::backlist::Backlist;
+use crate::api::llm::chat::impression::get_impression;
 use crate::api::llm::chat::llm::ask_llm;
 use crate::api::llm::chat::message::bridge::IntoMessageSend;
 use crate::api::llm::tool::{LlmBool, LlmPrompt, ask_as};
+use crate::config::get_self_qq;
 use crate::{
     abi::{Context, logic_import::Message, network::BotClient, websocket::BotHandler},
     api::llm::chat::llm::get_chat_embedding,
@@ -36,6 +38,7 @@ where
         Target::Group(id) => id,
         Target::Private(id) => -id,
     };
+    let user_id = message.get_sender().user_id.unwrap_or_default();
     info!(group_id = ?group_id, "开始处理 LLM 深度回复请求");
 
     let msg_src = llm_msg_from_message_without_archive(ctx.client.clone(), &message).await;
@@ -58,6 +61,8 @@ where
         .map(|m| m.1)
         .collect::<Vec<_>>();
 
+    let image = get_impression(user_id).await;
+
     let chat_message = [
         vec![
             ChatMessage::system(
@@ -68,6 +73,13 @@ where
         context_message.clone(),
         vec![ChatMessage::system("用户的提问:")],
         msg_src.clone(),
+        vec![
+            ChatMessage::system(format!(
+                "你的 QQ 号是: {}，如果有人@你，你必须做出回复",
+                get_self_qq()
+            )),
+            ChatMessage::system(format!("以下是用户的印象: {:?}", image)),
+        ],
     ]
     .concat();
 

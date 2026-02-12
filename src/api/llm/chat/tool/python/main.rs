@@ -9,6 +9,9 @@ use helper::tool;
 use monty::{DictPairs, MontyObject};
 use serde::{Deserialize, Serialize};
 
+//TODO: 去掉二次转发
+//TODO: 对于结构体自动扫描文档并生成提示词
+
 #[tool(
     description = "根据用户的需求生成 Python 代码并执行，最后返回结果。请根据用户的需求生成符合要求的 Python 代码，并且在最后调用函数时传入正确的参数。"
 )]

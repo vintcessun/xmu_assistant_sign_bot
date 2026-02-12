@@ -37,7 +37,7 @@ pub async fn fate(ctx: Context) -> Result<()> {
 
     if let Some(user_id) = sender.user_id {
         debug!(user_id = user_id, "开始获取用户印象并进行 AI 解签");
-        let impression = get_impression(user_id as i32).await;
+        let impression = get_impression(user_id).await;
         debug!(user_id = user_id, impression = ?impression, "成功获取用户印象");
 
         let prompt = vec![
