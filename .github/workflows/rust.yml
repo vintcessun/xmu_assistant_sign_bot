@@ -205,6 +205,9 @@ jobs:
                       Copy-Item -Path "libav*/*.dll", "libsw*/*.dll" -Destination "C:\ffmpeg\bin"
 
                       Set-Location ..
+                      
+                      # 为 i686 增加汇编器路径支持
+                      "C:\msys64\usr\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
                   } else {
                       if ($TARGET -like "*aarch64*") {
                         $URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-winarm64-gpl-shared-7.1.zip"
@@ -265,6 +268,7 @@ jobs:
                   # 4. 设置 FFmpeg 相关路径 (直接使用 C:\ffmpeg 提升可靠性)
                   $FFMPEG_ROOT = "C:\ffmpeg"
                   $FFMPEG_BIN = "C:\ffmpeg\bin"
+                  $FFMPEG_INC = "C:\ffmpeg\include"
                   $FFMPEG_LIB = "C:\ffmpeg\lib"
 
                   "FFMPEG_DIR=$FFMPEG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -297,6 +301,10 @@ jobs:
             - name: Build release binary
               run: cargo build --release --target ${{ matrix.target }} --verbose
               env:
+                  # 修复 i686 编译 aws-lc-sys 时的 C99 参数错误和汇编器问题
+                  CFLAGS: ${{ matrix.target == 'i686-pc-windows-msvc' && '/std:c11' || '' }}
+                  CMAKE_GENERATOR: "Visual Studio 17 2022"
+                  CMAKE_GENERATOR_PLATFORM: ${{ matrix.target == 'i686-pc-windows-msvc' && 'Win32' || 'x64' }}
                   RUSTFLAGS: >-
                       -C link-arg=-fuse-ld=lld-link 
                       ${{ contains(matrix.target, 'x86_64') && '-C target-cpu=x86-64-v3' || '' }}
