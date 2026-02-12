@@ -25,6 +25,43 @@ jobs:
             - name: Checkout source
               uses: actions/checkout@v4
 
+            - name: Create Cross.toml dynamically
+              run: |
+                  cat <<EOF > Cross.toml
+                  [target.x86_64-unknown-linux-gnu]
+                  pre-build = [
+                      "apt-get update",
+                      "apt-get install -y pkg-config libssl-dev mold clang libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libavfilter-dev libswresample-dev libswscale-dev libc6-dev",
+                  ]
+
+                  [target.i686-unknown-linux-gnu]
+                  image = "ghcr.io/cross-rs/i686-unknown-linux-gnu:edge"
+                  pre-build = [
+                      "dpkg --add-architecture i386",
+                      "apt-get update",
+                      "apt-get install -y pkg-config libssl-dev:i386 libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 libavdevice-dev:i386 libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386 libc6-dev:i386 clang libclang-dev",
+                  ]
+                  env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/i686-linux-gnu/include" }
+
+                  [target.aarch64-unknown-linux-gnu]
+                  image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:edge"
+                  pre-build = [
+                      "dpkg --add-architecture arm64",
+                      "apt-get update",
+                      "apt-get install -y pkg-config libssl-dev:arm64 libavcodec-dev:arm64 libavformat-dev:arm64 libavutil-dev:arm64 libavdevice-dev:arm64 libavfilter-dev:arm64 libswresample-dev:arm64 libswscale-dev:arm64 libc6-dev:arm64 clang libclang-dev",
+                  ]
+                  env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/aarch64-linux-gnu/include" }
+
+                  [target.armv7-unknown-linux-gnueabihf]
+                  image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabihf:edge"
+                  pre-build = [
+                      "dpkg --add-architecture armhf",
+                      "apt-get update",
+                      "apt-get install -y pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libclang-dev libc6-dev-armhf-cross",
+                  ]
+                  env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/arm-linux-gnueabihf/include" }
+                  EOF
+
             - name: Prepare LLM tool config
               run: |
                   cp src/api/llm/tool/config-template.rs src/api/llm/tool/config.rs
@@ -158,17 +195,6 @@ jobs:
             - name: Checkout source
               uses: actions/checkout@v4
 
-            - name: Set up MSVC (x86) for i686 target
-              if: matrix.target == 'i686-pc-windows-msvc'
-              uses: ilammy/msvc-dev-cmd@v1
-              with:
-                  arch: x86
-
-            - name: Prepare LLM tool config
-              run: |
-                  Copy-Item src/api/llm/tool/config-template.rs src/api/llm/tool/config.rs
-                  Copy-Item src/api/llm/chat/config-template.rs src/api/llm/chat/config.rs
-
             - name: Install FFmpeg 7.1 Shared (Download or Compile)
               shell: pwsh
               run: |
@@ -209,8 +235,7 @@ jobs:
                       # 为 i686 增加汇编器路径支持
                       "C:\msys64\usr\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
                       
-                      # 清理编译环境，防止干扰后续 Rust 编译
-                      Remove-Item -Path $env:MSYS2_PATH_TYPE -ErrorAction SilentlyContinue
+                      # 彻底清理编译环境，防止干扰后续 MSVC 构建环境配置
                       $env:MSYS2_PATH_TYPE = $null
                       $env:CHERE_INVOKING = $null
                   } else {
@@ -232,6 +257,17 @@ jobs:
                   # 统一配置路径
                   "C:\ffmpeg\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
                   "FFMPEG_BIN_PATH=C:\ffmpeg\bin" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+            - name: Set up MSVC (x86) for i686 target
+              if: matrix.target == 'i686-pc-windows-msvc'
+              uses: ilammy/msvc-dev-cmd@v1
+              with:
+                  arch: x86
+
+            - name: Prepare LLM tool config
+              run: |
+                  Copy-Item src/api/llm/tool/config-template.rs src/api/llm/tool/config.rs
+                  Copy-Item src/api/llm/chat/config-template.rs src/api/llm/chat/config.rs
 
             - name: Set up Rust
               uses: dtolnay/rust-toolchain@stable
@@ -317,8 +353,8 @@ jobs:
                   # 恢复干净的编译环境
                   CMAKE_GENERATOR_PLATFORM: ${{ matrix.target == 'i686-pc-windows-msvc' && 'Win32' || '' }}
                   # 强制修复 aws-lc-sys/cc-rs 在 i686 MSVC 下错误使用 -std:c99 的问题
-                  CMAKE_C_FLAGS: ${{ matrix.target == 'i686-pc-windows-msvc' && '/std:c99' || '' }}
-                  CMAKE_CXX_FLAGS: ${{ matrix.target == 'i686-pc-windows-msvc' && '/std:c99' || '' }}
+                  CMAKE_C_FLAGS: ${{ matrix.target == 'i686-pc-windows-msvc' && '/std:c11' || '' }}
+                  CMAKE_CXX_FLAGS: ${{ matrix.target == 'i686-pc-windows-msvc' && '/std:c11' || '' }}
                   RUSTFLAGS: >-
                       -C link-arg=-fuse-ld=lld-link 
                       ${{ contains(matrix.target, 'x86_64') && '-C target-cpu=x86-64-v3' || '' }}
