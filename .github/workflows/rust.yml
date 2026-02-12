@@ -195,9 +195,15 @@ jobs:
                   # 根据 setup-ffmpeg 的 action.yml，输出参数为 ffmpeg-path
                   $FFMPEG_BIN_PATH = "${{ steps.setup-ffmpeg.outputs.ffmpeg-path }}"
 
-                  # ffmpeg-path 指向包含二进制文件的目录（例如 .../bin）
-                  # 对于 ffmpeg-sys-next 编译，通常需要指向包含 include/lib 的根目录
-                  $FFMPEG_ROOT = Split-Path -Path $FFMPEG_BIN_PATH -Parent
+                  # 探测真正的 FFMPEG_DIR (包含 include/lib 的目录)
+                  # 优先检查 bin 目录同级是否存在 include
+                  $PROBE_INCLUDE = Join-Path -Path $FFMPEG_BIN_PATH -ChildPath "include"
+                  if (Test-Path -Path $PROBE_INCLUDE) {
+                      $FFMPEG_ROOT = $FFMPEG_BIN_PATH
+                  } else {
+                      # 否则检查上一级目录
+                      $FFMPEG_ROOT = Split-Path -Path $FFMPEG_BIN_PATH -Parent
+                  }
 
                   # 注入环境变量供 Rust 编译脚本使用
                   "FFMPEG_DIR=$FFMPEG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -210,7 +216,13 @@ jobs:
                       "INCLUDE=$env:INCLUDE;$FFMPEG_INCLUDE" | Out-File -FilePath $env:GITHUB_ENV -Append
                   }
                   if (Test-Path -Path $FFMPEG_LIB) {
-                      "LIB=$env:LIB;$FFMPEG_LIB" | Out-File -FilePath $env:GITHUB_ENV -Append
+                      # 同时添加 $FFMPEG_LIB 和可能的 $FFMPEG_LIB/x64
+                      $LIB_PATHS = @($FFMPEG_LIB)
+                      $FFMPEG_LIB_X64 = Join-Path -Path $FFMPEG_LIB -ChildPath "x64"
+                      if (Test-Path -Path $FFMPEG_LIB_X64) { $LIB_PATHS += $FFMPEG_LIB_X64 }
+                      
+                      $NEW_LIB = ($LIB_PATHS + $env:LIB) -join ";"
+                      "LIB=$NEW_LIB" | Out-File -FilePath $env:GITHUB_ENV -Append
                   }
 
                   # 5. 允许跨平台编译（pkg-config 检查）
