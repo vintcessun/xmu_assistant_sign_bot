@@ -202,6 +202,17 @@ jobs:
                   # 注入环境变量供 Rust 编译脚本使用
                   "FFMPEG_DIR=$FFMPEG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
 
+                  # 针对 MSVC 编译器，显式添加 INCLUDE 和 LIB 路径
+                  $FFMPEG_INCLUDE = Join-Path -Path $FFMPEG_ROOT -ChildPath "include"
+                  $FFMPEG_LIB = Join-Path -Path $FFMPEG_ROOT -ChildPath "lib"
+
+                  if (Test-Path -Path $FFMPEG_INCLUDE) {
+                      "INCLUDE=$env:INCLUDE;$FFMPEG_INCLUDE" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  }
+                  if (Test-Path -Path $FFMPEG_LIB) {
+                      "LIB=$env:LIB;$FFMPEG_LIB" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  }
+
                   # 5. 允许跨平台编译（pkg-config 检查）
                   "PKG_CONFIG_ALLOW_CROSS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
 
