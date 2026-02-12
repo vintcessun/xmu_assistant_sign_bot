@@ -302,8 +302,9 @@ jobs:
               run: cargo build --release --target ${{ matrix.target }} --verbose
               env:
                   # 修复 i686 编译 aws-lc-sys 时的 C99 参数错误和汇编器问题 (仅针对 i686)
-                  AWS_LC_SYS_NO_ASM: ${{ matrix.target == 'i686-pc-windows-msvc' && '1' || '' }}
+                  # AWS_LC_SYS_NO_ASM 在 Release 下不被允许，因此我们移除它，改用显式指定汇编器
                   CMAKE_GENERATOR_PLATFORM: ${{ matrix.target == 'i686-pc-windows-msvc' && 'Win32' || '' }}
+                  AS: ${{ matrix.target == 'i686-pc-windows-msvc' && 'nasm' || '' }}
                   RUSTFLAGS: >-
                       -C link-arg=-fuse-ld=lld-link 
                       ${{ contains(matrix.target, 'x86_64') && '-C target-cpu=x86-64-v3' || '' }}
