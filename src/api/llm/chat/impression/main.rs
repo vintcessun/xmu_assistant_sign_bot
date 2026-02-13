@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 use tracing::{debug, error, info, warn};
 
-static IMPRESSION_DB: LazyLock<ColdTable<i32, Impression>> =
-    LazyLock::new(|| ColdTable::new("llm_impression_storage"));
+static IMPRESSION_DB: LazyLock<ColdTable<i64, Impression>> =
+    LazyLock::new(|| ColdTable::new("llm_impression_storage_new"));
 
 // 印象结构体定义
 #[derive(Debug, Serialize, Deserialize, Clone, LlmPrompt)]
@@ -58,7 +58,7 @@ pub struct Impression {
 // ------------------------------------
 
 // 存储每个用户的消息计数和下次更新的阈值
-// Key: User ID (i32)
+// Key: User ID (i64)
 #[derive(Debug, Clone)]
 pub struct UserImpressionState {
     pub message_count: usize,
@@ -66,7 +66,7 @@ pub struct UserImpressionState {
     pub message_history: Vec<ChatMessage>, // 临时存储消息历史，用于生成印象
 }
 
-static IMPRESSION_STATE: LazyLock<DashMap<i32, UserImpressionState>> = LazyLock::new(DashMap::new);
+static IMPRESSION_STATE: LazyLock<DashMap<i64, UserImpressionState>> = LazyLock::new(DashMap::new);
 
 fn generate_threshold() -> usize {
     rand::rng().random_range(50..=100)
@@ -74,7 +74,7 @@ fn generate_threshold() -> usize {
 
 /// 每次收到 router 消息时调用，用于记录消息并检查是否触发印象更新
 /// message 假设是用户发送的消息文本
-pub async fn push_message(user_id: i32, message: ChatMessage) -> Result<()> {
+pub async fn push_message(user_id: i64, message: ChatMessage) -> Result<()> {
     let state_map = &*IMPRESSION_STATE;
 
     let mut state = state_map
@@ -115,7 +115,7 @@ pub async fn push_message(user_id: i32, message: ChatMessage) -> Result<()> {
 }
 
 /// 实际执行印象生成或更新的逻辑
-async fn update_impression(user_id: i32, history: Vec<ChatMessage>) -> Result<()> {
+async fn update_impression(user_id: i64, history: Vec<ChatMessage>) -> Result<()> {
     let old_impression: Option<Impression> =
         IMPRESSION_DB.get_async(&user_id).await.map_err(|e| {
             error!(user_id = ?user_id, error = ?e, "获取旧的用户印象失败");
@@ -167,7 +167,7 @@ async fn update_impression(user_id: i32, history: Vec<ChatMessage>) -> Result<()
     Ok(())
 }
 
-pub async fn get_impression(user_id: i32) -> Option<Impression> {
+pub async fn get_impression(user_id: i64) -> Option<Impression> {
     debug!(user_id = ?user_id, "尝试获取用户印象");
     IMPRESSION_DB
         .get_async(&user_id)

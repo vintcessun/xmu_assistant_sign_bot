@@ -7,6 +7,7 @@ use crate::{
         echo::Echo,
         logic_import::{Message, Notice},
         message::{
+            MessageType,
             api::{self, GetGroupInfo, GroupMemberInfo},
             event_notice::Notify,
         },
@@ -32,6 +33,7 @@ where
         Message::Group(g) => g.message_id,
         Message::Private(p) => p.message_id,
     };
+    let user_id = message.get_sender().user_id.unwrap_or_default();
 
     let msg_content = llm_msg_from_message(ctx.client.clone(), &message).await;
     let msg_single = msg_content
@@ -47,7 +49,7 @@ where
     trace!(message_id = ?id, "消息内容存储完成");
 
     //印象记录
-    if let Err(e) = push_message(id, ChatMessage::user(msg_single)).await {
+    if let Err(e) = push_message(user_id, ChatMessage::user(msg_single)).await {
         warn!(message_id = ?id, error = ?e, "消息印象推送失败");
     }
     trace!(message_id = ?id, "消息印象推送处理完成");
