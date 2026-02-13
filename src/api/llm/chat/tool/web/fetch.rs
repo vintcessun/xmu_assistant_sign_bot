@@ -3,7 +3,8 @@ use anyhow::Result;
 use genai::chat::ChatMessage;
 use helper::tool;
 use std::sync::LazyLock;
-//写一个过程宏让我传入每个参数的含义然后和descrption自动生成Tool调用，
+use tracing::trace;
+
 static CLIENT: LazyLock<SessionClient> = LazyLock::new(SessionClient::new);
 
 #[tool(
@@ -23,6 +24,7 @@ pub async fn fetch(
         ChatMessage::user(text),
     ];
     let md = ask_str(chat_message).await?;
+    trace!("提取并转写网页内容成功，网页内容:\n{}", md);
     Ok(md)
 }
 

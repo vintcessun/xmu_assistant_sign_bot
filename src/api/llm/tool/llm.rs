@@ -11,10 +11,11 @@ use llm_xml_caster::{LlmPrompt, generate_as_with_retries};
 use serde::de::DeserializeOwned;
 use tracing::{debug, error, info, trace, warn};
 
-const MODEL_NAME: &str = "qwen2.5vl:latest";
+const LOW_MODEL: &str = "qwen2.5vl:latest";
+const HIGH_MODEL: &str = "gemini-2.5-flash";
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
-    info!(model = MODEL_NAME, "初始化 LLM 客户端");
+    info!(model = LOW_MODEL, "初始化 LLM 客户端");
     // 1. AuthResolver
     let auth_resolver = AuthResolver::from_resolver_fn(|model_id: ModelIden| {
         trace!(
@@ -74,13 +75,13 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
 });
 
 pub async fn ask(message: Vec<ChatMessage>) -> Result<ChatResponse> {
-    trace!("开始调用 LLM: {}", MODEL_NAME);
+    trace!("开始调用 LLM: {}", LOW_MODEL);
     let chat_req = genai::chat::ChatRequest::new(message);
     let res = CLIENT
-        .exec_chat(MODEL_NAME, chat_req, None)
+        .exec_chat(LOW_MODEL, chat_req, None)
         .await
         .map_err(|e| {
-            error!(model_name = MODEL_NAME, error = ?e, "LLM 调用失败");
+            error!(model_name = LOW_MODEL, error = ?e, "LLM 调用失败");
             e
         })?;
     trace!(response = ?res, "LLM 调用成功");
@@ -93,13 +94,13 @@ where
 {
     let mut i = 1;
     loop {
-        trace!("开始调用 LLM (结构化模式): {} 第 {} 次", MODEL_NAME, i);
+        trace!("开始调用 LLM (结构化模式): {} 第 {} 次", LOW_MODEL, i);
         let result =
-            generate_as_with_retries(&CLIENT, MODEL_NAME, message.clone(), valid_example, 3).await;
+            generate_as_with_retries(&CLIENT, LOW_MODEL, message.clone(), valid_example, 10).await;
         match result {
             Ok(res) => return Ok(res),
             Err(e) => {
-                error!(model_name = MODEL_NAME, error = ?e, "LLM 结构化调用失败 第 {} 次", i);
+                warn!(model_name = LOW_MODEL, error = ?e, "LLM 结构化调用失败 第 {} 次", i);
             }
         }
         i += 1;
@@ -107,19 +108,26 @@ where
     }
 }
 
+pub async fn ask_as_high<T>(message: Vec<ChatMessage>, valid_example: &str) -> Result<T>
+where
+    T: DeserializeOwned + LlmPrompt,
+{
+    Ok(generate_as_with_retries(&CLIENT, HIGH_MODEL, message.clone(), valid_example, 3).await?)
+}
+
 pub async fn ask_str(chat_message: Vec<ChatMessage>) -> Result<String> {
-    trace!("开始调用 LLM (字符串模式): {}", MODEL_NAME);
+    trace!("开始调用 LLM (字符串模式): {}", LOW_MODEL);
     let chat_req = genai::chat::ChatRequest::new(chat_message);
     let res = CLIENT
-        .exec_chat(MODEL_NAME, chat_req, None)
+        .exec_chat(LOW_MODEL, chat_req, None)
         .await
         .map_err(|e| {
-            error!(model_name = MODEL_NAME, error = ?e, "LLM 字符串调用失败");
+            error!(model_name = LOW_MODEL, error = ?e, "LLM 字符串调用失败");
             e
         })?;
     let text = res.first_text().ok_or_else(|| {
         error!(
-            model_name = MODEL_NAME,
+            model_name = LOW_MODEL,
             "LLM 返回空响应，无法获取文本内容 (字符串模式)"
         );
         anyhow::anyhow!("No response")

@@ -4,6 +4,7 @@ use helper::tool;
 use searxng_client::{ResponseFormat, SearXNGClient};
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
+use tracing::trace;
 
 const SEARXNG_BASE: &str = "http://localhost:8089/";
 static CLIENT: LazyLock<SearXNGClient> =
@@ -56,6 +57,7 @@ pub async fn search(
         .collect::<Vec<_>>();
     let ret = SearchResponse { results: ret };
     let ret_str = quick_xml::se::to_string(&ret)?;
+    trace!("搜索结果: {}", ret_str);
     Ok(ret_str)
 }
 

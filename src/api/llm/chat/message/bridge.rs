@@ -12,7 +12,7 @@ use crate::{
                 archive::bridge::get_face_reference_message,
                 file::{FileShortId, LlmFile},
             },
-            tool::ask_as,
+            tool::ask_as_high,
         },
         storage::FileStorage,
     },
@@ -146,37 +146,40 @@ fn test_message_send_llm_response_parsing() {
 pub struct IntoMessageSend;
 
 impl IntoMessageSend {
-    pub async fn get(msg: ChatResponse) -> Result<MessageSendLlmResponse> {
-        let messages: Vec<ChatMessage> = vec![
-            ChatMessage::system(
-                "你是一个专业的将消息进行转写的助手，请根据用户提供的信息和所有上下文进行转写为规范格式\
-            ### 核心规则：\n\
-             1. 严禁直接在 <item> 标签下书写任何文字。\n\
-             2. 所有的文本内容必须包裹在 <Text><text>...</text></Text> 结构中。\n\
-             3. 即使只有一段话，也要拆分为 <item><Text><text>...</text></Text></item>。\n\
-             4. 严格遵守提供的符号体系，不要发挥，不要输出 XML 以外的文字。\
-             5. 如果需要表达表情，请使用 <item><Face><id>表情ID</id></Face></item>，其中表情ID必须是提供的参考图中的ID。\n\
-             6. 每个消息段后会自动加上换行符，无需在文本内容中添加换行符。
-             7. 如果需要提及某人，请使用 <item><At><qq>QQ号</qq></At></item>。
-             8. 不需要使用markdown语法进行转写。",
-            ),
-            get_face_reference_message(),
-            ChatMessage::assistant(msg.texts().join("\n")),
-            ChatMessage::user("请将上述消息转写为规范的消息格式，不要添加任何额外的说明。"),
-        ];
+    pub async fn get(msg: Vec<ChatMessage>) -> Result<MessageSendLlmResponse> {
+        let messages: Vec<ChatMessage> = [vec![
+                ChatMessage::system(
+                    "你是一个专业的将消息进行转写的助手，请根据用户提供的信息和所有上下文进行转写为规范格式\
+                ### 核心规则：\n\
+                1. 严禁直接在 <item> 标签下书写任何文字。\n\
+                2. 所有的文本内容必须包裹在 <Text><text>...</text></Text> 结构中。\n\
+                3. 即使只有一段话，也要拆分为 <item><Text><text>...</text></Text></item>。\n\
+                4. 严格遵守提供的符号体系，不要发挥，不要输出 XML 以外的文字。\
+                5. 如果需要表达表情，请使用 <item><Face><id>表情ID</id></Face></item>，其中表情ID必须是提供的参考图中的ID。\n\
+                6. 每个消息段后会自动加上换行符，无需在文本内容中添加换行符。
+                7. 如果需要提及某人，请使用 <item><At><qq>QQ号</qq></At></item>。
+                8. 不需要使用markdown语法进行转写。",
+                ),
+                get_face_reference_message(),
+            ],
+            msg,
+            vec![ChatMessage::user("请将上述消息转写为规范的消息格式")],
+        ].concat();
 
-        let response =
-            ask_as::<MessageSendLlmResponse>(messages, MESSAGE_SEND_LLM_RESPONSE_VALID_EXAMPLE)
-                .await
-                .map_err(|e| {
-                    error!(error = ?e, "LLM 转写结构化消息失败");
-                    e
-                })?;
+        let response = ask_as_high::<MessageSendLlmResponse>(
+            messages,
+            MESSAGE_SEND_LLM_RESPONSE_VALID_EXAMPLE,
+        )
+        .await
+        .map_err(|e| {
+            error!(error = ?e, "LLM 转写结构化消息失败");
+            e
+        })?;
         info!("LLM 成功将回复转写为结构化消息");
         Ok(response)
     }
 
-    pub async fn get_message_send(msg: ChatResponse) -> Result<MessageSend> {
+    async fn get_message_send_inner(msg: Vec<ChatMessage>) -> Result<MessageSend> {
         let msg: MessageSendLlmResponse = Self::get(msg).await?;
         let mut ret = Vec::new();
         for segment in msg.message {
@@ -216,6 +219,19 @@ impl IntoMessageSend {
         }
         info!(segment_count = ?ret.len(), "消息转写完成");
         Ok(MessageSend::Array(ret))
+    }
+
+    pub async fn get_message_send(response: ChatResponse) -> Result<MessageSend> {
+        let mut msg = vec![ChatMessage::assistant(response.content)];
+        loop {
+            match Self::get_message_send_inner(msg.clone()).await {
+                Ok(message_send) => return Ok(message_send),
+                Err(e) => {
+                    warn!(error = ?e, "获取 MessageSend 失败，正在重试");
+                    msg.push(ChatMessage::user(format!("你之前任务错误: {}", e)));
+                }
+            }
+        }
     }
 }
 

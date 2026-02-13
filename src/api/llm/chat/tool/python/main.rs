@@ -8,9 +8,7 @@ use monty::{DictPairs, MontyObject};
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-
-//TODO: 去掉二次转发
-//TODO: 对于结构体自动扫描文档并生成提示词
+use tracing::trace;
 
 #[tool(
     description = r#"根据用户的需求生成 Python 代码并执行，最后返回结果。请根据用户的需求生成符合要求的 Python 代码，并且在最后调用函数时传入正确的参数。
@@ -48,6 +46,8 @@ fib(x)
     let code = ask_as::<PythonExecRequest>(chat_msg, PYTHON_EXEC_REQUEST_VALID_EXAMPLE).await?;
     #[cfg(test)]
     println!("Generated Python Code: {:?}", code);
+    trace!(python_request=?code, "生成 Python 代码成功，开始执行代码");
+    trace!("执行的 Python 代码:\n{}", code.code);
     let result = run_python_code(code).await?;
     Ok(result)
 }
