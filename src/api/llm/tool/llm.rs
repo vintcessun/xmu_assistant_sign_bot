@@ -91,7 +91,20 @@ pub async fn ask_as<T>(message: Vec<ChatMessage>, valid_example: &str) -> Result
 where
     T: DeserializeOwned + LlmPrompt,
 {
-    Ok(generate_as_with_retries(&CLIENT, MODEL_NAME, message, valid_example, 3).await?)
+    let mut i = 1;
+    loop {
+        trace!("开始调用 LLM (结构化模式): {} 第 {} 次", MODEL_NAME, i);
+        let result =
+            generate_as_with_retries(&CLIENT, MODEL_NAME, message.clone(), valid_example, 3).await;
+        match result {
+            Ok(res) => return Ok(res),
+            Err(e) => {
+                error!(model_name = MODEL_NAME, error = ?e, "LLM 结构化调用失败 第 {} 次", i);
+            }
+        }
+        i += 1;
+        // 本地随便造不设置重试次数了
+    }
 }
 
 pub async fn ask_str(chat_message: Vec<ChatMessage>) -> Result<String> {
