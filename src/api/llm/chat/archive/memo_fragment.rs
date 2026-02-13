@@ -1,13 +1,13 @@
 use crate::api::{
     llm::{
         chat::{archive::message_storage::MessageStorage, llm::get_single_text_embedding},
-        tool::{LlmPrompt, LlmVec, ask_as},
+        tool::ask_as,
     },
     storage::{HasEmbedding, VectorSearchEngine},
 };
 use anyhow::Result;
 use genai::chat::ChatMessage;
-use helper::LlmPrompt;
+use llm_xml_caster::llm_prompt;
 use serde::{Deserialize, Serialize};
 use std::time;
 use std::{
@@ -36,12 +36,37 @@ pub struct ChatSegment {
     pub timestamp: u64,      // 归档时间
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, LlmPrompt)]
+#[llm_prompt]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct ChatSegmentLlmResponse {
     #[prompt("这段对话的摘要信息")]
     pub summary: String,
     #[prompt("这段对话的关键词（用于过滤或辅助匹配）")]
-    pub keywords: LlmVec<String>,
+    pub keywords: Vec<String>,
+}
+
+const CHAT_SEGMENT_VALID_EXAMPLE: &str = r#"
+<ChatSegmentLlmResponse>
+  <summary><![CDATA[这是对话的摘要信息]]></summary>
+  <keywords>
+    <item><![CDATA[关键词1]]></item>
+    <item><![CDATA[关键词2]]></item>
+  </keywords>
+</ChatSegmentLlmResponse>"#;
+
+#[cfg(test)]
+#[test]
+fn test_chat_segment_llm_response_parsing() {
+    let example_response =
+        quick_xml::de::from_str::<ChatSegmentLlmResponse>(CHAT_SEGMENT_VALID_EXAMPLE)
+            .expect("解析示例 XML 失败");
+    assert_eq!(
+        example_response,
+        ChatSegmentLlmResponse {
+            summary: "这是对话的摘要信息".to_string(),
+            keywords: vec!["关键词1".to_string(), "关键词2".to_string()],
+        }
+    );
 }
 
 impl HasEmbedding for ChatSegment {
@@ -74,7 +99,7 @@ impl ChatSegment {
             messages
         ].concat();
 
-        let response = ask_as::<ChatSegmentLlmResponse>(message)
+        let response = ask_as::<ChatSegmentLlmResponse>(message, CHAT_SEGMENT_VALID_EXAMPLE)
             .await
             .map_err(|e| {
                 error!(error = ?e, "LLM 调用失败，无法生成对话摘要和关键词");

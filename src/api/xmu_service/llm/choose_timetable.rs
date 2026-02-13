@@ -1,19 +1,41 @@
 use crate::api::{
-    llm::tool::{LlmPrompt, LlmUsize, ask_as},
+    llm::tool::ask_as,
     network::SessionClient,
     xmu_service::jw::{Schedule, ScheduleList},
 };
 use anyhow::Result;
 use genai::chat::{ChatMessage, MessageContent};
-use helper::{LlmPrompt, session_client_helper};
+use helper::session_client_helper;
+use llm_xml_caster::llm_prompt;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, LlmPrompt, Serialize, Deserialize)]
+#[llm_prompt]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TimetableChoiceResponseLlm {
     #[prompt("应该返回选择学期的学年学期代码在提供的数据中")]
     pub semester: String,
     #[prompt("选择周数，从 1 开始计数")]
-    pub week: LlmUsize,
+    pub week: u64,
+}
+
+const TIMETABLE_CHOICE_RESPONSE_VALID_EXAMPLE: &str = r#"
+<TimetableChoiceResponseLlm>
+    <semester>2023-2024-1</semester>
+    <week>9</week>
+</TimetableChoiceResponseLlm>"#;
+
+#[cfg(test)]
+#[test]
+fn test_timetable_choice_response_valid_example() {
+    let parsed: TimetableChoiceResponseLlm =
+        quick_xml::de::from_str(TIMETABLE_CHOICE_RESPONSE_VALID_EXAMPLE).unwrap();
+    assert_eq!(
+        parsed,
+        TimetableChoiceResponseLlm {
+            semester: "2023-2024-1".to_string(),
+            week: 9
+        }
+    );
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -34,7 +56,7 @@ impl ChooseTimetable {
     pub async fn get_from_client<P: Into<MessageContent> + Sync + Send>(
         client: &SessionClient,
         prompt: P,
-    ) -> Result<(Schedule, usize)> {
+    ) -> Result<(Schedule, u64)> {
         let schedule_list = ScheduleList::get_from_client(client).await?;
 
         let messages = [vec![
@@ -50,7 +72,9 @@ impl ChooseTimetable {
             chrono::Local::now()
         ))]].concat();
 
-        let response = ask_as::<TimetableChoiceResponseLlm>(messages).await?;
+        let response =
+            ask_as::<TimetableChoiceResponseLlm>(messages, TIMETABLE_CHOICE_RESPONSE_VALID_EXAMPLE)
+                .await?;
 
         //println!("Choose timetable response: {:?}", response);
 
@@ -58,7 +82,7 @@ impl ChooseTimetable {
 
         let schedule = Schedule::get_by_code_from_client(client, &semester_code).await?;
 
-        Ok((schedule, *response.week))
+        Ok((schedule, response.week))
     }
 }
 #[cfg(test)]

@@ -4,7 +4,7 @@ use crate::api::llm::{
         file::LlmFile,
         tool::{get_tools, handle_tool},
     },
-    tool::{LlmPrompt, LlmVec, ask_as},
+    tool::ask_as,
 };
 use anyhow::{Result, anyhow, bail};
 use genai::{
@@ -12,13 +12,13 @@ use genai::{
     chat::{Binary, ChatMessage, ChatOptions, ChatRequest, ChatResponse, ContentPart},
     resolver::{AuthData, AuthResolver, Endpoint, ServiceTargetResolver},
 };
-use helper::LlmPrompt;
+use llm_xml_caster::llm_prompt;
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 use tracing::{debug, error, info};
 
 // 定义常量
-const CHAT_MODEL: &str = "gemini-flash-latest";
+const CHAT_MODEL: &str = "gemini-3-flash-preview";
 const EMBED_MODEL: &str = "text-embedding-3-large";
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
@@ -106,14 +106,41 @@ pub async fn get_single_text_embedding(input: String) -> Result<Vec<f32>> {
         })
 }
 
-#[derive(Debug, LlmPrompt, Clone, Serialize, Deserialize)]
+#[llm_prompt]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FileSemanticSnapshot {
     #[prompt("这是这个文件的整体的摘要")]
     pub summary: String,
     #[prompt("这是这个文件的详细描述或者关键信息点")]
     pub details: String,
     #[prompt("这是这个文件的关键词列表")]
-    pub keywords: LlmVec<String>,
+    pub keywords: Vec<String>,
+}
+
+const CHAT_FILE_SEMANTIC_SNAPSHOT_VALID_EXAMPLE: &str = r#"
+<FileSemanticSnapshot>
+  <summary><![CDATA[这是这个文件的整体的摘要]]></summary>
+  <details><![CDATA[这是这个文件的详细描述或者关键信息点]]></details>
+  <keywords>
+    <item><![CDATA[关键词1]]></item>
+    <item><![CDATA[关键词2]]></item>
+  </keywords>
+</FileSemanticSnapshot>"#;
+
+#[cfg(test)]
+#[test]
+fn test_file_semantic_snapshot_parsing() {
+    let example_response =
+        quick_xml::de::from_str::<FileSemanticSnapshot>(CHAT_FILE_SEMANTIC_SNAPSHOT_VALID_EXAMPLE)
+            .expect("解析示例 XML 失败");
+    assert_eq!(
+        example_response,
+        FileSemanticSnapshot {
+            summary: "这是这个文件的整体的摘要".to_string(),
+            details: "这是这个文件的详细描述或者关键信息点".to_string(),
+            keywords: vec!["关键词1".to_string(), "关键词2".to_string()],
+        }
+    );
 }
 
 pub async fn get_single_file_embedding(file: &LlmFile) -> Result<Vec<f32>> {
@@ -130,10 +157,13 @@ pub async fn get_single_file_embedding(file: &LlmFile) -> Result<Vec<f32>> {
     #[cfg(test)]
     println!("文件分析提示词: {:?}", prompt);
 
-    let response = ask_as::<FileSemanticSnapshot>(prompt).await.map_err(|e| {
-        error!(file_name = %file.alias, error = ?e, "文件语义分析失败");
-        e
-    })?;
+    let response =
+        ask_as::<FileSemanticSnapshot>(prompt, CHAT_FILE_SEMANTIC_SNAPSHOT_VALID_EXAMPLE)
+            .await
+            .map_err(|e| {
+                error!(file_name = %file.alias, error = ?e, "文件语义分析失败");
+                e
+            })?;
 
     #[cfg(test)]
     println!("文件分析结果: {:?}", response);
@@ -152,14 +182,41 @@ pub async fn get_single_file_embedding(file: &LlmFile) -> Result<Vec<f32>> {
     Ok(result)
 }
 
-#[derive(Debug, LlmPrompt, Clone, Serialize, Deserialize)]
+#[llm_prompt]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ChatSemanticSnapshot {
     #[prompt("这是这些消息的整体的摘要")]
     pub summary: String,
     #[prompt("这是这些消息的详细描述或者关键信息点")]
     pub details: String,
     #[prompt("这是这些消息的关键词列表")]
-    pub keywords: LlmVec<String>,
+    pub keywords: Vec<String>,
+}
+
+const CHAT_SEGMENT_VALID_EXAMPLE: &str = r#"
+<ChatSemanticSnapshot>
+    <summary><![CDATA[这是这些消息的整体的摘要]]></summary>
+    <details><![CDATA[这是这些消息的详细描述或者关键信息点]]></details>
+    <keywords>
+        <item><![CDATA[关键词1]]></item>
+        <item><![CDATA[关键词2]]></item>
+    </keywords>
+</ChatSemanticSnapshot>"#;
+
+#[cfg(test)]
+#[test]
+fn test_chat_semantic_snapshot_parsing() {
+    let example_response =
+        quick_xml::de::from_str::<ChatSemanticSnapshot>(CHAT_SEGMENT_VALID_EXAMPLE)
+            .expect("解析示例 XML 失败");
+    assert_eq!(
+        example_response,
+        ChatSemanticSnapshot {
+            summary: "这是这些消息的整体的摘要".to_string(),
+            details: "这是这些消息的详细描述或者关键信息点".to_string(),
+            keywords: vec!["关键词1".to_string(), "关键词2".to_string()],
+        }
+    );
 }
 
 pub async fn get_chat_embedding(messages: Vec<ChatMessage>) -> Result<Vec<f32>> {
@@ -172,10 +229,12 @@ pub async fn get_chat_embedding(messages: Vec<ChatMessage>) -> Result<Vec<f32>> 
     ]
     .concat();
 
-    let response = ask_as::<ChatSemanticSnapshot>(msgs).await.map_err(|e| {
-        error!(error = ?e, "聊天记录语义分析失败");
-        e
-    })?;
+    let response = ask_as::<ChatSemanticSnapshot>(msgs, CHAT_SEGMENT_VALID_EXAMPLE)
+        .await
+        .map_err(|e| {
+            error!(error = ?e, "聊天记录语义分析失败");
+            e
+        })?;
     let combined_text = format!(
         "消息摘要: {}\n详细信息: {}\n关键词: {:?}",
         response.summary, response.details, response.keywords

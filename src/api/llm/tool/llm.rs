@@ -1,17 +1,17 @@
 use std::sync::LazyLock;
 
 use super::config::MODEL_MAP;
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use genai::{
     Client, ModelIden, ServiceTarget,
     chat::{ChatMessage, ChatResponse},
     resolver::{AuthData, AuthResolver, Endpoint, ServiceTargetResolver},
 };
-use quick_xml::de::from_str;
+use llm_xml_caster::{LlmPrompt, generate_as_with_retries};
 use serde::de::DeserializeOwned;
 use tracing::{debug, error, info, trace, warn};
 
-const MODEL_NAME: &str = "gemini-2.0-flash";
+const MODEL_NAME: &str = "qwen2.5vl:latest";
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
     info!(model = MODEL_NAME, "初始化 LLM 客户端");
@@ -73,11 +73,6 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
         .build()
 });
 
-pub trait LlmPrompt {
-    fn get_prompt_schema() -> &'static str;
-    fn root_name() -> &'static str;
-}
-
 pub async fn ask(message: Vec<ChatMessage>) -> Result<ChatResponse> {
     trace!("开始调用 LLM: {}", MODEL_NAME);
     let chat_req = genai::chat::ChatRequest::new(message);
@@ -92,107 +87,11 @@ pub async fn ask(message: Vec<ChatMessage>) -> Result<ChatResponse> {
     Ok(res)
 }
 
-pub async fn ask_as<T>(message: Vec<ChatMessage>) -> Result<T>
+pub async fn ask_as<T>(message: Vec<ChatMessage>, valid_example: &str) -> Result<T>
 where
     T: DeserializeOwned + LlmPrompt,
 {
-    // 1. 自动注入 Schema 指令
-    let mut chat_message = [
-        message,
-        vec![
-            ChatMessage::system(format!(
-                "你必须直接返回 XML 格式的数据，禁止任何开场白。当前root_name为 {}，格式规范如下：",
-                T::root_name()
-            )),
-            ChatMessage::system(T::get_prompt_schema()),
-        ],
-    ]
-    .concat();
-
-    let mut err = anyhow!("未知原因解析失败");
-
-    for attempt in 1..=3 {
-        debug!(attempt = attempt, "尝试调用 LLM 获取结构化回复");
-        #[cfg(test)]
-        println!("Attempt {}: Chat Messages: {:?}", attempt, chat_message);
-        // 2. 调用 genai
-        let chat_req = genai::chat::ChatRequest::new(chat_message.clone());
-        let res = CLIENT
-            .exec_chat(MODEL_NAME, chat_req, None)
-            .await
-            .map_err(|e| {
-                error!(model_name = MODEL_NAME, error = ?e, "LLM 结构化调用失败");
-                e
-            })?;
-        let text = res.first_text().ok_or_else(|| {
-            error!(model_name = MODEL_NAME, "LLM 返回空响应，无法获取文本内容");
-            anyhow::anyhow!("No response")
-        })?;
-
-        #[cfg(test)]
-        println!("Attempt {}: LLM Response Text: {}", attempt, text);
-
-        // 3. XML 清洗与反序列化 (根据 root_name 精确截取)
-        let root_name = T::root_name();
-        let start_tag = format!("<{}>", root_name);
-        let end_tag = format!("</{}>", root_name);
-
-        let xml_content: &str;
-        let data: Result<T>;
-
-        if let (Some(xml_start), Some(xml_end_tag_start)) =
-            (text.find(&start_tag), text.rfind(&end_tag))
-        {
-            let xml_end = xml_end_tag_start + end_tag.len();
-            xml_content = &text[xml_start..xml_end];
-            data = from_str(xml_content)
-                .map_err(|e| anyhow!("XML反序列化错误：{e}\n模型返回的内容为：\n{xml_content}"));
-        } else {
-            // 无法找到根标签，直接进入错误处理逻辑
-            let tag_error = anyhow!(
-                "XML提取失败：无法找到完整的根标签 <{}>...</{}>。模型返回的内容为：\n{}",
-                root_name,
-                root_name,
-                text
-            );
-            warn!(error = ?tag_error, root_name = root_name, "LLM XML 标签解析失败，准备重试");
-
-            // 构造重试消息，这里使用完整的文本作为 '之前回复'
-            chat_message.push(ChatMessage::assistant(format!(
-                "之前回复:{}\n报错:{}\n",
-                text, tag_error
-            )));
-            chat_message.push(ChatMessage::system(
-                "你上次返回的内容格式有误，请严格按照要求的 XML 格式返回。",
-            ));
-
-            err = tag_error;
-            continue;
-        };
-
-        match data {
-            Ok(v) => {
-                info!(root_name = T::root_name(), "LLM 结构化回复解析成功");
-                return Ok(v);
-            }
-            Err(e) => {
-                warn!(error = ?e, root_name = T::root_name(), "LLM XML 数据反序列化失败，准备重试");
-
-                chat_message.push(ChatMessage::assistant(format!(
-                    "之前回复:{}\n报错:{}\n",
-                    xml_content, e
-                )));
-                chat_message.push(ChatMessage::system(format!(
-                    "你上次返回的内容格式有误，请严格按照要求的 XML 格式返回。格式如下: {}",
-                    T::get_prompt_schema(),
-                )));
-
-                err = e;
-            }
-        }
-    }
-    error!(error = ?err, "LLM 结构化回复多次重试解析失败");
-    Err(anyhow!("LLM 解析多次失败{err}"))
+    Ok(generate_as_with_retries(&CLIENT, MODEL_NAME, message, valid_example, 3).await?)
 }
 
 pub async fn ask_str(chat_message: Vec<ChatMessage>) -> Result<String> {
@@ -279,7 +178,8 @@ mod tests {
     use crate::{
         abi::logic_import::Message,
         api::llm::chat::{
-            archive::bridge::llm_msg_from_message_without_archive, search::send::SearchMessageReply,
+            archive::bridge::llm_msg_from_message_without_archive,
+            search::send::{SEARCH_MESSAGE_REPLY_VALID_EXAMPLE, SearchMessageReply},
         },
     };
 
@@ -301,7 +201,7 @@ mod tests {
     "card": "主人",
     "role": "owner"
   },
-  "raw_message": "[CQ:image,file=AF0239D1AA177A18E979D76F303C9225.jpg,sub_type=0,url=https://multimedia.nt.qq.com.cn/download?appid=1407&amp;fileid=EhTqSnOJqWbLUDdYWr1_hfl0AheunhjJ9Q4g_woo_9fOl_nGkgMyBHByb2RQgL2jAVoQH-_JaMCwsME5qzTQc3RR8HoC5vaCAQJneg&amp;rkey=CAMSMHAIqkgX9guztt4pjMZnAuDmQAsRPlgBx6ehaite6o85Ua1MOar_FdV7_YiZLkksbQ,file_size=244425]",
+  "raw_message": "[CQ:image,file=AF0239D1AA177A18E979D76F303C9225.jpg,sub_type=0,url=https://disk.sample.cat/samples/jpg/monalisa-100x100.jpg]",
   "font": 14,
   "sub_type": "normal",
   "message": [
@@ -311,7 +211,7 @@ mod tests {
         "summary": "",
         "file": "AF0239D1AA177A18E979D76F303C9225.jpg",
         "sub_type": 0,
-        "url": "https://multimedia.nt.qq.com.cn/download?appid=1407&fileid=EhTqSnOJqWbLUDdYWr1_hfl0AheunhjJ9Q4g_woo_9fOl_nGkgMyBHByb2RQgL2jAVoQH-_JaMCwsME5qzTQc3RR8HoC5vaCAQJneg&rkey=CAMSMHAIqkgX9guztt4pjMZnAuDmQAsRPlgBx6ehaite6o85Ua1MOar_FdV7_YiZLkksbQ",
+        "url": "https://disk.sample.cat/samples/jpg/monalisa-100x100.jpg",
         "file_size": "244425"
       }
     }
@@ -329,7 +229,7 @@ mod tests {
 
         let msg = serde_json::from_str::<Message>(MSG_SRC_JSON)?;
 
-        println!("原消息: {:?}", msg);
+        //println!("原消息: {:?}", msg);
 
         let msg_chat = llm_msg_from_message_without_archive(client, &msg).await;
 
@@ -341,9 +241,10 @@ mod tests {
         ]
         .concat();
 
-        println!("请求的 ChatMessage: {:?}", chat_messages);
+        //println!("请求的 ChatMessage: {:?}", chat_messages);
 
-        let message = ask_as::<SearchMessageReply>(chat_messages).await?;
+        let message =
+            ask_as::<SearchMessageReply>(chat_messages, SEARCH_MESSAGE_REPLY_VALID_EXAMPLE).await?;
 
         println!("解析后的结构化数据: {:?}", message);
 

@@ -1,21 +1,42 @@
 use std::collections::HashMap;
 
-use crate::api::{
-    llm::tool::{LlmBool, LlmI64, LlmOption, LlmPrompt, LlmVec, ask_as},
-    network::SessionClient,
-    xmu_service::lnt::Activities,
-};
+use crate::api::{llm::tool::ask_as, network::SessionClient, xmu_service::lnt::Activities};
 use anyhow::Result;
 use genai::chat::{ChatMessage, MessageContent};
-use helper::{LlmPrompt, session_client_helper};
+use helper::session_client_helper;
+use llm_xml_caster::llm_prompt;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, LlmPrompt, Serialize, Deserialize)]
+#[llm_prompt]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FilesChoiceResponseLlm {
     #[prompt("如果目的是选择所有的内容或者没有特定指定范围则设置为 true，否则为 false")]
-    pub all: LlmBool,
+    pub all: bool,
     #[prompt("请注意这里对应的是提供的内容的reference_id字段")]
-    pub files: LlmOption<LlmVec<LlmI64>>,
+    pub files: Option<Vec<i64>>,
+}
+
+const FILES_CHOICE_RESPONSE_VALID_EXAMPLE: &str = r#"
+<FilesChoiceResponseLlm>
+    <all>false</all>
+    <files>
+        <item>123456</item>
+        <item>234567</item>
+    </files>
+</FilesChoiceResponseLlm>"#;
+
+#[cfg(test)]
+#[test]
+fn test_files_choice_response_valid_example() {
+    let parsed: FilesChoiceResponseLlm =
+        quick_xml::de::from_str(FILES_CHOICE_RESPONSE_VALID_EXAMPLE).unwrap();
+    assert_eq!(
+        parsed,
+        FilesChoiceResponseLlm {
+            all: false,
+            files: Some(vec![123456, 234567])
+        }
+    );
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -57,11 +78,12 @@ impl ChooseFiles {
             ChatMessage::system(quick_xml::se::to_string(&activities)?),
         ];
 
-        let response = ask_as::<FilesChoiceResponseLlm>(messages).await?;
+        let response =
+            ask_as::<FilesChoiceResponseLlm>(messages, FILES_CHOICE_RESPONSE_VALID_EXAMPLE).await?;
 
         println!("LLM 返回的文件选择结果：{:?}", response);
 
-        if *response.all {
+        if response.all {
             if activities_map.is_empty() {
                 anyhow::bail!("课程无文件可以下载");
             }
@@ -73,12 +95,11 @@ impl ChooseFiles {
 
             Ok(FilesChoiceResponse { files })
         } else {
-            match &*response.files {
+            match response.files {
                 Some(files) => Ok(FilesChoiceResponse {
                     files: files
                         .into_iter()
                         .map(|reference_id| {
-                            let reference_id = **reference_id;
                             let name = activities_map
                                 .get(&reference_id)
                                 .cloned()

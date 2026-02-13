@@ -189,7 +189,7 @@ where
             let identity_data = match identity {
                 Some(data) => {
                     debug!(qq = ?qq_i64, "已获取个人身份信息");
-                    quick_xml::se::to_string(&data).unwrap_or_else(|e| {
+                    serde_json::to_string(&data).unwrap_or_else(|e| {
                         error!(data = ?data, error = ?e, "个人身份信息序列化失败");
                         "未知身份".to_string()
                     })

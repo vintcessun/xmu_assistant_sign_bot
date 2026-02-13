@@ -33,7 +33,7 @@ pub async fn test(ctx: Context) -> Result<()> {
     })?;
 
     debug!(course_id = ?course_id, "成功识别课程 ID，开始查询小测数据");
-    let exam_data = Exams::get_from_client(&client, *course_id).await?;
+    let exam_data = Exams::get_from_client(&client, course_id).await?;
     debug!(
         count = exam_data.exams.len(),
         "成功获取 {} 个小测信息",

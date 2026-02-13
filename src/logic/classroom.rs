@@ -31,7 +31,7 @@ pub async fn class(ctx: Context) -> Result<()> {
     })?;
     debug!(course_id = ?course_id, "成功识别课程 ID，开始查询课堂互动数据");
 
-    let classroom_data = ClassroomList::get_from_client(&client, *course_id).await?;
+    let classroom_data = ClassroomList::get_from_client(&client, course_id).await?;
     debug!(
         count = classroom_data.classrooms.len(),
         "成功获取 {} 个课堂互动信息",

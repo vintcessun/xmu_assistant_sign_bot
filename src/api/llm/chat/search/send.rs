@@ -6,23 +6,44 @@ use crate::api::llm::chat::audit::audit_test_search;
 use crate::api::llm::chat::audit::backlist::Backlist;
 use crate::api::llm::chat::llm::ask_llm;
 use crate::api::llm::chat::message::bridge::IntoMessageSend;
-use crate::api::llm::tool::{LlmBool, LlmPrompt, ask_as};
+use crate::api::llm::tool::ask_as;
 use crate::{
     abi::{Context, logic_import::Message, network::BotClient, websocket::BotHandler},
     api::llm::chat::{llm::get_chat_embedding, search::store::MessageSearchStore},
 };
 use anyhow::{Result, anyhow};
 use genai::chat::{Binary, ChatMessage, ContentPart};
-use helper::LlmPrompt;
+use llm_xml_caster::llm_prompt;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, trace, warn};
 
-#[derive(Debug, Serialize, Deserialize, LlmPrompt, Clone)]
+#[llm_prompt]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct SearchMessageReply {
     #[prompt("当前是否需要对用户进行回复，如果搜索结果非常相关则回复 true，否则回复 false")]
-    is_match: LlmBool,
+    is_match: bool,
     #[prompt("基于搜索的结果生成一个简短的回复，回复要简洁明了")]
     reply: String,
+}
+
+pub const SEARCH_MESSAGE_REPLY_VALID_EXAMPLE: &str = r#"
+<SearchMessageReply>
+    <is_match>true</is_match>
+    <reply>根据您的提问，我找到了相关的信息，以下是我的回复。</reply>
+</SearchMessageReply>"#;
+
+#[cfg(test)]
+#[test]
+fn test_search_message_reply_valid_example() {
+    let parsed: SearchMessageReply =
+        quick_xml::de::from_str(SEARCH_MESSAGE_REPLY_VALID_EXAMPLE).unwrap();
+    assert_eq!(
+        parsed,
+        SearchMessageReply {
+            is_match: true,
+            reply: "根据您的提问，我找到了相关的信息，以下是我的回复。".into()
+        }
+    );
 }
 
 pub async fn send_message_from_store<T>(ctx: &mut Context<T, Message>) -> Result<()>
@@ -112,7 +133,7 @@ where
     ChatMessage::system("用户的提问:")],
     msg_src.clone()].concat();
 
-    let message = ask_as::<SearchMessageReply>(chat_message)
+    let message = ask_as::<SearchMessageReply>(chat_message, SEARCH_MESSAGE_REPLY_VALID_EXAMPLE)
         .await
         .map_err(|e| {
             error!(group_id = ?group_id, error = ?e, "LLM 分析搜索匹配度失败");
@@ -121,7 +142,7 @@ where
 
     trace!(reply_analysis = ?message, "LLM 搜索回复匹配分析完成");
 
-    if !*message.is_match {
+    if !message.is_match {
         debug!(group_id = ?group_id, "LLM 分析认为搜索结果匹配度低，不回复");
         return Err(anyhow!("未命中搜索回复"));
     }
