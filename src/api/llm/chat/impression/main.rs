@@ -1,12 +1,12 @@
-use crate::api::llm::tool::LlmPrompt;
-use crate::api::llm::tool::{LlmHashMap, LlmVec, ask_as};
+use crate::api::llm::tool::ask_as;
 use crate::api::storage::ColdTable;
 use anyhow::Result;
 use dashmap::DashMap;
 use genai::chat::ChatMessage;
-use helper::LlmPrompt;
+use llm_xml_caster::llm_prompt;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::LazyLock;
 use tracing::{debug, error, info, warn};
 
@@ -14,13 +14,14 @@ static IMPRESSION_DB: LazyLock<ColdTable<i64, Impression>> =
     LazyLock::new(|| ColdTable::new("llm_impression_storage_new"));
 
 // 印象结构体定义
-#[derive(Debug, Serialize, Deserialize, Clone, LlmPrompt)]
+#[llm_prompt]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Impression {
     // 1. 核心定性字段 (LLM 最擅长的描述)
     #[prompt("一句简短精炼的话总结对该用户的整体感觉和关键特征。")]
     pub summary: String,
     #[prompt("提取描述用户个性的关键词标签，例如 幽默, 有攻击性, 博学。请提供 3 到 5 个。")]
-    pub personality_tags: LlmVec<String>,
+    pub personality_tags: Vec<String>,
 
     // 2. 关系定位
     #[prompt("与 Bot 之间的关系阶段，如: 陌生, 熟络, 产生信任, 冲突中。")]
@@ -50,7 +51,56 @@ pub struct Impression {
     #[prompt(
         "LLM 可能会生成的额外、难以分类的用户特征信息，以键值对形式存储，例如 {\"兴趣爱好\": \"旅行\"}。"
     )]
-    pub extended_traits: LlmHashMap<String, String>,
+    pub extended_traits: HashMap<String, String>,
+}
+
+const IMPRESSION_VALID_EXAMPLE: &str = r#"
+<Impression>
+    <summary>该用户表现出强烈的好奇心和求知欲，喜欢深入探讨各种话题。</summary>
+    <personality_tags>
+        <item>博学</item>
+        <item>好奇</item>
+        <item>幽默</item>
+    </personality_tags>
+    <relationship_stage>熟络</relationship_stage>
+    <tone_preference>专业且友好</tone_preference>
+    <warmth_level>极高</warmth_level>
+    <competence_level>极高</competence_level>
+    <key_interaction_moment>在讨论人工智能伦理时展现出深刻见解。</key_interaction_moment>
+    <user_motivation>寻求认同和知识共享。</user_motivation>
+    <strategy_suggestion>积极引导，提供更多专业信息。</strategy_suggestion>
+    <extended_traits>
+        <entry>
+            <key>兴趣爱好</key>
+            <value>旅行, 阅读科技新闻</value>
+        </entry>
+    </extended_traits>
+</Impression>"#;
+
+#[cfg(test)]
+#[test]
+fn test_impression_parsing() {
+    let parsed: Impression =
+        quick_xml::de::from_str(IMPRESSION_VALID_EXAMPLE).expect("Failed to parse Impression");
+    assert_eq!(
+        parsed,
+        Impression {
+            summary: "该用户表现出强烈的好奇心和求知欲，喜欢深入探讨各种话题。".to_string(),
+            personality_tags: vec!["博学".to_string(), "好奇".to_string(), "幽默".to_string()],
+            relationship_stage: "熟络".to_string(),
+            tone_preference: "专业且友好".to_string(),
+            warmth_level: "极高".to_string(),
+            competence_level: "极高".to_string(),
+            key_interaction_moment: "在讨论人工智能伦理时展现出深刻见解。".to_string(),
+            user_motivation: "寻求认同和知识共享。".to_string(),
+            strategy_suggestion: "积极引导，提供更多专业信息。".to_string(),
+            extended_traits: {
+                let mut map = HashMap::new();
+                map.insert("兴趣爱好".to_string(), "旅行, 阅读科技新闻".to_string());
+                map
+            },
+        }
+    );
 }
 
 // ------------------------------------
@@ -149,10 +199,12 @@ async fn update_impression(user_id: i64, history: Vec<ChatMessage>) -> Result<()
             vec![ChatMessage::system("请基于此生成一份完整的用户印象。请勿包含任何解释性文字")]].concat()
     };
 
-    let new_impression = ask_as::<Impression>(prompt_content).await.map_err(|e| {
-        error!(user_id = ?user_id, error = ?e, "LLM 生成新印象失败");
-        e
-    })?;
+    let new_impression = ask_as::<Impression>(prompt_content, IMPRESSION_VALID_EXAMPLE)
+        .await
+        .map_err(|e| {
+            error!(user_id = ?user_id, error = ?e, "LLM 生成新印象失败");
+            e
+        })?;
 
     IMPRESSION_DB
         .insert(&user_id, &new_impression)

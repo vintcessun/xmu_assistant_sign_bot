@@ -3,6 +3,7 @@ const BASE: &str = "cold.redb";
 use super::BASE_DATA_DIR;
 use super::BINCODE_CONFIG;
 use anyhow::Result;
+use anyhow::anyhow;
 use const_format::concatcp;
 use redb::Database;
 use redb::ReadableDatabase;
@@ -130,11 +131,17 @@ where
 
         let table = match read_txn.open_table(definition) {
             Ok(t) => t,
-            Err(e) => {
-                // 如果是 TableNotFound，则返回 None，否则记录错误
-                warn!(table = table_name, error = ?e, "Cold 存储尝试打开表失败");
-                return Ok(None);
-            }
+            Err(e) => match e {
+                redb::TableError::TableDoesNotExist(_) => {
+                    self.ensure_table()?;
+                    trace!(table = table_name, "Cold 存储表不存在，已创建新表");
+                    return Ok(None);
+                }
+                _ => {
+                    warn!(table = table_name, error = ?e, "Cold 存储打开表失败 (get)");
+                    return Err(anyhow!("Cold 存储打开表失败: {}", e));
+                }
+            },
         };
 
         match table.get(key_vec.as_slice()).map_err(|e| {
@@ -207,10 +214,20 @@ where
             e
         })?;
         let definition: TableDefinition<&[u8], &[u8]> = TableDefinition::new(table_name);
-        let table = read_txn.open_table(definition).map_err(|e| {
-            error!(table = table_name, error = ?e, "Cold 存储打开表失败 (get_all)");
-            e
-        })?;
+        let table = match read_txn.open_table(definition) {
+            Ok(t) => t,
+            Err(e) => match e {
+                redb::TableError::TableDoesNotExist(_) => {
+                    self.ensure_table()?;
+                    trace!(table = table_name, "Cold 存储表不存在，已创建新表");
+                    return Ok(vec![]);
+                }
+                _ => {
+                    warn!(table = table_name, error = ?e, "Cold 存储打开表失败 (get_all)");
+                    return Err(anyhow!("Cold 存储打开表失败: {}", e));
+                }
+            },
+        };
 
         let mut results = Vec::new();
         for item in table.iter().map_err(|e| {

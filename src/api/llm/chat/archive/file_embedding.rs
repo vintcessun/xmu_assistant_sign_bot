@@ -9,7 +9,7 @@ use std::sync::{Arc, LazyLock};
 use tracing::{error, info};
 
 static FILE_EMBEDDING_DB: LazyLock<VectorSearchEngine<LlmFile>> =
-    LazyLock::new(|| VectorSearchEngine::new("llm_chat_file_embedding_database"));
+    LazyLock::new(|| VectorSearchEngine::new("llm_chat_file_embedding_dataset"));
 
 impl HasEmbedding for LlmFile {
     fn get_embedding(&self) -> &[f32] {

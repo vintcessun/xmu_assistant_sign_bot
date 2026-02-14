@@ -12,18 +12,20 @@ use crate::{
                 archive::bridge::get_face_reference_message,
                 file::{FileShortId, LlmFile},
             },
-            tool::{LlmPrompt, LlmVec, ask_as},
+            tool::ask_as_high,
         },
         storage::FileStorage,
     },
 };
 use anyhow::{Result, anyhow};
 use genai::chat::{ChatMessage, ChatResponse};
-use helper::{LlmPrompt, box_new};
+use helper::box_new;
+use llm_xml_caster::llm_prompt;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, trace, warn};
 
-#[derive(Debug, LlmPrompt, Serialize, Deserialize)]
+#[llm_prompt]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LlmFileWithIdOrOptionAlias {
     #[prompt("文件ID，8位SHA-256短ID")]
     pub id: String,
@@ -49,7 +51,8 @@ impl LlmFileWithIdOrOptionAlias {
     }
 }
 
-#[derive(Debug, LlmPrompt, Serialize, Deserialize)]
+#[llm_prompt]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SegmentSendLlmResponse {
     #[prompt("纯文本内容")]
     Text {
@@ -76,45 +79,107 @@ pub enum SegmentSendLlmResponse {
     },
 }
 
-#[derive(Debug, LlmPrompt, Serialize, Deserialize)]
+#[llm_prompt]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MessageSendLlmResponse {
     #[prompt("请根据提供的回复改写并运用提供的符号体系进行回应")]
-    pub message: LlmVec<SegmentSendLlmResponse>,
+    pub message: Vec<SegmentSendLlmResponse>,
+}
+
+const MESSAGE_SEND_LLM_RESPONSE_VALID_EXAMPLE: &str = r#"
+<MessageSendLlmResponse>
+    <message>
+        <item>
+            <Text>
+                <text>你好！很高兴见到你。</text>
+            </Text>
+        </item>
+        <item>
+            <Face>
+                <id>128513</id>
+            </Face>
+        </item>
+        <item>
+            <At>
+                <qq>123456789</qq>
+            </At>
+        </item>
+        <item>
+            <Image>
+                <file>
+                    <id>abcdef12</id>
+                </file>
+            </Image>
+        </item>
+    </message>
+</MessageSendLlmResponse>"#;
+
+#[cfg(test)]
+#[test]
+fn test_message_send_llm_response_parsing() {
+    let parsed: MessageSendLlmResponse =
+        quick_xml::de::from_str(MESSAGE_SEND_LLM_RESPONSE_VALID_EXAMPLE)
+            .expect("Failed to parse MessageSendLlmResponse");
+    assert_eq!(
+        parsed,
+        MessageSendLlmResponse {
+            message: vec![
+                SegmentSendLlmResponse::Text {
+                    text: "你好！很高兴见到你。".to_string()
+                },
+                SegmentSendLlmResponse::Face {
+                    id: "128513".to_string()
+                },
+                SegmentSendLlmResponse::At {
+                    qq: "123456789".to_string()
+                },
+                SegmentSendLlmResponse::Image {
+                    file: LlmFileWithIdOrOptionAlias {
+                        id: "abcdef12".to_string()
+                    }
+                },
+            ]
+        }
+    );
 }
 
 pub struct IntoMessageSend;
 
 impl IntoMessageSend {
-    pub async fn get(msg: ChatResponse) -> Result<MessageSendLlmResponse> {
-        let messages: Vec<ChatMessage> = vec![
-            ChatMessage::system(
-                "你是一个专业的将消息进行转写的助手，请根据用户提供的信息和所有上下文进行转写为规范格式\
-            ### 核心规则：\n\
-             1. 严禁直接在 <item> 标签下书写任何文字。\n\
-             2. 所有的文本内容必须包裹在 <Text><text>...</text></Text> 结构中。\n\
-             3. 即使只有一段话，也要拆分为 <item><Text><text>...</text></Text></item>。\n\
-             4. 严格遵守提供的符号体系，不要发挥，不要输出 XML 以外的文字。\
-             5. 如果需要表达表情，请使用 <item><Face><id>表情ID</id></Face></item>，其中表情ID必须是提供的参考图中的ID。\n\
-             6. 每个消息段后会自动加上换行符，无需在文本内容中添加换行符。
-             7. 如果需要提及某人，请使用 <item><At><qq>QQ号</qq></At></item>。
-             8. 不需要使用markdown语法进行转写。",
-            ),
-            get_face_reference_message(),
-            ChatMessage::assistant(msg.texts().join("\n")),
-            ChatMessage::user("请将上述消息转写为规范的消息格式，不要添加任何额外的说明。"),
-        ];
+    pub async fn get(msg: Vec<ChatMessage>) -> Result<MessageSendLlmResponse> {
+        let messages: Vec<ChatMessage> = [vec![
+                ChatMessage::system(
+                    "你是一个专业的将消息进行转写的助手，请根据用户提供的信息和所有上下文进行转写为规范格式\
+                ### 核心规则：\n\
+                1. 严禁直接在 <item> 标签下书写任何文字。\n\
+                2. 所有的文本内容必须包裹在 <Text><text>...</text></Text> 结构中。\n\
+                3. 即使只有一段话，也要拆分为 <item><Text><text>...</text></Text></item>。\n\
+                4. 严格遵守提供的符号体系，不要发挥，不要输出 XML 以外的文字。\
+                5. 如果需要表达表情，请使用 <item><Face><id>表情ID</id></Face></item>，其中表情ID必须是提供的参考图中的ID。\n\
+                6. 每个消息段后会自动加上换行符，无需在文本内容中添加换行符。
+                7. 如果需要提及某人，请使用 <item><At><qq>QQ号</qq></At></item>。
+                8. 不需要使用markdown语法进行转写。",
+                ),
+                get_face_reference_message(),
+            ],
+            msg,
+            vec![ChatMessage::user("请将上述消息转写为规范的消息格式")],
+        ].concat();
 
-        let response = ask_as::<MessageSendLlmResponse>(messages)
-            .await
-            .map_err(|e| {
-                error!(error = ?e, "LLM 转写结构化消息失败");
-                e
-            })?;
+        let response = ask_as_high::<MessageSendLlmResponse>(
+            messages,
+            MESSAGE_SEND_LLM_RESPONSE_VALID_EXAMPLE,
+        )
+        .await
+        .map_err(|e| {
+            error!(error = ?e, "LLM 转写结构化消息失败");
+            e
+        })?;
         info!("LLM 成功将回复转写为结构化消息");
         Ok(response)
     }
 
-    pub async fn get_message_send(msg: ChatResponse) -> Result<MessageSend> {
+    async fn get_message_send_inner(msg: Vec<ChatMessage>) -> Result<MessageSend> {
         let msg: MessageSendLlmResponse = Self::get(msg).await?;
         let mut ret = Vec::new();
         for segment in msg.message {
@@ -155,11 +220,25 @@ impl IntoMessageSend {
         info!(segment_count = ?ret.len(), "消息转写完成");
         Ok(MessageSend::Array(ret))
     }
+
+    pub async fn get_message_send(response: ChatResponse) -> Result<MessageSend> {
+        let mut msg = vec![ChatMessage::assistant(response.content)];
+        loop {
+            match Self::get_message_send_inner(msg.clone()).await {
+                Ok(message_send) => return Ok(message_send),
+                Err(e) => {
+                    warn!(error = ?e, "获取 MessageSend 失败，正在重试");
+                    msg.push(ChatMessage::user(format!("你之前任务错误: {}", e)));
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use genai::chat::ChatRequest;
+    use llm_xml_caster::LlmPrompt;
 
     use crate::api::llm::chat::llm::CLIENT;
 

@@ -1,19 +1,26 @@
 use crate::api::llm::chat::tool::python::monty::run_python_code;
-use crate::api::llm::tool::LlmEnum;
-use crate::api::llm::tool::{LlmBool, LlmF64, LlmHashMap, LlmI64, ask_as};
-use crate::api::llm::tool::{LlmPrompt, LlmVec};
+use crate::api::llm::tool::ask_as;
 use anyhow::Result;
 use genai::chat::ChatMessage;
-use helper::LlmPrompt;
 use helper::tool;
+use llm_xml_caster::llm_prompt;
 use monty::{DictPairs, MontyObject};
+use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
-
-//TODO: 去掉二次转发
-//TODO: 对于结构体自动扫描文档并生成提示词
+use std::collections::BTreeMap;
+use tracing::trace;
 
 #[tool(
-    description = "根据用户的需求生成 Python 代码并执行，最后返回结果。请根据用户的需求生成符合要求的 Python 代码，并且在最后调用函数时传入正确的参数。"
+    description = r#"根据用户的需求生成 Python 代码并执行，最后返回结果。请根据用户的需求生成符合要求的 Python 代码，并且在最后调用函数时传入正确的参数。
+代码必须符合以下格式（即函数应该在最后被调用，就像直接输入REPL进行运行一样）:
+def fib(n):
+    if n <= 1:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+fib(x)
+
+比如对于这段代码要传入参数 x=12 其中 12为整数类型"#
 )]
 pub async fn python_exec(
     /// 用户对要执行的 Python 代码的需求描述，代码必须符合以下格式（即函数应该在最后被调用，就像直接输入REPL进行运行一样）:
@@ -36,27 +43,17 @@ fib(x)
         ),
         ChatMessage::user(description),
     ];
-    let code = ask_as::<PythonExecRequest>(chat_msg).await?;
+    let code = ask_as::<PythonExecRequest>(chat_msg, PYTHON_EXEC_REQUEST_VALID_EXAMPLE).await?;
     #[cfg(test)]
     println!("Generated Python Code: {:?}", code);
+    trace!(python_request=?code, "生成 Python 代码成功，开始执行代码");
+    trace!("执行的 Python 代码:\n{}", code.code);
     let result = run_python_code(code).await?;
     Ok(result)
 }
 
+#[llm_prompt(weak = true)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Ord, PartialOrd)]
-#[serde(transparent)]
-pub struct PythonValueWeak(PythonValue);
-
-impl LlmPrompt for PythonValueWeak {
-    fn get_prompt_schema() -> &'static str {
-        "<PythonValue>类型声明如上文所示</PythonValue>"
-    }
-    fn root_name() -> &'static str {
-        "PythonValue"
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, LlmPrompt, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum PythonValue {
     #[prompt("python的None")]
     None,
@@ -68,27 +65,27 @@ pub enum PythonValue {
     #[prompt("python的int")]
     Int {
         #[prompt("整数的值")]
-        val: LlmI64,
+        val: i64,
     },
     #[prompt("python的float")]
     Float {
         #[prompt("浮点数的值")]
-        val: LlmF64,
+        val: OrderedFloat<f64>,
     },
     #[prompt("python的bool")]
     Bool {
         #[prompt("布尔值的值")]
-        val: LlmBool,
+        val: bool,
     },
     #[prompt("python的list")]
     List {
         #[prompt("列表的值")]
-        val: LlmVec<PythonValueWeak>,
+        val: Vec<PythonValueWeak>,
     },
     #[prompt("python的dict")]
     Dict {
         #[prompt("字典的值")]
-        val: LlmHashMap<PythonValueWeak, PythonValueWeak>,
+        val: BTreeMap<PythonValueWeak, PythonValueWeak>,
     },
 }
 
@@ -96,9 +93,9 @@ pub fn python_value_to_monty_object(value: &PythonValue) -> MontyObject {
     match value {
         PythonValue::None => MontyObject::None,
         PythonValue::String { val } => MontyObject::String(val.trim().into()),
-        PythonValue::Int { val } => MontyObject::Int(val.into()),
-        PythonValue::Float { val } => MontyObject::Float(val.into()),
-        PythonValue::Bool { val } => MontyObject::Bool(val.into()),
+        PythonValue::Int { val } => MontyObject::Int(*val),
+        PythonValue::Float { val } => MontyObject::Float(**val),
+        PythonValue::Bool { val } => MontyObject::Bool(*val),
         PythonValue::List { val } => {
             let items = val
                 .iter()
@@ -119,26 +116,78 @@ pub fn python_value_to_monty_object(value: &PythonValue) -> MontyObject {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, LlmPrompt)]
+#[llm_prompt]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PythonParam {
     #[prompt("参数的名字，应该和代码中最后调用函数的参数名一致")]
     pub name: String,
     #[prompt("参数的值，应该是一个字符串，如果需要传入复杂数据结构请在代码中解析这个字符串")]
-    pub value: LlmEnum<PythonValue>,
+    pub value: PythonValue,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, LlmPrompt)]
+#[llm_prompt]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PythonExecRequest {
     #[prompt("要执行脚本的名字以.py结尾")]
     pub script_name: String,
     #[prompt("要传入的参数列表")]
-    pub params: LlmVec<PythonParam>,
+    pub params: Vec<PythonParam>,
     #[prompt(r#"要执行的 python 代码"#)]
     pub code: String,
 }
 
+const PYTHON_EXEC_REQUEST_VALID_EXAMPLE: &str = r#"<PythonExecRequest>
+  <script_name><![CDATA[
+  fibonacci.py
+  ]]></script_name>
+  <params>
+    <item>
+      <PythonParam>
+        <name>n</name>
+        <value>
+          <Int>
+            <val>10</val>
+          </Int>
+        </value>
+      </PythonParam>
+    </item>
+  </params>
+  <code><![CDATA[
+def fib(n):
+    if n <= 1:
+        return n
+    return fib(n - 1) + fib(n - 2)
+fib(n)]]>
+</code>
+</PythonExecRequest>"#;
+
+#[cfg(test)]
+#[test]
+fn test_python_exec_request_parsing() {
+    let parsed: PythonExecRequest = quick_xml::de::from_str(PYTHON_EXEC_REQUEST_VALID_EXAMPLE)
+        .expect("Failed to parse PythonExecRequest");
+    assert_eq!(
+        parsed,
+        PythonExecRequest {
+            script_name: "fibonacci.py".to_string(),
+            params: vec![PythonParam {
+                name: "n".to_string(),
+                value: PythonValue::Int { val: 10 },
+            }],
+            code: r#"def fib(n):
+    if n <= 1:
+        return n
+    return fib(n - 1) + fib(n - 2)
+fib(10)"#
+                .to_string(),
+        }
+    );
+}
+
 #[cfg(test)]
 mod tests {
+    use llm_xml_caster::LlmPrompt;
+
     use super::*;
 
     #[test]
@@ -204,9 +253,13 @@ fib(n)]]>
         let name = PythonExecTool::FN_NAME;
         println!("Tool Function Name: {}", name);
         let args = PythonExecArgs {
-            description:
-                "定义一个函数来计算斐波那契数列的第n个数字（假设F1=1, F2=1），并计算第10个数字。"
-                    .to_string(),
+            description: r#"
+def fib(n):
+    if n <= 1:
+        return n
+    return fib(n - 1) + fib(n - 2)
+fib(10)"#
+                .to_string(),
         };
         println!("Tool Call Arguments: {:?}", args);
         let call_ret = PythonExecTool::call(args).await?;

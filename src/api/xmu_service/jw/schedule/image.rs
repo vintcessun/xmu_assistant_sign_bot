@@ -18,7 +18,7 @@ pub struct ScheduleRenderer;
 
 impl ScheduleRenderer {
     /// 接收 Schedule 引用并生成图片文件
-    pub async fn render_to_file(schedule: &Schedule, week: usize) -> Result<TempFile> {
+    pub async fn render_to_file(schedule: &Schedule, week: u64) -> Result<TempFile> {
         block_in_place(|| {
             let filename = format!("{}.png", Uuid::new_v4());
             let file = TempFile::prepare(&filename);
@@ -31,7 +31,7 @@ impl ScheduleRenderer {
 }
 
 impl ScheduleRenderer {
-    fn generate_html(schedule: &Schedule, target_week: usize) -> String {
+    fn generate_html(schedule: &Schedule, target_week: u64) -> String {
         // 使用 HashMap 存储冲突课程: Key = (星期, 开始节次, 结束节次)
         type Key = (i64, i64, i64);
         // Value = Vec<(课程项, 颜色)>
@@ -39,7 +39,7 @@ impl ScheduleRenderer {
         let mut grouped_courses: HashMap<Key, Value> = HashMap::new();
 
         for (idx, item) in schedule.pkjgList.iter().enumerate() {
-            if item.zcbh.chars().nth(target_week - 1) != Some('1') {
+            if item.zcbh.chars().nth((target_week - 1) as usize) != Some('1') {
                 continue;
             }
 
@@ -188,7 +188,7 @@ impl ScheduleRenderer {
 
     fn render_to_file_inner(
         schedule: &Schedule,
-        week: usize,
+        week: u64,
         path: &std::path::PathBuf,
     ) -> Result<()> {
         let html = Self::generate_html(schedule, week);

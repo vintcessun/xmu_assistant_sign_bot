@@ -35,7 +35,7 @@ pub async fn download(ctx: Context) -> Result<()> {
 
     let files = {
         trace!(course_id = ?course_id, "已选择课程 ID, 开始识别文件");
-        let files = ChooseFiles::get_from_client(&client, msg_text, *course_id).await?;
+        let files = ChooseFiles::get_from_client(&client, msg_text, course_id).await?;
         trace!(files = ?files, "已返回文件选择结果");
         files.files
     };

@@ -6,7 +6,7 @@ use crate::api::llm::chat::audit::backlist::Backlist;
 use crate::api::llm::chat::impression::get_impression;
 use crate::api::llm::chat::llm::ask_llm;
 use crate::api::llm::chat::message::bridge::IntoMessageSend;
-use crate::api::llm::tool::{LlmBool, LlmPrompt, ask_as};
+use crate::api::llm::tool::ask_as;
 use crate::config::get_self_qq;
 use crate::{
     abi::{Context, logic_import::Message, network::BotClient, websocket::BotHandler},
@@ -14,18 +14,38 @@ use crate::{
 };
 use anyhow::{Result, anyhow};
 use genai::chat::ChatMessage;
-use helper::LlmPrompt;
+use llm_xml_caster::llm_prompt;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, trace, warn};
 
-#[derive(Debug, Serialize, Deserialize, LlmPrompt, Clone)]
+#[llm_prompt]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 struct LlmMessageReply {
     #[prompt(
         "当前是否需要对用户进行回复，如果用户特别想你回答就 true 大部分情况下都是不需要进行回答的，除非用户的问题非常明确并且你有非常相关的上下文可以用来回答，否则请回复 false"
     )]
-    is_match: LlmBool,
+    is_match: bool,
     #[prompt("基于当前结果生成一个简短的回复，回复要简洁明了")]
     reply: String,
+}
+
+const AUDIT_LLM_MESSAGE_REPLY_VALID_EXAMPLE: &str = r#"
+<LlmMessageReply>
+    <is_match>true</is_match>
+    <reply>你好，我是智能助手，有什么我可以帮助你的吗？</reply>
+</LlmMessageReply>"#;
+
+#[test]
+fn test_llm_message_reply_valid_example() {
+    let parsed: LlmMessageReply =
+        quick_xml::de::from_str(AUDIT_LLM_MESSAGE_REPLY_VALID_EXAMPLE).unwrap();
+    assert_eq!(
+        parsed,
+        LlmMessageReply {
+            is_match: true,
+            reply: "你好，我是智能助手，有什么我可以帮助你的吗？".into()
+        }
+    );
 }
 
 pub async fn send_message_from_llm<T>(ctx: &mut Context<T, Message>) -> Result<()>
@@ -85,14 +105,16 @@ where
 
     trace!(prompt = ?chat_message, "LLM 深度回复分析提示词");
 
-    let message = ask_as::<LlmMessageReply>(chat_message).await.map_err(|e| {
-        error!(group_id = ?group_id, error = ?e, "LLM 分析回复匹配度失败");
-        e
-    })?;
+    let message = ask_as::<LlmMessageReply>(chat_message, AUDIT_LLM_MESSAGE_REPLY_VALID_EXAMPLE)
+        .await
+        .map_err(|e| {
+            error!(group_id = ?group_id, error = ?e, "LLM 分析回复匹配度失败");
+            e
+        })?;
 
     trace!(reply_analysis = ?message, "LLM 深度回复匹配分析完成");
 
-    if !*message.is_match {
+    if !message.is_match {
         info!(group_id = ?group_id, reply = ?message.reply, "LLM 决定不回复");
         return Err(anyhow!("AI决定不回复"));
     }

@@ -1,17 +1,37 @@
 use crate::api::{
-    llm::tool::{LlmI64, LlmOption, LlmPrompt, ask_as},
+    llm::tool::ask_as,
     network::SessionClient,
     xmu_service::lnt::{MyCourses, RecentlyVisitedCourses},
 };
 use anyhow::Result;
 use genai::chat::{ChatMessage, MessageContent};
-use helper::{LlmPrompt, session_client_helper};
+use helper::session_client_helper;
+use llm_xml_caster::llm_prompt;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, LlmPrompt, Serialize, Deserialize)]
+#[llm_prompt]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CourseChoiceResponse {
     #[prompt("如果找到符合要求的课程就返回课程ID; 如果没找到指定的课程就是 null")]
-    pub course_id: LlmOption<LlmI64>,
+    pub course_id: Option<i64>,
+}
+
+const COURSE_CHOICE_RESPONSE_VALID_EXAMPLE: &str = r#"
+<CourseChoiceResponse>
+    <course_id>12345678</course_id>
+</CourseChoiceResponse>"#;
+
+#[cfg(test)]
+#[test]
+fn test_course_choice_response_valid_example() {
+    let parsed: CourseChoiceResponse =
+        quick_xml::de::from_str(COURSE_CHOICE_RESPONSE_VALID_EXAMPLE).unwrap();
+    assert_eq!(
+        parsed,
+        CourseChoiceResponse {
+            course_id: Some(12345678)
+        }
+    );
 }
 
 pub struct ChooseCourse;
@@ -35,7 +55,8 @@ impl ChooseCourse {
         )?),ChatMessage::system("获取到用户的所有课程信息如下："),ChatMessage::system(quick_xml::se::to_string(&course_data)?)
         ]].concat();
 
-        let response = ask_as::<CourseChoiceResponse>(messages).await?;
+        let response =
+            ask_as::<CourseChoiceResponse>(messages, COURSE_CHOICE_RESPONSE_VALID_EXAMPLE).await?;
         Ok(response)
     }
 }

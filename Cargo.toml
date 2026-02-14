@@ -59,7 +59,7 @@ mime_guess = "2.0.5"
 futures = "0.3.31"
 uuid = { version = "1.19.0", features = ["serde", "v4"] }
 tokio-util = "0.7.18"
-genai = { git = "https://github.com/vintcessun/rust-genai", branch = "main" }
+genai = { git = "https://github.com/jeremychone/rust-genai", branch = "main" }
 quick-xml = { version = "0.38.4", features = ["serde", "serialize", "tokio"] }
 phf = "0.13.1"
 sha2 = "0.10.9"
@@ -79,6 +79,9 @@ searxng-client = "0.1.0"
 monty = { git = "https://github.com/pydantic/monty", branch = "main" }
 ordered-float = { version = "5.1.0", features = ["serde"] }
 schemars = "1.2.1"
+llm_xml_caster = { git = "https://github.com/vintcessun/llm_xml_caster", branch = "master", features = [
+    "ordered_float",
+] }
 
 [build-dependencies]
 base64 = "0.22.1"

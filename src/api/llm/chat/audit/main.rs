@@ -14,7 +14,7 @@ use crate::{
                 llm::ask_llm,
                 repeat::reply::MessageAbstract,
             },
-            tool::{LlmBool, LlmOption, LlmPrompt, LlmVec, ask_as},
+            tool::{ ask_as},
         },
         storage::ColdTable,
     },
@@ -23,7 +23,6 @@ use crate::{
 use anyhow::Result;
 use futures::{SinkExt, StreamExt, channel::mpsc, future::join_all};
 use genai::chat::ChatMessage;
-use helper::LlmPrompt;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
@@ -32,6 +31,7 @@ use std::{
 };
 use tokio::time::{Instant, sleep, sleep_until};
 use tracing::{debug, error, info, trace, warn};
+use llm_xml_caster::{llm_prompt};
 
 static AUDIT_TASK: LazyLock<AuditTask> = LazyLock::new(|| AuditTask::new("llm_chat_audit_task"));
 
@@ -95,20 +95,52 @@ async fn sleep_until_unix_timestamp(target_timestamp: u64) {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, LlmPrompt)]
+#[llm_prompt]
+#[derive(Debug, Clone, Serialize, Deserialize,PartialEq, Eq)]
 pub struct AuditLlmResponse {
     #[prompt("该回复是否具有记忆价值，值得被永久铭记？")]
-    pub is_value: LlmBool,
+    pub is_value: bool,
     #[prompt("该回复是否触犯了群聊的潜规则，是否需要进行惩罚？")]
-    pub is_penalty: LlmOption<LlmBool>,
+    pub is_penalty: Option<bool>,
     #[prompt("如果该回复具有记忆价值，请简要描述其包含的知识点、幽默感或见解")]
-    pub value_detail: LlmOption<String>,
+    pub value_detail: Option<String>,
     #[prompt("如果该回答具有惩罚性，请描述具体的惩罚细节")]
-    pub bad_detail: LlmOption<String>,
+    pub bad_detail: Option<String>,
     #[prompt("如果该回答具有惩罚性，请描述该回复触犯群聊潜规则的具体原因是什么？")]
-    pub bad_reason: LlmOption<String>,
+    pub bad_reason: Option<String>,
     #[prompt("如果该回答具有惩罚性，请给出改进建议，帮助 Bot 更好地融入群聊氛围，请用换行符分割每个建议")]
-    pub suggestions: LlmOption<LlmVec<String>>,
+    pub suggestions: Option<Vec<String>>,
+}
+
+const AUDIT_LLM_RESPONSE_VALID_EXAMPLE: &str = r#"
+<AuditLlmResponse>
+    <is_value>true</is_value>
+    <is_penalty>false</is_penalty>
+    <value_detail><![CDATA[该回复包含了深刻的见解，值得被永久铭记]]></value_detail>
+    <bad_detail><![CDATA[]]></bad_detail>
+    <bad_reason><![CDATA[]]></bad_reason>
+    <suggestions>
+        <item><![CDATA[建议1]]></item>
+        <item><![CDATA[建议2]]></item>
+    </suggestions>
+</AuditLlmResponse>"#;
+
+#[cfg(test)]
+#[test]
+fn test_audit_llm_response_parsing() {
+    let parsed: AuditLlmResponse = quick_xml::de::from_str(AUDIT_LLM_RESPONSE_VALID_EXAMPLE)
+        .expect("Failed to parse AuditLlmResponse");
+    assert_eq!(
+        parsed,
+        AuditLlmResponse {
+            is_value: true,
+            is_penalty: Some(false),
+            value_detail: Some("该回复包含了深刻的见解，值得被永久铭记".to_string()),
+            bad_detail: Some("".to_string()),
+            bad_reason: Some("".to_string()),
+            suggestions: Some(vec!["建议1".to_string(), "建议2".to_string()]),
+        }
+    );
 }
 
 impl AuditTask {
@@ -222,7 +254,7 @@ impl AuditTask {
         let audit_data = ask_as::<AuditLlmResponse>(vec![
             ChatMessage::system("你是一个专业的把分析格式化成指定格式的转写转家"),
             ChatMessage::user(audit_response.content),
-        ])
+        ], AUDIT_LLM_RESPONSE_VALID_EXAMPLE)
         .await
         .map_err(|e| {
             error!(timestamp = ?ts, error = ?e, "LLM 审计结果结构化解析失败");
@@ -232,7 +264,7 @@ impl AuditTask {
         debug!(audit_data = ?audit_data, "LLM 审计结果结构化解析成功");
 
         // 7. 处理惩罚机制 (黑名单)
-        if let Some(is_penalty) = *audit_data.is_penalty && *is_penalty {
+        if let Some(is_penalty) = audit_data.is_penalty && is_penalty {
             warn!(timestamp = ?ts, audit_type = ?task.audit_type, "审计结果判定为需要惩罚");
             let now_unix = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -293,7 +325,7 @@ impl AuditTask {
         }
 
         // 8. 处理记忆价值 (MemoFragment)
-        if *audit_data.is_value {
+        if audit_data.is_value {
             info!(timestamp = ?ts, "审计结果判定为具有记忆价值");
             let value_detail = audit_data.value_detail.clone().unwrap_or_default();
             trace!(value_detail = %value_detail, "记忆价值详情");
