@@ -1,4 +1,4 @@
-use super::{python, web};
+use super::{python, time, web};
 use crate::api::llm::chat::tool::ToolCallback;
 use anyhow::Result;
 use genai::chat::{Tool, ToolCall, ToolResponse};
@@ -19,6 +19,7 @@ async fn handle_tool_inner(fn_name: &str, fn_arguments: Value) -> Result<String>
             let args: python::PythonExecArgs = serde_json::from_value(fn_arguments)?;
             python::PythonExecTool::call(args).await
         }
+        time::TimeInfoTool::FN_NAME => time::time_info_getter().await,
         _ => Err(anyhow::anyhow!("未知工具调用: {}", fn_name)),
     }
 }
@@ -44,5 +45,6 @@ pub fn get_tools() -> Vec<Tool> {
         web::FetchTool::tool(),
         web::SearchTool::tool(),
         python::PythonExecTool::tool(),
+        time::TimeInfoTool::tool(),
     ]
 }

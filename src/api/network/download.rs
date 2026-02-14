@@ -237,7 +237,7 @@ async fn download_parallel_benchmarked(
             error!(chunk_index = i, error = ?e, "下载任务在 tokio 运行时内失败");
             bail!("下载任务失败");
         }
-        res.unwrap()?;
+        res??;
     }
 
     Ok(())

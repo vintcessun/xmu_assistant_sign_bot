@@ -1,4 +1,5 @@
 use super::BuildHelp;
+use crate::api::llm::chat::tool::time::time_info_getter;
 use genai::chat::ChatMessage;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
@@ -40,11 +41,17 @@ pub async fn fate(ctx: Context) -> Result<()> {
         let impression = get_impression(user_id).await;
         debug!(user_id = user_id, impression = ?impression, "成功获取用户印象");
 
+        let time_info = time_info_getter().await.unwrap_or_else(|e| {
+            warn!(error = ?e, "获取时间信息失败，使用默认值");
+            "无法获取时间信息".to_string()
+        });
+
         let prompt = vec![
             ChatMessage::system(
                 "你是一个命理大师，请基于以下印象内容和求签结果，为用户进行一次简短的解签，回答要简洁明了，且富有哲理。",
             ),
             ChatMessage::system(format!("印象内容如下：{:?}", impression)),
+            ChatMessage::system(format!("当前时间信息如下：{}", time_info)),
             ChatMessage::user(format!(
                 "求签结果: {}\n\n\n\n{}\n\n\n\n",
                 fortune_senso_ji, fortune_ruanyf

@@ -1,5 +1,6 @@
 mod main;
 pub mod python;
+pub mod time;
 pub mod web;
 use schemars::{JsonSchema, generate::SchemaSettings};
 

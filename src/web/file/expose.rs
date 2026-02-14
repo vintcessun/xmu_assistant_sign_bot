@@ -150,7 +150,7 @@ async fn file_download_handler(Path(params): Path<DownloadParams>) -> impl IntoR
             format!("attachment; filename=\"{}\"", filename),
         )
         .body(body)
-        .unwrap()
+        .unwrap_or_default()
 }
 
 pub fn task_router(router: Router) -> Router {

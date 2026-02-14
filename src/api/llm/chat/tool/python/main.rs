@@ -26,6 +26,19 @@ pub async fn python_exec(
     /// 用户对要执行的 Python 代码的需求描述，代码必须符合以下格式（即函数应该在最后被调用，就像直接输入REPL进行运行一样）:
     description: String,
 ) -> Result<String> {
+    for _ in 0..10 {
+        match python_exec_inner(description.clone()).await {
+            Ok(res) => return Ok(res),
+            Err(e) => {
+                trace!(error = ?e, "执行 Python 代码失败，正在重试...");
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+        }
+    }
+    Err(anyhow::anyhow!("执行 Python 代码失败，已达到最大重试次数"))
+}
+
+async fn python_exec_inner(description: String) -> Result<String> {
     let chat_msg = vec![
         ChatMessage::system(
             "你是一个 Python 代码生成和执行专家，根据用户的需求生成 Python 代码并执行，最后返回结果。请根据用户的需求生成符合要求的 Python 代码，并且在最后调用函数时传入正确的参数。",
@@ -43,6 +56,8 @@ fib(x)
         ),
         ChatMessage::user(description),
     ];
+    #[cfg(test)]
+    println!("生成 Python 代码的输入消息: {:?}", chat_msg);
     let code = ask_as::<PythonExecRequest>(chat_msg, PYTHON_EXEC_REQUEST_VALID_EXAMPLE).await?;
     #[cfg(test)]
     println!("Generated Python Code: {:?}", code);
