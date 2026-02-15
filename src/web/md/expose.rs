@@ -87,7 +87,7 @@ async fn content_handler(Path(params): Path<ContentParams>) -> impl IntoResponse
             Response::builder()
                 .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
                 .body(axum::body::Body::from(task_result.html_content.to_string()))
-                .unwrap()
+                .unwrap_or_default()
         }
         "pdf" => {
             // 返回 PDF 文件流供下载
@@ -115,7 +115,7 @@ async fn content_handler(Path(params): Path<ContentParams>) -> impl IntoResponse
                     format!("attachment; filename=\"{}\"", filename),
                 )
                 .body(body)
-                .unwrap()
+                .unwrap_or_default()
         }
         _ => {
             warn!(content_type = params.content_type, "请求了未知的内容类型");

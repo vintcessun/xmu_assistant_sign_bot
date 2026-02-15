@@ -229,6 +229,7 @@ impl IntoMessageSend {
                 Err(e) => {
                     warn!(error = ?e, "获取 MessageSend 失败，正在重试");
                     msg.push(ChatMessage::user(format!("你之前任务错误: {}", e)));
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                 }
             }
         }

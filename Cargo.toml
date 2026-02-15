@@ -59,7 +59,7 @@ mime_guess = "2.0.5"
 futures = "0.3.31"
 uuid = { version = "1.19.0", features = ["serde", "v4"] }
 tokio-util = "0.7.18"
-genai = { git = "https://github.com/jeremychone/rust-genai", branch = "main" }
+genai = { git = "https://github.com/vintcessun/rust-genai", branch = "main" }
 quick-xml = { version = "0.38.4", features = ["serde", "serialize", "tokio"] }
 phf = "0.13.1"
 sha2 = "0.10.9"
@@ -82,6 +82,8 @@ schemars = "1.2.1"
 llm_xml_caster = { git = "https://github.com/vintcessun/llm_xml_caster", branch = "master", features = [
     "ordered_float",
 ] }
+lunar_rust = "1.0.1"
+astro = "2.0.0"
 
 [build-dependencies]
 base64 = "0.22.1"

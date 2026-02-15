@@ -11,7 +11,7 @@ use llm_xml_caster::{LlmPrompt, generate_as_with_retries};
 use serde::de::DeserializeOwned;
 use tracing::{debug, error, info, trace, warn};
 
-const LOW_MODEL: &str = "qwen2.5vl:latest";
+const LOW_MODEL: &str = "qwen3-vl:4b-8k";
 const HIGH_MODEL: &str = "gemini-2.5-flash";
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
@@ -100,7 +100,21 @@ where
         match result {
             Ok(res) => return Ok(res),
             Err(e) => {
+                let err_str = e.to_string();
+                if (err_str.contains("invalid message format")
+                    && err_str.contains("ResponseFailedStatus"))
+                    || (err_str.contains("invalid_request_error")
+                        && err_str.contains("invalid image input"))
+                {
+                    return Err(anyhow::anyhow!(
+                        "错误的消息:\n{}",
+                        serde_json::to_string(&message)?
+                    ));
+                }
+                #[cfg(test)]
+                println!("LLM 结构化调用失败错误信息: {:?} 第 {} 次", e, i);
                 warn!(model_name = LOW_MODEL, error = ?e, "LLM 结构化调用失败 第 {} 次", i);
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             }
         }
         i += 1;
