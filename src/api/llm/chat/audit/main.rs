@@ -26,14 +26,14 @@ use genai::chat::ChatMessage;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, atomic::{AtomicU64, Ordering}},
     time::{self, Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::time::{Instant, sleep, sleep_until};
 use tracing::{debug, error, info, trace, warn};
 use llm_xml_caster::{llm_prompt};
 
-static AUDIT_TASK: LazyLock<AuditTask> = LazyLock::new(|| AuditTask::new("llm_chat_audit_task"));
+static AUDIT_TASK: LazyLock<AuditTask> = LazyLock::new(|| AuditTask::new("llm_chat_audit_task_store"));
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -43,7 +43,7 @@ pub enum AuditType {
     Deep,   //L2: 针对 LLM 生成结果
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AuditTestRequest {  
     pub message: Vec<ChatMessage>,
     pub audit_type: AuditType,
@@ -51,6 +51,7 @@ pub struct AuditTestRequest {
     pub group_id: i64,
     pub fast_key: Option<MessageAbstract>,
     pub search_key: Option<Vec<String>>,
+    pub retry_times: AtomicU64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -102,6 +103,8 @@ pub struct AuditLlmResponse {
     pub is_value: bool,
     #[prompt("该回复是否触犯了群聊的潜规则，是否需要进行惩罚？")]
     pub is_penalty: Option<bool>,
+    #[prompt("负面权重")]
+    pub fail_count: Option<u32>,
     #[prompt("如果该回复具有记忆价值，请简要描述其包含的知识点、幽默感或见解")]
     pub value_detail: Option<String>,
     #[prompt("如果该回答具有惩罚性，请描述具体的惩罚细节")]
@@ -139,6 +142,7 @@ fn test_audit_llm_response_parsing() {
             bad_detail: Some("".to_string()),
             bad_reason: Some("".to_string()),
             suggestions: Some(vec!["建议1".to_string(), "建议2".to_string()]),
+            fail_count: None,
         }
     );
 }
@@ -150,12 +154,17 @@ impl AuditTask {
     ) -> Result<()> {
         let ts = task.timestamp;
         info!(timestamp = ?ts, audit_type = ?task.audit_type, "开始处理审计任务");
+        let retry_times = task.retry_times.load(Ordering::Relaxed);
+        if retry_times > 5{
+            error!(timestamp = ?ts, audit_type = ?task.audit_type, retry_times = ?retry_times, "审计任务重试次数过多，放弃处理");
+            return Ok(());
+        }
 
         // 1. 记录任务状态为处理中
         if let Err(e) = data
             .insert(
                 &ts,
-                & AuditTestTask {
+                &AuditTestTask {
                     task: task.clone(),
                     status: AuditStatus::Processing,
                 },
@@ -282,7 +291,7 @@ impl AuditTask {
                     bad_detail,
                     bad_reason,
                     suggestions,
-                    fail_count: 1,
+                    fail_count: audit_data.fail_count.unwrap_or(1),
                     penalty_end: VecDeque::from(vec![penalty_end_ts]),
                 });
                 Backlist::insert(fast_key.clone(), entry).await.map_err(|e| {
@@ -298,7 +307,7 @@ impl AuditTask {
                     bad_detail,
                     bad_reason,
                     suggestions,
-                    fail_count: 1,
+                    fail_count: audit_data.fail_count.unwrap_or(1),
                     penalty_end: VecDeque::from(vec![penalty_end_ts]),
                 });
                 
@@ -311,7 +320,7 @@ impl AuditTask {
                     .collect::<Vec<_>>();
 
                 if msg.is_empty() {
-                    warn!(timestamp = ?ts, "基于搜索键的黑名单插入失败：无法获取任何消息内容");
+                    //warn!(timestamp = ?ts, "基于搜索键的黑名单插入失败：无法获取任何消息内容");
                 } else {
                     Backlist::insert_just_search(msg, entry).await.map_err(|e| {
                         error!(timestamp = ?ts, search_key = ?search_key, error = ?e, "插入向量黑名单失败");
@@ -374,6 +383,7 @@ impl AuditTask {
                 match Self::process_task(task.clone(), data.clone()).await {
                     Ok(_) => {}
                     Err(e) => {
+                        task.retry_times.fetch_add(1, Ordering::Relaxed);
                         error!(error = ?e, "审计任务处理失败，将在 60 秒后重试");
                         sleep(Duration::from_secs(60)).await;
                         let res = tx_clone.send(task.clone()).await;
@@ -475,6 +485,7 @@ pub async fn audit_test_fast(
             group_id,
             fast_key: Some(id),
             search_key: None,
+            retry_times: AtomicU64::new(0),
         }))
         .await
         .map_err(|e| {
@@ -504,6 +515,7 @@ pub async fn audit_test_search(
             group_id,
             fast_key: None,
             search_key: Some(search_key),
+            retry_times: AtomicU64::new(0),
         }))
         .await
         .map_err(|e| {
@@ -529,6 +541,7 @@ pub async fn audit_test_deep(message: &MessageSend, group_id: i64) -> Result<()>
             group_id,
             fast_key: None,
             search_key: None,
+            retry_times: AtomicU64::new(0),
         }))
         .await
         .map_err(|e| {

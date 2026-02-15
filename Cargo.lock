@@ -1429,7 +1429,7 @@ dependencies = [
 [[package]]
 name = "genai"
 version = "0.6.0-alpha.3-WIP"
-source = "git+https://github.com/vintcessun/rust-genai?branch=main#0e4cde529a19474bb7d0a707d1bf9c490e5fdbb5"
+source = "git+https://github.com/jeremychone/rust-genai?branch=main#7d55bbf7fc8c8be5aad7306ce55f799eaada6803"
 dependencies = [
  "base64",
  "bytes",
@@ -2275,7 +2275,7 @@ checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 [[package]]
 name = "llm_xml_caster"
 version = "0.1.0"
-source = "git+https://github.com/vintcessun/llm_xml_caster?branch=master#33f01b11bf228de601a67d0072e2498e6a339f43"
+source = "git+https://github.com/vintcessun/llm_xml_caster?branch=master#d03200730dc3c0f2bac1046ec566d0e0ddb6089d"
 dependencies = [
  "const_format",
  "dashmap",
@@ -2292,7 +2292,7 @@ dependencies = [
 [[package]]
 name = "llm_xml_caster_helper"
 version = "0.1.0"
-source = "git+https://github.com/vintcessun/llm_xml_caster?branch=master#33f01b11bf228de601a67d0072e2498e6a339f43"
+source = "git+https://github.com/vintcessun/llm_xml_caster?branch=master#d03200730dc3c0f2bac1046ec566d0e0ddb6089d"
 dependencies = [
  "proc-macro2",
  "quote",
