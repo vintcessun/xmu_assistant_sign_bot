@@ -6,7 +6,7 @@ use crate::api::llm::chat::audit::audit_test_search;
 use crate::api::llm::chat::audit::backlist::Backlist;
 use crate::api::llm::chat::llm::ask_llm;
 use crate::api::llm::chat::message::bridge::IntoMessageSend;
-use crate::api::llm::tool::ask_as;
+use crate::api::llm::tool::ask_as_high;
 use crate::{
     abi::{Context, logic_import::Message, network::BotClient, websocket::BotHandler},
     api::llm::chat::{llm::get_chat_embedding, search::store::MessageSearchStore},
@@ -22,14 +22,14 @@ use tracing::{debug, error, info, trace, warn};
 pub struct SearchMessageReply {
     #[prompt("当前是否需要对用户进行回复，如果搜索结果非常相关则回复 true，否则回复 false")]
     is_match: bool,
-    #[prompt("基于搜索的结果生成一个简短的回复，回复要简洁明了")]
-    reply: String,
+    #[prompt("基于搜索的结果生成不进行回复或者进行回复的原因")]
+    reason: String,
 }
 
 pub const SEARCH_MESSAGE_REPLY_VALID_EXAMPLE: &str = r#"
 <SearchMessageReply>
-    <is_match>true</is_match>
-    <reply>根据您的提问，我找到了相关的信息，以下是我的回复。</reply>
+    <is_match>false</is_match>
+    <reason>搜索结果与用户提问不相关，因此不进行回复。</reason>
 </SearchMessageReply>"#;
 
 #[cfg(test)]
@@ -40,8 +40,8 @@ fn test_search_message_reply_valid_example() {
     assert_eq!(
         parsed,
         SearchMessageReply {
-            is_match: true,
-            reply: "根据您的提问，我找到了相关的信息，以下是我的回复。".into()
+            is_match: false,
+            reason: "搜索结果与用户提问不相关，因此不进行回复。".into()
         }
     );
 }
@@ -133,21 +133,20 @@ where
     ChatMessage::system("用户的提问:")],
     msg_src.clone()].concat();
 
-    let message = ask_as::<SearchMessageReply>(chat_message, SEARCH_MESSAGE_REPLY_VALID_EXAMPLE)
-        .await
-        .map_err(|e| {
-            error!(group_id = ?group_id, error = ?e, "LLM 分析搜索匹配度失败");
-            e
-        })?;
+    let message =
+        ask_as_high::<SearchMessageReply>(chat_message, SEARCH_MESSAGE_REPLY_VALID_EXAMPLE)
+            .await
+            .map_err(|e| {
+                error!(group_id = ?group_id, error = ?e, "LLM 分析搜索匹配度失败");
+                e
+            })?;
 
     trace!(reply_analysis = ?message, "LLM 搜索回复匹配分析完成");
 
+    info!(group_id=?group_id,message_reply_analysis=?message, "LLM 搜索回复匹配分析结果");
     if !message.is_match {
-        debug!(group_id = ?group_id, "LLM 分析认为搜索结果匹配度低，不回复");
-        return Err(anyhow!("未命中搜索回复"));
+        return Err(anyhow!("未命中搜索回复: {}", message.reason));
     }
-
-    info!(group_id = ?group_id, "LLM 分析认为搜索结果匹配度高，继续生成回复");
 
     let backlist = Backlist::search(&msg, 5)
         .await

@@ -100,12 +100,8 @@ where
         match result {
             Ok(res) => return Ok(res),
             Err(e) => {
-                let err_str = e.to_string();
-                if (err_str.contains("invalid message format")
-                    && err_str.contains("ResponseFailedStatus"))
-                    || (err_str.contains("invalid_request_error")
-                        && err_str.contains("invalid image input"))
-                {
+                let err_str = format!("{:?}", e);
+                if err_str.contains("unknown format") && err_str.contains("ResponseFailedStatus") {
                     return Err(anyhow::anyhow!(
                         "错误的消息:\n{}",
                         serde_json::to_string(&message)?
