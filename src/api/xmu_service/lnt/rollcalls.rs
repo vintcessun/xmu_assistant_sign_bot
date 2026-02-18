@@ -1,8 +1,10 @@
+use std::fmt;
+
 use crate::abi::utils::SmartJsonExt;
 use helper::lnt_get_api;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Rollcall {
     pub course_id: i64,
     pub course_title: String,
@@ -28,7 +30,7 @@ pub struct Rollcall {
     //pub r#type: Option<Value>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum RollcallStatus {
     OnCallFine,

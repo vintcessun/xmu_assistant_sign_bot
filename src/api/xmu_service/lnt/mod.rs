@@ -8,6 +8,7 @@ mod html;
 mod my_courses;
 mod profile;
 mod recently_visited_courses;
+mod rollcalls;
 mod submissions;
 mod submissions_id;
 
@@ -21,6 +22,7 @@ pub use file_url::FileUrl;
 pub use my_courses::MyCourses;
 pub use profile::Profile;
 pub use recently_visited_courses::RecentlyVisitedCourses;
+pub use rollcalls::Rollcalls;
 pub use submissions::Submissions;
 pub use submissions_id::SubmissionsId;
 
