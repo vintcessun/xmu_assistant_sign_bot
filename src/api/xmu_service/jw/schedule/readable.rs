@@ -3,13 +3,25 @@ use crate::api::xmu_service::{
     location::{LOCATIONS, Location},
 };
 use anyhow::{Result, anyhow};
+use serde::{Deserialize, Serialize};
 use std::ops::Index;
 
 #[cfg(test)]
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Partial<T> {
-    pub value: T,                   // 已经解析成功的部分（或默认值）
+    pub value: T, // 已经解析成功的部分（或默认值）
+    #[serde(skip)]
     pub errors: Vec<anyhow::Error>, // 收集到的所有错误
+}
+
+#[cfg(test)]
+impl Clone for Partial<ScheduleTable> {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+            errors: Vec::new(), // 克隆时不复制错误
+        }
+    }
 }
 
 #[cfg(test)]
@@ -37,7 +49,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ClockTime(u16); // 内部存储从 00:00 开始的分钟数
 
 impl ClockTime {
@@ -69,7 +81,7 @@ impl ClockTime {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TimeShape {
     pub name: String,
     pub id: i64,
@@ -93,7 +105,7 @@ impl TimeShape {
 }
 
 /// 索引从1开始的课表类
-#[derive(Debug)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ScheduleTimeShape {
     pub times: Vec<TimeShape>,
 }
@@ -143,10 +155,28 @@ impl Index<i64> for ScheduleTimeShape {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "Option<String>")]
+pub struct LocationStore {
+    #[serde(skip_deserializing)]
+    pub pos: Option<Location>,
+    pub location_str: Option<String>,
+}
+
+impl From<Option<String>> for LocationStore {
+    fn from(s: Option<String>) -> Self {
+        let pos = s.as_ref().and_then(|name| LOCATIONS.query(name));
+        Self {
+            pos,
+            location_str: s,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CourseTime {
     pub name: String,
-    pub location: Option<Location>,
+    pub location: LocationStore,
     pub start: ClockTime,
     pub end: ClockTime,
     pub week_mask: u32,
@@ -169,16 +199,14 @@ impl CourseTime {
         let end = ClockTime::from_military(data.jssj)
             .ok_or(anyhow!("结束时间(jssj)解析错误; 原始结构体: {:?}", data))?;
         let location_str = data.jasmc.as_ref();
-        let mut location = None;
         if let Some(location_str) = location_str {
-            let location_get = LOCATIONS
+            LOCATIONS
                 .query(location_str)
                 .ok_or(anyhow!("地点(jasmc)解析错误; 原始结构体: {:?}", data))?;
-            location = Some(location_get);
         }
         Ok(Self {
             name: data.kcmc,
-            location,
+            location: LocationStore::from(location_str.cloned()),
             start,
             end,
             week_mask: parse_weeks(&data.zcbh),
@@ -186,7 +214,7 @@ impl CourseTime {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ScheduleCourseTime {
     pub times: Vec<CourseTime>,
 }
@@ -217,7 +245,7 @@ impl ScheduleCourseTime {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ScheduleTable {
     pub shape: ScheduleTimeShape,
     pub course: ScheduleCourseTime,

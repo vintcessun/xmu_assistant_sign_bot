@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
     sync::{Arc, LazyLock},
@@ -128,7 +129,7 @@ pub static LOCATIONS: LazyLock<LocationService> = LazyLock::new(|| {
     ])
 });
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum Region {
     XiangAn,
     SiMing,
@@ -143,7 +144,7 @@ impl Debug for Region {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Location {
     pub region: Region,
     pub name: &'static str,
