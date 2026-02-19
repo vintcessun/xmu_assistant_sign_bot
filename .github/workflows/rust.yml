@@ -179,7 +179,7 @@ jobs:
     # Windows MSVC builds (using Windows runner)
     build-windows-msvc:
         name: Windows MSVC builds
-        runs-on: windows-latest
+        runs-on: windows-2025-VS2026
         env:
             VCPKG_ROOT: C:\vcpkg
         strategy:
@@ -355,9 +355,8 @@ jobs:
               run: cargo build --release --target ${{ matrix.target }} --verbose
               env:
                   RUSTFLAGS: >-
-                      -C link-arg=/OPT:REF
-                      ${{ contains(matrix.target, 'aarch64') && '-C link-arg=/Gy -C link-arg=/OPT:NOICF' || '' }}
-                      ${{ contains(matrix.target, 'x86_64') && '-C link-arg=-fuse-ld=lld-link -C target-cpu=x86-64-v3' || '' }}
+                      -C link-arg=-fuse-ld=lld-link 
+                      ${{ contains(matrix.target, 'x86_64') && '-C target-cpu=x86-64-v3' || '' }}
                       ${{ contains(matrix.target, 'aarch64') && '-C target-cpu=generic' || '' }}
 
             - name: Rename artifact
