@@ -182,6 +182,7 @@ jobs:
         runs-on: windows-latest
         env:
             VCPKG_ROOT: C:\vcpkg
+            CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 16
         strategy:
             fail-fast: false
             matrix:
@@ -355,7 +356,7 @@ jobs:
               run: cargo build --release --target ${{ matrix.target }} --verbose
               env:
                   RUSTFLAGS: >-
-                      ${{ contains(matrix.target, 'aarch64') && '-C link-arg=/Gy -C codegen-units=16' || '-C link-arg=/OPT:REF' }}
+                      ${{ contains(matrix.target, 'aarch64') && '-C link-arg=/Gy' || '-C link-arg=/OPT:REF' }}
                       ${{ contains(matrix.target, 'x86_64') && '-C link-arg=-fuse-ld=lld-link -C target-cpu=x86-64-v3' || '' }}
                       ${{ contains(matrix.target, 'aarch64') && '-C target-cpu=generic' || '' }}
 
