@@ -4,7 +4,7 @@ use crate::api::llm::chat::tool::python::{
     PythonExecRequest, PythonParam, python_value_to_monty_object,
 };
 use anyhow::Result;
-use monty::{CollectStringPrint, LimitedTracker, MontyRun, ResourceLimits};
+use monty::{LimitedTracker, MontyRun, PrintWriter, ResourceLimits};
 use tokio::task::block_in_place;
 
 pub async fn run_python_code(request: PythonExecRequest) -> Result<String> {
@@ -32,7 +32,7 @@ pub async fn run_python_code(request: PythonExecRequest) -> Result<String> {
             input_names,
             vec![],
         )?;
-        let mut collect = CollectStringPrint::new();
+        let mut collect = PrintWriter::Collect(String::with_capacity(128));
         let result = runner.run(
             input_values,
             LimitedTracker::new(ResourceLimits::new().max_duration(Duration::from_mins(20))),
@@ -40,7 +40,7 @@ pub async fn run_python_code(request: PythonExecRequest) -> Result<String> {
         )?;
         Ok(format!(
             "stdout:\n{}\n返回值:\n{}",
-            collect.output(),
+            collect.collected_output().unwrap_or_default(),
             result
         ))
     })
@@ -49,7 +49,7 @@ pub async fn run_python_code(request: PythonExecRequest) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use monty::{CollectStringPrint, MontyObject, NoLimitTracker, StdPrint};
+    use monty::{MontyObject, NoLimitTracker, PrintWriter};
 
     #[test]
     fn test_exec() {
@@ -65,7 +65,11 @@ fib(x)
         let runner =
             MontyRun::new(code.to_owned(), "fib.py", vec!["x".to_owned()], vec![]).unwrap();
         let result = runner
-            .run(vec![MontyObject::Int(10)], NoLimitTracker, &mut StdPrint)
+            .run(
+                vec![MontyObject::Int(10)],
+                NoLimitTracker,
+                &mut PrintWriter::Stdout,
+            )
             .unwrap();
         println!("捕获到的结果: {}", result);
         assert_eq!(result, MontyObject::Int(55));
@@ -81,7 +85,11 @@ fib(x)
         // Later, restore and run
         let runner2 = MontyRun::load(&bytes).unwrap();
         let result = runner2
-            .run(vec![MontyObject::Int(41)], NoLimitTracker, &mut StdPrint)
+            .run(
+                vec![MontyObject::Int(41)],
+                NoLimitTracker,
+                &mut PrintWriter::Stdout,
+            )
             .unwrap();
         println!("捕获到的结果: {:?}", result);
         assert_eq!(result, MontyObject::Int(42));
@@ -106,7 +114,7 @@ add(x, y)
             .run(
                 vec![MontyObject::Int(10), MontyObject::Int(20)],
                 NoLimitTracker,
-                &mut StdPrint,
+                &mut PrintWriter::Stdout,
             )
             .unwrap();
         println!("捕获到的结果: {:?}", result);
@@ -119,7 +127,7 @@ add(x, y)
                     MontyObject::String("world!".to_owned()),
                 ],
                 NoLimitTracker,
-                &mut StdPrint,
+                &mut PrintWriter::Stdout,
             )
             .unwrap();
         println!("捕获到的结果: {:?}", result);
@@ -144,7 +152,7 @@ div(x, y)
         let result = runner.run(
             vec![MontyObject::Int(10), MontyObject::Int(0)],
             NoLimitTracker,
-            &mut StdPrint,
+            &mut PrintWriter::Stdout,
         );
         println!("捕获到的结果: {:?}", result);
         assert!(result.is_err());
@@ -172,7 +180,7 @@ parse_json(x)
                 r#"{"key": "value", "num": 42}"#.to_owned(),
             )],
             NoLimitTracker,
-            &mut StdPrint,
+            &mut PrintWriter::Stdout,
         );
         println!("捕获到的结果: {:?}", result);
         assert!(result.is_err());
@@ -180,7 +188,7 @@ parse_json(x)
 
     #[test]
     fn test_stdout() {
-        let mut collect = CollectStringPrint::new();
+        let mut collect = PrintWriter::Collect(String::new());
         let code = r#"
 def fib(n):
     if n <= 1:
@@ -196,8 +204,14 @@ print("Fibonacci result is:", result)
             .run(vec![MontyObject::Int(10)], NoLimitTracker, &mut collect)
             .unwrap();
         println!("捕获到的结果: {}", result);
-        println!("捕获到的输出: {}", collect.output());
+        println!(
+            "捕获到的输出: {}",
+            collect.collected_output().unwrap_or_default()
+        );
         assert_eq!(result, MontyObject::None);
-        assert_eq!(collect.output().trim(), "Fibonacci result is: 55");
+        assert_eq!(
+            collect.collected_output().unwrap_or_default().trim(),
+            "Fibonacci result is: 55"
+        );
     }
 }
