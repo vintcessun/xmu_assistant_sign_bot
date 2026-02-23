@@ -217,7 +217,7 @@ fn generate_logic_handlers() {
             let mod_name = file_name.strip_suffix(".rs").unwrap();
 
             // 模块声明 (mod echo;)
-            all_mod_declarations.push(format!("mod {};", mod_name));
+            all_mod_declarations.push(format!("pub mod {};", mod_name));
 
             // 扫描文件中的 handlers
             parse_file_for_handlers(&path, mod_name, &mut command_handlers, &mut other_handlers);
@@ -226,7 +226,7 @@ fn generate_logic_handlers() {
             let dir_name = file_name;
 
             // 模块目录声明 (mod login;)
-            all_mod_declarations.push(format!("mod {};", dir_name));
+            all_mod_declarations.push(format!("pub mod {};", dir_name));
 
             // 扫描子目录下的所有 .rs 文件 (排除 mod.rs)
             for sub_entry in fs::read_dir(&path)
