@@ -38,12 +38,15 @@ impl QrProcessor {
 
             // 启动原生线程，不占 tokio 阻塞池名额
             thread::spawn(move || {
-                // 绑定 CPU 核心
-                let core_ids = vec![i];
-                if let Err(e) = affinity::set_thread_affinity(&core_ids) {
-                    warn!(thread_index = i, error = ?e, "Failed to set thread affinity");
-                } else {
-                    info!(thread_index = i, core_id = i, "Thread bound to core");
+                #[cfg(not(target_os = "macos"))]
+                {
+                    // 绑定 CPU 核心
+                    let core_ids = vec![i];
+                    if let Err(e) = affinity::set_thread_affinity(&core_ids) {
+                        warn!(thread_index = i, error = ?e, "Failed to set thread affinity");
+                    } else {
+                        info!(thread_index = i, core_id = i, "Thread bound to core");
+                    }
                 }
 
                 // --- 1. 预热阶段 (Warm-up) ---
