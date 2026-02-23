@@ -33,7 +33,9 @@ jobs:
                   if git merge upstream/master --allow-unrelated-histories --no-edit -m "chore: sync upstream [skip ci]"; then
                     echo "Merge successful, deleting all upstream workflows and pushing to private..."
                     # 删除所有非当前脚本的工作流文件
-                    find .github/workflows/ -maxdepth 1 -type f -name "*.yml" -not -name "sync_upstream.yml" -print0 | xargs -0 git rm -f --ignore-unmatch
+                    # 使用 xargs --no-run-if-empty (或 -r) 防止在没有匹配文件时报错
+                    # 注意：ubuntu-latest 的 xargs 支持 -r
+                    find .github/workflows/ -maxdepth 1 -type f -name "*.yml" -not -name "sync_upstream.yml" -print0 | xargs -0 -r git rm -f --ignore-unmatch
                     git push origin main
                   else
                     echo "Error: Conflict detected. Manual intervention required."
