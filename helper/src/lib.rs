@@ -758,11 +758,10 @@ pub fn lnt_get_api(args: TokenStream, input: TokenStream) -> TokenStream {
                 let from = format!("{}:{}", name_str, ty_str);
                 clean_url = clean_url.replace(&from, name);
             } else {
-                // 默认回退到 i64 (满足你的偏好)
-                let name = capture.trim();
-                let name_ident = format_ident!("{}", name, span = url_expr.span());
-                fn_params.push(quote! { #name_ident: i64 });
-                call_args.push(quote! { #name_ident });
+                panic!(
+                    "\n[Macros Error]: Invalid placeholder format in URL. Expected '{{name:Type}}', found '{{{}}}'.\n",
+                    capture
+                );
             }
         }
     }
