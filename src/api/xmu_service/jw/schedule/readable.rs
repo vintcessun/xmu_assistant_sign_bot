@@ -4,7 +4,7 @@ use crate::api::xmu_service::{
 };
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
-use std::ops::Index;
+use std::{ops::Index, sync::Arc};
 
 #[cfg(test)]
 #[derive(Debug, Deserialize, Serialize)]
@@ -173,10 +173,28 @@ impl From<Option<String>> for LocationStore {
     }
 }
 
+impl From<&Location> for LocationStore {
+    fn from(loc: &Location) -> Self {
+        Self {
+            location_str: Some(loc.name.to_string()),
+            pos: Some(loc.clone()),
+        }
+    }
+}
+
+impl From<Location> for LocationStore {
+    fn from(loc: Location) -> Self {
+        Self {
+            location_str: Some(loc.name.to_string()),
+            pos: Some(loc),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CourseTime {
     pub name: String,
-    pub location: LocationStore,
+    pub location: Arc<LocationStore>,
     pub start: ClockTime,
     pub end: ClockTime,
     pub week_mask: u32,
@@ -206,7 +224,7 @@ impl CourseTime {
         }
         Ok(Self {
             name: data.kcmc,
-            location: LocationStore::from(location_str.cloned()),
+            location: Arc::new(LocationStore::from(location_str.cloned())),
             start,
             end,
             week_mask: parse_weeks(&data.zcbh),
