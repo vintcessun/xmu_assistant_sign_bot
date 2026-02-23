@@ -46,7 +46,7 @@ reqwest = { version = "0.12.28", features = ["cookies", "json", "stream"] }
 fake_user_agent = "0.2.3"
 url-macro = "0.2.3"
 url = "2.5.7"
-smol_str = "0.3.4"
+smol_str = { version = "0.3.4", features = ["serde"] }
 cookie = "0.18.1"
 serde_urlencoded = "0.7.1"
 ahash = "0.8.12"
