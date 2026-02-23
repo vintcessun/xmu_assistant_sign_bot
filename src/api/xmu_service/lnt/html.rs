@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::task::block_in_place;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct HtmlParseResult {
     pub message: MessageSendBuilder,
     pub markdown: String,
@@ -47,6 +47,7 @@ impl HtmlParseResult {
     }
 }
 
+#[derive(Default)]
 pub struct HtmlParseResultInner {
     pub message: MessageSendBuilder,
     pub markdown: String,
