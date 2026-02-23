@@ -355,7 +355,7 @@ fn generate_lnt_api_mod() {
 
         if path.is_file() && file_name.ends_with(".rs") && file_name != "mod.rs" {
             let mod_name = file_name.strip_suffix(".rs").unwrap();
-            all_mod_declarations.push(format!("mod {};", mod_name));
+            all_mod_declarations.push(format!("pub mod {};", mod_name));
 
             let mut structs = Vec::new();
             parse_lnt_file_for_structs(&path, &mut structs);
