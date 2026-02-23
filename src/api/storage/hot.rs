@@ -326,4 +326,14 @@ where
         }
         result
     }
+
+    pub fn get_all(&self) -> Vec<(K, Arc<V>)>
+    where
+        K: Clone,
+    {
+        self.cache
+            .iter()
+            .map(|entry| (entry.key().clone(), entry.value().clone()))
+            .collect()
+    }
 }
