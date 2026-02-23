@@ -38,9 +38,9 @@ impl QrProcessor {
 
             // 启动原生线程，不占 tokio 阻塞池名额
             thread::spawn(move || {
+                // 绑定 CPU 核心 (在 macOS 上跳过 affinity)
                 #[cfg(not(target_os = "macos"))]
                 {
-                    // 绑定 CPU 核心
                     let core_ids = vec![i];
                     if let Err(e) = affinity::set_thread_affinity(&core_ids) {
                         warn!(thread_index = i, error = ?e, "Failed to set thread affinity");
