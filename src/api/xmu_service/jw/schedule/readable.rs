@@ -191,6 +191,15 @@ impl From<Location> for LocationStore {
     }
 }
 
+impl From<Arc<Location>> for LocationStore {
+    fn from(loc: Arc<Location>) -> Self {
+        Self {
+            location_str: Some(loc.name.to_string()),
+            pos: Some((*loc).clone()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CourseTime {
     pub name: String,
