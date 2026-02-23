@@ -297,6 +297,20 @@ impl SessionClient {
             .await
     }
 
+    pub async fn put<U: IntoUrl, T: serde::Serialize + ?Sized>(
+        &self,
+        url: U,
+        data: &T,
+    ) -> Result<Response> {
+        let url = url.into_url()?;
+        let body = serde_urlencoded::to_string(data).map_err(|e| {
+            error!(error = ?e, "PUT 请求体 URL 编码失败");
+            e
+        })?;
+        self.request_internal(reqwest::Method::PUT, url, Some(body), None)
+            .await
+    }
+
     pub fn set_cookie(&self, key: &str, value: &str, url: &url::Url) {
         self.cookie_store
             .set(url.host_str().unwrap_or_default(), key, value);
