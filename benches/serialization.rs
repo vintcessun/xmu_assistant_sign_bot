@@ -1,7 +1,5 @@
-use std::hint::black_box;
-
 use criterion::{Criterion, criterion_group, criterion_main};
-
+use std::hint::black_box;
 use xmu_assistant_bot::abi::message::{MessageSend, message_body::MessageReceive};
 
 // 包含多种类型段落的复杂消息 JSON 字符串

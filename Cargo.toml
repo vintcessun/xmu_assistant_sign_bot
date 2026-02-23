@@ -20,7 +20,12 @@ harness = false
 name = "routing"
 harness = false
 
+[[bench]]
+name = "qrcode_bridge"
+harness = false
+
 [dependencies]
+affinity = "0.1.2"
 anyhow = "1.0.100"
 async-trait = "0.1.89"
 dashmap = "6.1.0"
@@ -84,8 +89,11 @@ llm_xml_caster = { git = "https://github.com/vintcessun/llm_xml_caster", branch 
 ] }
 lunar_rust = "1.0.1"
 astro = "2.0.0"
+opencv = { version = "0.98.1", features = ["clang-runtime"] }
+crossbeam-channel = "0.5.15"
 
 [build-dependencies]
+vcpkg = "0.2"
 base64 = "0.22.1"
 phf_codegen = "0.13.1"
 syn = { version = "2.0", features = ["full"] }
