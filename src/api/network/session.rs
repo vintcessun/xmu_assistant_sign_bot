@@ -119,6 +119,7 @@ impl SessionCookieStore {
 pub struct SessionClient {
     cookie_store: Arc<SessionCookieStore>,
     ua: HeaderValue,
+    ua_str: &'static str,
 }
 
 impl Default for SessionClient {
@@ -130,9 +131,11 @@ impl Default for SessionClient {
 impl SessionClient {
     pub fn new() -> Self {
         debug!("初始化 SessionClient");
+        let ua = get_chrome_rua();
         Self {
             cookie_store: Arc::new(SessionCookieStore::new()),
-            ua: HeaderValue::from_static(get_chrome_rua()),
+            ua: HeaderValue::from_static(ua),
+            ua_str: ua,
         }
     }
 
@@ -302,6 +305,10 @@ impl SessionClient {
     pub fn get_cookie(&self, key: &str, url: &url::Url) -> Option<Arc<str>> {
         self.cookie_store
             .get(url.host_str().unwrap_or_default(), key)
+    }
+
+    pub fn get_ua(&self) -> &'static str {
+        self.ua_str
     }
 
     pub async fn get_range<U: IntoUrl>(&self, url: U, start: u64, end: u64) -> Result<Response> {
