@@ -183,3 +183,21 @@ impl LocationService {
         None
     }
 }
+
+impl IntoIterator for LocationService {
+    type Item = Arc<Location>;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.locations.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a LocationService {
+    type Item = &'a Arc<Location>;
+    type IntoIter = std::slice::Iter<'a, Arc<Location>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.locations.iter()
+    }
+}
