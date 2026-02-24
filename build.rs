@@ -429,13 +429,13 @@ fn generate_omikuji_data(out_dir: &str) -> Result<(), Box<dyn std::error::Error>
     let dest_path = Path::new(&out_dir).join("omikuji.rs");
     let mut file = fs::File::create(&dest_path)?;
 
-    let omikuji_dir = Path::new("omikuji");
+    let omikuji_dir = Path::new("app_data/omikuji");
     let senso_ji_path = omikuji_dir.join("senso-ji-stick-data.json");
     let ruanyf_path = omikuji_dir.join("ruanyf-fortune.txt");
 
     // 1. 设置依赖 (rerun-if-changed)
-    // 依赖于整个 omikuji/ 目录，当目录内容变化时，build.rs 会重新运行
-    println!("cargo:rerun-if-changed=omikuji/");
+    // 依赖于整个 app_data/omikuji/ 目录，当目录内容变化时，build.rs 会重新运行
+    println!("cargo:rerun-if-changed=app_data/omikuji/");
 
     // 2. 扫描目录并检查文件使用情况 (如果存在未使用的文件则 Panic)
     let used_files = vec![
@@ -480,7 +480,7 @@ fn generate_omikuji_data(out_dir: &str) -> Result<(), Box<dyn std::error::Error>
 
     if unused_files_found {
         panic!(
-            "Error: omikuji/ directory contains unused files. Expected: {:?}, Found: {:?}",
+            "Error: app_data/omikuji/ directory contains unused files. Expected: {:?}, Found: {:?}",
             used_files, found_files
         );
     }
@@ -595,10 +595,10 @@ fn generate_omikuji_data(out_dir: &str) -> Result<(), Box<dyn std::error::Error>
 
 fn generate_qrcode_data(out_dir: &str) {
     let dest_path = Path::new(out_dir).join("qrcode_data.rs");
-    let model_dir = Path::new("models/wechat_qrcode");
+    let model_dir = Path::new("app_data/wechat_qrcode");
     let preload_jpg = Path::new("app_data/preload_qrcode.jpg");
 
-    println!("cargo:rerun-if-changed=models/wechat_qrcode");
+    println!("cargo:rerun-if-changed=app_data/wechat_qrcode");
     println!("cargo:rerun-if-changed=app_data/preload_qrcode.jpg");
 
     let mut code = String::new();
