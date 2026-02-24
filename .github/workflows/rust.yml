@@ -25,11 +25,12 @@ jobs:
             - name: Checkout source
               uses: actions/checkout@v4
 
-            - name: Setup OpenCV
-              uses: TralahM/setup-opencv-action@v1.2
+            - name: Cache OpenCV
+              uses: UrielCh/opencv-cache-action@V1
               with:
-                  opencv-version: "4.8.0"
-                  opencv-extra-modules: true
+                  branch: 4.8.0
+                  BUILD_LIST: core,imgproc,imgcodecs,videoio,highgui,video,calib3d,features2d,objdetect,dnn,ml,photo,wechat_qrcode
+                  NO_CONTRIB: ""
 
             - name: Create Cross.toml dynamically
               run: |
@@ -37,7 +38,7 @@ jobs:
                   [target.x86_64-unknown-linux-gnu]
                   pre-build = [
                       "apt-get update",
-                      "apt-get install -y pkg-config libssl-dev mold clang libclang-dev libopencv-dev libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libavfilter-dev libswresample-dev libswscale-dev libc6-dev python3",
+                      "apt-get install -y pkg-config libssl-dev mold clang libclang-dev libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libavfilter-dev libswresample-dev libswscale-dev libc6-dev python3",
                   ]
 
                   [target.i686-unknown-linux-gnu]
@@ -88,9 +89,8 @@ jobs:
                   # Override .cargo/config.toml to prevent host-specific flags (like target-cpu=native)
                   # from being leaked into the cross-compilation environment.
                   RUSTFLAGS: ""
-                  OPENCV_LINK_LIBS: "opencv_world"
-                  OPENCV_LINK_PATHS: "/usr/local/lib"
-                  OPENCV_INCLUDE_PATHS: "/usr/local/include/opencv4"
+                  OPENCV_LINK_PATHS: "${{ github.workspace }}/../build/lib"
+                  OPENCV_INCLUDE_PATHS: "${{ github.workspace }}/../build/include/opencv4"
 
             - name: Rename artifact
               shell: bash
@@ -129,12 +129,12 @@ jobs:
             - name: Checkout source
               uses: actions/checkout@v4
 
-            - name: Setup OpenCV
-              uses: TralahM/setup-opencv-action@v1.2
+            - name: Cache OpenCV
+              uses: UrielCh/opencv-cache-action@V1
               with:
-                  opencv-version: "4.8.0"
-                  opencv-extra-modules: true
-                  WITH_OPENGL: ON
+                  branch: 4.8.0
+                  BUILD_LIST: core,imgproc,imgcodecs,videoio,highgui,video,calib3d,features2d,objdetect,dnn,ml,photo,wechat_qrcode
+                  NO_CONTRIB: ""
 
             - name: Prepare LLM tool config
               run: |
@@ -162,9 +162,8 @@ jobs:
                       -C link-arg=-fuse-ld=mold
                       ${{ contains(matrix.target, 'x86_64') && '-C target-cpu=x86-64-v3' || '' }}
                   OPENSSL_STATIC: 1
-                  OPENCV_LINK_LIBS: "opencv_world"
-                  OPENCV_LINK_PATHS: "/usr/local/lib"
-                  OPENCV_INCLUDE_PATHS: "/usr/local/include/opencv4"
+                  OPENCV_LINK_PATHS: "${{ github.workspace }}/../build/lib"
+                  OPENCV_INCLUDE_PATHS: "${{ github.workspace }}/../build/include/opencv4"
 
             - name: Rename artifact
               shell: bash
@@ -214,11 +213,12 @@ jobs:
             - name: Checkout source
               uses: actions/checkout@v4
 
-            - name: Setup OpenCV
-              uses: TralahM/setup-opencv-action@v1.2
+            - name: Cache OpenCV
+              uses: UrielCh/opencv-cache-action@V1
               with:
-                  opencv-version: "4.8.0"
-                  opencv-extra-modules: true
+                  branch: 4.8.0
+                  BUILD_LIST: core,imgproc,imgcodecs,videoio,highgui,video,calib3d,features2d,objdetect,dnn,ml,photo,wechat_qrcode
+                  NO_CONTRIB: ""
 
             - name: Install FFmpeg 7.1 Shared (Download or Compile)
               shell: pwsh
@@ -383,9 +383,8 @@ jobs:
                       -C link-arg=-fuse-ld=lld-link 
                       ${{ contains(matrix.target, 'x86_64') && '-C target-cpu=x86-64-v3' || '' }}
                       ${{ contains(matrix.target, 'aarch64') && '-C target-cpu=generic' || '' }}
-                  OPENCV_LINK_LIBS: "opencv_world480"
-                  OPENCV_LINK_PATHS: "C:\\opencv\\build\\x64\\vc16\\lib"
-                  OPENCV_INCLUDE_PATHS: "C:\\opencv\\build\\include"
+                  OPENCV_LINK_PATHS: "${{ github.workspace }}/../build/x64/vc16/lib"
+                  OPENCV_INCLUDE_PATHS: "${{ github.workspace }}/../build/include"
 
             - name: Rename artifact
               shell: powershell
@@ -422,11 +421,12 @@ jobs:
             - name: Checkout source
               uses: actions/checkout@v4
 
-            - name: Setup OpenCV
-              uses: TralahM/setup-opencv-action@v1.2
+            - name: Cache OpenCV
+              uses: UrielCh/opencv-cache-action@V1
               with:
-                  opencv-version: "4.8.0"
-                  opencv-extra-modules: true
+                  branch: 4.8.0
+                  BUILD_LIST: core,imgproc,imgcodecs,videoio,highgui,video,calib3d,features2d,objdetect,dnn,ml,photo,wechat_qrcode
+                  NO_CONTRIB: ""
 
             - name: Prepare LLM tool config
               run: |
@@ -473,9 +473,8 @@ jobs:
                   PKG_CONFIG_ALLOW_CROSS: 1
                   RUSTFLAGS: >-
                       ${{ matrix.target == 'aarch64-apple-darwin' && '-C target-cpu=apple-m1' || '-C target-cpu=x86-64-v3' }}
-                  OPENCV_LINK_LIBS: "opencv_world"
-                  OPENCV_LINK_PATHS: "/usr/local/lib"
-                  OPENCV_INCLUDE_PATHS: "/usr/local/include/opencv4"
+                  OPENCV_LINK_PATHS: "${{ github.workspace }}/../build/lib"
+                  OPENCV_INCLUDE_PATHS: "${{ github.workspace }}/../build/include/opencv4"
 
             - name: Rename artifact
               shell: bash
