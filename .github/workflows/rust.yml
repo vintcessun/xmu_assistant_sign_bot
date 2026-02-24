@@ -12,6 +12,9 @@ jobs:
     build-linux-cross:
         name: Linux cross builds
         runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            actions: write
         strategy:
             fail-fast: false
             matrix:
@@ -121,6 +124,9 @@ jobs:
     build-linux-native:
         name: Linux native builds
         runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            actions: write
         strategy:
             fail-fast: false
             matrix:
@@ -198,6 +204,9 @@ jobs:
     build-windows-msvc:
         name: Windows MSVC builds
         runs-on: windows-2025-VS2026
+        permissions:
+            contents: read
+            actions: write
         env:
             VCPKG_ROOT: C:\vcpkg
         strategy:
@@ -421,13 +430,6 @@ jobs:
             - name: Checkout source
               uses: actions/checkout@v4
 
-            - name: Cache OpenCV
-              uses: UrielCh/opencv-cache-action@V1
-              with:
-                  branch: 4.8.0
-                  BUILD_LIST: core,imgproc,imgcodecs,videoio,highgui,video,calib3d,features2d,objdetect,dnn,ml,photo,wechat_qrcode
-                  NO_CONTRIB: ""
-
             - name: Prepare LLM tool config
               run: |
                   cp src/api/llm/tool/config-template.rs src/api/llm/tool/config.rs
@@ -467,14 +469,15 @@ jobs:
                   echo "CPATH=$FFMPEG_DIR/include:$OPENSSL_DIR/include" >> $GITHUB_ENV
                   echo "LIBRARY_PATH=$FFMPEG_DIR/lib:$OPENSSL_DIR/lib" >> $GITHUB_ENV
 
+            - name: Install OpenCV via Homebrew
+              run: |
+                  brew install opencv
             - name: Build release binary
               run: cargo build --release --target ${{ matrix.target }} --verbose
               env:
                   PKG_CONFIG_ALLOW_CROSS: 1
                   RUSTFLAGS: >-
                       ${{ matrix.target == 'aarch64-apple-darwin' && '-C target-cpu=apple-m1' || '-C target-cpu=x86-64-v3' }}
-                  OPENCV_LINK_PATHS: "${{ github.workspace }}/../build/lib"
-                  OPENCV_INCLUDE_PATHS: "${{ github.workspace }}/../build/include/opencv4"
 
             - name: Rename artifact
               shell: bash
