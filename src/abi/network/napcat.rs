@@ -1,10 +1,8 @@
 use anyhow::Result;
-use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{OnceCell, mpsc};
 use tokio_tungstenite::tungstenite::Utf8Bytes;
 use tracing::{debug, error, info, trace};
 
@@ -17,8 +15,8 @@ use crate::abi::{
 
 #[derive(Debug)]
 pub struct NapcatAdapter {
-    event_sender: ArcSwap<Option<mpsc::UnboundedSender<String>>>,
-    api_sender: ArcSwap<Option<mpsc::UnboundedSender<String>>>,
+    event_sender: OnceCell<mpsc::UnboundedSender<String>>,
+    api_sender: OnceCell<mpsc::UnboundedSender<String>>,
     handler: mpsc::UnboundedSender<Event>,
 }
 
@@ -27,8 +25,8 @@ impl NapcatAdapter {
         let (tx, rx) = mpsc::unbounded_channel::<Event>();
         (
             NapcatAdapter {
-                event_sender: ArcSwap::new(Arc::new(None)),
-                api_sender: ArcSwap::new(Arc::new(None)),
+                event_sender: OnceCell::new(),
+                api_sender: OnceCell::new(),
                 handler: tx,
             },
             rx,
@@ -54,8 +52,7 @@ impl BotClient for NapcatAdapter {
         debug!(action = %action, "正在调用 API");
         trace!(api_send = ?api_send, "发送的 API 请求详情");
 
-        let sender_guard = self.api_sender.load();
-        if let Some(sender) = sender_guard.as_ref() {
+        if let Some(sender) = self.api_sender.get() {
             if let Err(e) = sender.send(msg) {
                 error!(error = ?e, "发送 API 消息失败");
             } else {
@@ -81,8 +78,8 @@ impl BotHandler for NapcatAdapter {
         event: mpsc::UnboundedSender<String>,
         api: mpsc::UnboundedSender<String>,
     ) -> Result<()> {
-        self.event_sender.store(Arc::new(Some(event)));
-        self.api_sender.store(Arc::new(Some(api)));
+        self.event_sender.set(event)?;
+        self.api_sender.set(api)?;
 
         info!("Napcat 适配器初始化成功");
 
