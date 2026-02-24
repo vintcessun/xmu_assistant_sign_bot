@@ -46,7 +46,6 @@ pub async fn qr_sign(ctx: Context) -> Result<()> {
         .flatten();
 
     let time = start.elapsed().as_secs_f64();
-    info!("二维码解析耗时: {} s", time);
 
     let mut used = false;
     for ret in rets {
@@ -63,6 +62,7 @@ pub async fn qr_sign(ctx: Context) -> Result<()> {
             "二维码解析总耗时: {} s",
             start.elapsed().as_secs_f64()
         )));
+        info!("二维码解析耗时: {} s", time);
     }
 
     Ok(())
