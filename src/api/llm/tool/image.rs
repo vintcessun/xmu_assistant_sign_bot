@@ -1,12 +1,10 @@
-use super::data::GeminiResponse;
 use super::llm::CLIENT;
 use crate::api::storage::ImageFile;
 use anyhow::Result;
 use anyhow::bail;
 use genai::chat::BinarySource;
 use genai::chat::ChatMessage;
-use genai::chat::ChatOptions;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info};
 
 const MODEL_NAME: &str = "gemini-3-pro-image-preview";
 
