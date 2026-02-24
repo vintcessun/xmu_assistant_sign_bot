@@ -53,6 +53,11 @@ fn test_llm_message_reply_valid_example() {
     );
 }
 
+fn not_reply_probability() -> bool {
+    let mut rng = rand::rng();
+    rng.random_bool(NOT_AT_NOT_REPLY_PROBABILITY)
+}
+
 pub async fn send_message_from_llm<T>(ctx: &mut Context<T, Message>) -> Result<()>
 where
     T: BotClient + BotHandler + std::fmt::Debug + 'static,
@@ -126,9 +131,7 @@ where
         return Err(anyhow!("AI决定不回复: {}", message.reason));
     }
 
-    let mut rng = rand::rng();
-
-    if !message.is_at && rng.random_bool(NOT_AT_NOT_REPLY_PROBABILITY) {
+    if !message.is_at && not_reply_probability() {
         return Err(anyhow!("AI决定不回复: {}", message.reason));
     }
 
