@@ -11,23 +11,27 @@ use llm_xml_caster::{LlmPrompt, generate_as_with_retries};
 use serde::de::DeserializeOwned;
 use tracing::{debug, error, info, trace, warn};
 
-const LOW_MODEL: &str = "qwen3-vl:4b-8k";
+const LOW_MODEL: &str = "ep-20260225003643-2w6k5";
 const HIGH_MODEL: &str = "gemini-2.5-flash";
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
-    info!(model = LOW_MODEL, "初始化 LLM 客户端");
+    info!(
+        low_model = LOW_MODEL,
+        high_model = HIGH_MODEL,
+        "初始化 LLM 客户端"
+    );
     // 1. AuthResolver
     let auth_resolver = AuthResolver::from_resolver_fn(|model_id: ModelIden| {
         trace!(
+            model_name = %model_id.model_name,
             adapter_kind = ?model_id.adapter_kind,
-            "尝试为模型适配器寻找认证配置"
+            "尝试寻找模型的认证配置"
         );
-        // 关键：我们要找的是匹配当前 adapter_kind 的配置
-        let config = MODEL_MAP
-            .values()
-            .find(|cfg| cfg.kind == model_id.adapter_kind);
+        // 逻辑：根据模型名从 HashMap 中查找
+        let config = MODEL_MAP.get(&*model_id.model_name);
 
         if let Some(cfg) = config {
+            // 尝试从环境变量读取
             // 尝试从环境变量读取
             if let Ok(key) = std::env::var(cfg.api_key_env) {
                 debug!(
@@ -37,13 +41,14 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
                 return Ok(Some(AuthData::from_single(key)));
             }
             // 如果环境变量不存在，直接把 api_key_env 字符串本身当作 Key (兼容你目前的写法)
-            if cfg.api_key_env.starts_with("sk-") {
-                debug!(
-                    api_key_env = %cfg.api_key_env,
-                    "成功从硬编码配置加载 API 密钥"
-                );
-                return Ok(Some(AuthData::from_single(cfg.api_key_env.to_string())));
-            }
+            debug!(
+                api_key_env = %cfg.api_key_env,
+                "成功从硬编码配置加载 API 密钥"
+            );
+            #[cfg(test)]
+            println!("成功从硬编码配置加载 API 密钥: {}", cfg.api_key_env);
+
+            return Ok(Some(AuthData::from_single(cfg.api_key_env.to_string())));
         }
         warn!(adapter_kind = ?model_id.adapter_kind, "未找到有效的 API 密钥");
         Ok(None)
@@ -56,9 +61,11 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
             debug!(
                 model_name = %target.model.model_name,
                 base_url = %cfg.base_url,
-                "为模型设置自定义 Base URL"
+                "为模型设置自定义 Base URL 并修正适配器类型"
             );
             target.endpoint = Endpoint::from_static(cfg.base_url);
+            // 关键：在这里修正适配器类型，因为它会影响后续的请求格式
+            target.model.adapter_kind = cfg.kind;
         } else {
             debug!(
                 model_name = %target.model.model_name,
@@ -92,6 +99,9 @@ pub async fn ask_as<T>(message: Vec<ChatMessage>, valid_example: &str) -> Result
 where
     T: DeserializeOwned + LlmPrompt,
 {
+    #[cfg(test)]
+    println!("使用的模型: {}", LOW_MODEL);
+
     let mut i = 1;
     loop {
         trace!("开始调用 LLM (结构化模式): {} 第 {} 次", LOW_MODEL, i);
