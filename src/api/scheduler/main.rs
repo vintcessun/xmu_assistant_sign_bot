@@ -28,7 +28,7 @@ impl<T: TimeTask> TaskRunner<T> {
         runner
     }
 
-    /// 获取当前最新的数据（如果从未成功则返回 None）
+    /// 获取当前最新的数据（如果从未成功则尝试运行一次）
     pub async fn get_latest(&self) -> Result<T::Output> {
         match self.value.load().as_ref() {
             Some(val) => Ok(val.clone()),

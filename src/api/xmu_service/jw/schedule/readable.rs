@@ -3,6 +3,7 @@ use crate::api::xmu_service::{
     location::{LOCATIONS, Location},
 };
 use anyhow::{Result, anyhow};
+use chrono::Timelike;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use serde::{Deserialize, Serialize};
@@ -385,5 +386,14 @@ impl BitField32 {
     #[inline(always)]
     pub fn clear_bit(&mut self, i: u8) {
         self.0 &= !(1 << i);
+    }
+}
+
+static TIME_ZONE: chrono::FixedOffset = chrono::FixedOffset::east_opt(8 * 3600).unwrap();
+
+impl ClockTime {
+    pub fn now() -> Self {
+        let now = chrono::Utc::now().with_timezone(&TIME_ZONE);
+        Self::new(now.hour() as u8, now.minute() as u8)
     }
 }
