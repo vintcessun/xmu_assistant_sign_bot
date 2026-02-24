@@ -78,8 +78,8 @@ mod tests {
     use anyhow::Result;
 
     fn test_file(id: i64) -> Result<()> {
-        let input_path = PathBuf::from(format!("test_data/ffmpeg_gif_test_{}.gif", id));
-        let output_path = PathBuf::from(format!("test_data/ffmpeg_gif_test_{}.mp4", id));
+        let input_path = PathBuf::from(format!("app_data/test_data/ffmpeg_gif_test_{}.gif", id));
+        let output_path = PathBuf::from(format!("app_data/test_data/ffmpeg_gif_test_{}.mp4", id));
 
         gif_to_mp4_silent(&input_path, &output_path)?;
 
