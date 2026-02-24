@@ -326,14 +326,31 @@ where
         }
         result
     }
+}
 
-    pub fn get_all(&self) -> Vec<(K, Arc<V>)>
-    where
-        K: Clone,
-    {
-        self.cache
-            .iter()
-            .map(|entry| (entry.key().clone(), entry.value().clone()))
-            .collect()
+impl<K, V> IntoIterator for HotTable<K, V>
+where
+    K: Serialize + DeserializeOwned + std::hash::Hash + Eq + Send + 'static,
+    V: Serialize + DeserializeOwned + Send + 'static,
+{
+    type Item = (K, Arc<V>);
+    type IntoIter = dashmap::iter::OwningIter<K, Arc<V>, RandomState>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.cache.into_iter()
+    }
+}
+
+impl<'a, K, V> IntoIterator for &'a HotTable<K, V>
+where
+    K: Serialize + DeserializeOwned + std::hash::Hash + Eq + Send + Sync + 'static,
+    V: Serialize + DeserializeOwned + Send + Sync + 'static,
+{
+    type Item = dashmap::mapref::multiple::RefMulti<'a, K, Arc<V>>;
+    type IntoIter =
+        dashmap::iter::Iter<'a, K, Arc<V>, RandomState, DashMap<K, Arc<V>, RandomState>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.cache.iter()
     }
 }
