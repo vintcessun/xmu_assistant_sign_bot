@@ -101,8 +101,10 @@ jobs:
                   # Override .cargo/config.toml to prevent host-specific flags (like target-cpu=native)
                   # from being leaked into the cross-compilation environment.
                   RUSTFLAGS: ""
-                  OPENCV_LINK_PATHS: "${{ github.workspace }}/../build/lib"
-                  OPENCV_INCLUDE_PATHS: "${{ github.workspace }}/../build/include/opencv4"
+                  # 强制显式注入 OpenCV 路径以避开 pkg-config 探测失败的问题
+                  OPENCV_LINK_LIBS: "opencv_core,opencv_imgcodecs,opencv_wechat_qrcode,opencv_dnn,opencv_imgproc,opencv_features2d,opencv_flann,opencv_calib3d,opencv_objdetect,opencv_video,opencv_ml,opencv_photo"
+                  OPENCV_LINK_PATHS: "/usr/lib/${{ contains(matrix.target, 'i686') && 'i386-linux-gnu' || contains(matrix.target, 'aarch64') && 'aarch64-linux-gnu' || 'arm-linux-gnueabihf' }}"
+                  OPENCV_INCLUDE_PATHS: "/usr/include/opencv4"
 
             - name: Rename artifact
               shell: bash
