@@ -12,21 +12,5 @@ pub struct ModelConfig {
 // 在这里集中管理所有模型的端点和厂商映射
 pub static MODEL_MAP: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| {
     let mut m = HashMap::new();
-    m.insert(
-        "gemini-2.5-flash",
-        ModelConfig {
-            kind: AdapterKind::Gemini,
-            base_url: "your_base_url_here",
-            api_key_env: "your_api_key_env_here",
-        },
-    );
-    m.insert(
-        "gemini-3-pro-image-preview",
-        ModelConfig {
-            kind: AdapterKind::Gemini,
-            base_url: "your_base_url_here",
-            api_key_env: "your_api_key_env_here",
-        },
-    );
     m
 });

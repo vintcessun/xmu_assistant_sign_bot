@@ -23,12 +23,15 @@ const EMBED_MODEL: &str = "text-embedding-3-large";
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
     // 1. 统一鉴权解析器：从 MODEL_MAP 匹配 API Key
-    let auth_resolver = AuthResolver::from_resolver_fn(|model_id: ModelIden| {
-        let config = MODEL_MAP
-            .values()
-            .find(|cfg| cfg.kind == model_id.adapter_kind);
+    let auth_resolver = AuthResolver::from_resolver_fn(|mut model_id: ModelIden| {
+        // 逻辑：根据模型名从 HashMap 中查找
+        let config = MODEL_MAP.get(&*model_id.model_name);
 
         if let Some(cfg) = config {
+            // 关键：将配置中的 kind 传递给 model_id，确保 genai 使用正确的格式
+            model_id.adapter_kind = cfg.kind;
+
+            // 优先读取环境变量
             // 优先读取环境变量
             if let Ok(key) = std::env::var(cfg.api_key_env) {
                 debug!(
@@ -38,14 +41,11 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
                 );
                 return Ok(Some(AuthData::from_single(key)));
             }
-            // 兼容明文 sk- 写入
-            if cfg.api_key_env.starts_with("sk-") {
-                debug!(
-                    api_key_env = %cfg.api_key_env,
-                    "成功从硬编码配置加载 API 密钥"
-                );
-                return Ok(Some(AuthData::from_single(cfg.api_key_env.to_string())));
-            }
+            debug!(
+                api_key_env = %cfg.api_key_env,
+                "成功从硬编码配置加载 API 密钥"
+            );
+            return Ok(Some(AuthData::from_single(cfg.api_key_env.to_string())));
         }
         debug!(model_kind = %model_id.adapter_kind, "未找到 LLM 模型的 API Key");
         Ok(None)
@@ -57,9 +57,11 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
             info!(
                 model_name = %target.model.model_name,
                 base_url = %cfg.base_url,
-                "LLM 服务目标已路由到配置的 Base URL"
+                "LLM 服务目标已路由到配置的 Base URL 并修正适配器类型"
             );
             target.endpoint = Endpoint::from_static(cfg.base_url);
+            // 关键：在这里修正适配器类型，因为它会影响后续的请求格式
+            target.model.adapter_kind = cfg.kind;
         } else {
             debug!(model_name = %target.model.model_name, "未找到 LLM 模型的 Base URL 配置，使用默认路由");
         }
