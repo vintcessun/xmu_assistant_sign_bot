@@ -124,9 +124,6 @@ jobs:
     build-linux-native:
         name: Linux native builds
         runs-on: ubuntu-latest
-        permissions:
-            contents: read
-            actions: write
         strategy:
             fail-fast: false
             matrix:
@@ -134,13 +131,6 @@ jobs:
         steps:
             - name: Checkout source
               uses: actions/checkout@v4
-
-            - name: Cache OpenCV
-              uses: UrielCh/opencv-cache-action@V1
-              with:
-                  branch: 4.8.0
-                  BUILD_LIST: core,imgproc,imgcodecs,videoio,highgui,video,calib3d,features2d,objdetect,dnn,ml,photo,wechat_qrcode
-                  NO_CONTRIB: ""
 
             - name: Prepare LLM tool config
               run: |
@@ -150,8 +140,8 @@ jobs:
             - name: Install Dependencies
               run: |
                   sudo apt-get update
-                  # Install dependencies for openssl, ffmpeg (via video-rs)
-                  sudo apt-get install -y mold clang pkg-config libssl-dev libclang-dev libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libavfilter-dev libswresample-dev libswscale-dev
+                  # Install dependencies for openssl, ffmpeg (via video-rs), and opencv
+                  sudo apt-get install -y mold clang pkg-config libssl-dev libclang-dev libopencv-dev libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libavfilter-dev libswresample-dev libswscale-dev
             - name: Set up Rust
               uses: dtolnay/rust-toolchain@stable
               with:
@@ -168,8 +158,6 @@ jobs:
                       -C link-arg=-fuse-ld=mold
                       ${{ contains(matrix.target, 'x86_64') && '-C target-cpu=x86-64-v3' || '' }}
                   OPENSSL_STATIC: 1
-                  OPENCV_LINK_PATHS: "${{ github.workspace }}/../build/lib"
-                  OPENCV_INCLUDE_PATHS: "${{ github.workspace }}/../build/include/opencv4"
 
             - name: Rename artifact
               shell: bash
@@ -209,6 +197,7 @@ jobs:
             actions: write
         env:
             VCPKG_ROOT: C:\vcpkg
+            VCPKGRS_DYNAMIC: "1"
         strategy:
             fail-fast: false
             matrix:
@@ -392,8 +381,9 @@ jobs:
                       -C link-arg=-fuse-ld=lld-link 
                       ${{ contains(matrix.target, 'x86_64') && '-C target-cpu=x86-64-v3' || '' }}
                       ${{ contains(matrix.target, 'aarch64') && '-C target-cpu=generic' || '' }}
-                  OPENCV_LINK_PATHS: "${{ github.workspace }}/../build/x64/vc16/lib"
-                  OPENCV_INCLUDE_PATHS: "${{ github.workspace }}/../build/include"
+                  OPENCV_LINK_LIBS: "opencv_core480,opencv_imgcodecs480,opencv_wechat_qrcode480,opencv_dnn480,opencv_imgproc480,opencv_features2d480,opencv_flann480,opencv_calib3d480,opencv_objdetect480,opencv_video480,opencv_ml480,opencv_photo480"
+                  OPENCV_LINK_PATHS: "${{ github.workspace }}/../build/${{ contains(matrix.target, 'x86_64') && 'x64' || contains(matrix.target, 'i686') && 'x86' || 'arm64' }}/vc16/lib"
+                  OPENCV_INCLUDE_PATHS: "${{ github.workspace }}/../build/include,${{ github.workspace }}/../build/include/opencv4"
 
             - name: Rename artifact
               shell: powershell
