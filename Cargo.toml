@@ -91,6 +91,8 @@ lunar_rust = "1.0.1"
 astro = "2.0.0"
 opencv = { version = "0.98.1", features = ["clang-runtime"] }
 crossbeam-channel = "0.5.15"
+num-derive = "0.4.2"
+num-traits = "0.2.19"
 
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]

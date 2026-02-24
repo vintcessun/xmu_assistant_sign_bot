@@ -209,6 +209,8 @@ jobs:
         env:
             VCPKG_ROOT: C:\vcpkg
             VCPKGRS_DYNAMIC: "1"
+            # 启用微软官方备用资源镜像，极大缓解 GitHub 502/404 下载问题
+            X_VCPKG_ASSET_SOURCES: "x-azurl;https://vcpkgconfdist.azureedge.net/nupkg"
         strategy:
             fail-fast: false
             matrix:
@@ -222,12 +224,42 @@ jobs:
             - name: Checkout source
               uses: actions/checkout@v4
 
+            - name: Cache vcpkg downloads
+              uses: actions/cache@v4
+              with:
+                  path: C:\vcpkg\downloads
+                  key: vcpkg-downloads-${{ runner.os }}-${{ hashFiles('Cargo.toml') }}
+                  restore-keys: |
+                      vcpkg-downloads-${{ runner.os }}-
+
             - name: Update vcpkg and Install OpenCV
               shell: pwsh
               run: |
                   $TRIPLET = if ("${{ matrix.target }}" -like "*x86_64*") { "x64-windows" } elseif ("${{ matrix.target }}" -like "*i686*") { "x86-windows" } else { "arm64-windows" }
+
+                  # 增强 vcpkg 环境稳定性
                   git -C $env:VCPKG_ROOT pull
-                  vcpkg install opencv4[contrib] --triplet $TRIPLET
+
+                  # 增加重试逻辑以应对网络抖动
+                  $maxRetries = 3
+                  $retryCount = 0
+                  $success = $false
+                  while (-not $success -and $retryCount -lt $maxRetries) {
+                      try {
+                          Write-Host "Attempting vcpkg install (Attempt $($retryCount + 1)/$maxRetries)..."
+                          vcpkg install opencv4[contrib] --triplet $TRIPLET
+                          $success = $true
+                      } catch {
+                          $retryCount++
+                          if ($retryCount -lt $maxRetries) {
+                              Write-Warning "Vcpkg install failed. Retrying in 10 seconds..."
+                              Start-Sleep -Seconds 10
+                          } else {
+                              Write-Error "Vcpkg install failed after $maxRetries attempts."
+                              exit 1
+                          }
+                      }
+                  }
 
             - name: Install FFmpeg 7.1 Shared (Download or Compile)
               shell: pwsh
