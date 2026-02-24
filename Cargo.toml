@@ -25,7 +25,7 @@ name = "qrcode_bridge"
 harness = false
 
 [dependencies]
-affinity = "0.1.2"
+affinity = { version = "0.1.2", optional = true }
 anyhow = "1.0.100"
 async-trait = "0.1.89"
 dashmap = "6.1.0"
@@ -91,6 +91,10 @@ lunar_rust = "1.0.1"
 astro = "2.0.0"
 opencv = { version = "0.98.1", features = ["clang-runtime"] }
 crossbeam-channel = "0.5.15"
+
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+affinity = "0.1.2"
 
 [build-dependencies]
 vcpkg = "0.2"

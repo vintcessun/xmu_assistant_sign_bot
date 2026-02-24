@@ -263,4 +263,22 @@ where
         );
         Ok(results)
     }
+
+    pub async fn get_keys_async(&self) -> Result<Vec<K>> {
+        block_in_place(|| self.get_keys())
+    }
+
+    pub fn get_keys(&self) -> Result<Vec<K>> {
+        self.get_all()
+            .map(|pairs| pairs.into_iter().map(|(k, _)| k).collect())
+    }
+
+    pub async fn get_values_async(&self) -> Result<Vec<V>> {
+        block_in_place(|| self.get_values())
+    }
+
+    pub fn get_values(&self) -> Result<Vec<V>> {
+        self.get_all()
+            .map(|pairs| pairs.into_iter().map(|(_, v)| v).collect())
+    }
 }
