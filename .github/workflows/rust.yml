@@ -51,7 +51,9 @@ jobs:
                   pre-build = [
                       "dpkg --add-architecture i386",
                       "apt-get update",
-                      "apt-get install -y pkg-config libssl-dev:i386 libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 libavdevice-dev:i386 libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386 libc6-dev:i386 clang libclang-dev libopencv-dev libopencv-contrib-dev python3 cmake",
+                      # 针对 i386 强制对齐策略：安装基础开发工具和 amd64 的 OpenCV 以获得模块定义。
+                      "apt-get install -y --no-install-recommends aptitude cmake",
+                      "aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' pkg-config libssl-dev:i386 libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 libavdevice-dev:i386 libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386 libc6-dev:i386 clang libclang-dev libopencv-dev libopencv-contrib-dev python3",
                   ]
 
                   [target.aarch64-unknown-linux-gnu]
@@ -91,17 +93,27 @@ jobs:
               run: |
                   T="${{ matrix.target }}"
                   if [[ "$T" == "x86_64"* ]]; then
+                    echo "CC=gcc" >> $GITHUB_ENV
+                    echo "CXX=g++" >> $GITHUB_ENV
                     echo "OpenCV_DIR=/usr/lib/x86_64-linux-gnu/cmake/opencv4" >> $GITHUB_ENV
                   elif [[ "$T" == "i686"* ]]; then
+                    echo "CC=i686-linux-gnu-gcc" >> $GITHUB_ENV
+                    echo "CXX=i686-linux-gnu-g++" >> $GITHUB_ENV
                     echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/i686-linux-gnu/include" >> $GITHUB_ENV
                     echo "OpenCV_DIR=/usr/lib/i386-linux-gnu/cmake/opencv4" >> $GITHUB_ENV
+                    echo "PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig" >> $GITHUB_ENV
                   elif [[ "$T" == "aarch64"* ]]; then
+                    echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+                    echo "CXX=aarch64-linux-gnu-g++" >> $GITHUB_ENV
                     echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/aarch64-linux-gnu/include" >> $GITHUB_ENV
                     echo "OpenCV_DIR=/usr/lib/aarch64-linux-gnu/cmake/opencv4" >> $GITHUB_ENV
+                    echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig" >> $GITHUB_ENV
                   elif [[ "$T" == "armv7"* ]]; then
+                    echo "CC=arm-linux-gnueabihf-gcc" >> $GITHUB_ENV
+                    echo "CXX=arm-linux-gnueabihf-g++" >> $GITHUB_ENV
                     echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/arm-linux-gnueabihf/include -mfloat-abi=hard" >> $GITHUB_ENV
-                    echo "PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig" >> $GITHUB_ENV
                     echo "OpenCV_DIR=/usr/lib/arm-linux-gnueabihf/cmake/opencv4" >> $GITHUB_ENV
+                    echo "PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig" >> $GITHUB_ENV
                   fi
                   echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
 

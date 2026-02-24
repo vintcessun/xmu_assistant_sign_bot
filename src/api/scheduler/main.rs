@@ -36,6 +36,12 @@ impl<T: TimeTask> TaskRunner<T> {
         }
     }
 
+    pub async fn force_update(&self) -> Result<T::Output> {
+        let new_val = self.task.run().await?;
+        self.value.store(Arc::new(Some(new_val.clone())));
+        Ok(new_val)
+    }
+
     /// 后台维护逻辑：定时执行 + 错误重试
     async fn maintain(&self) {
         let mut interval = tokio::time::interval(self.task.interval());
