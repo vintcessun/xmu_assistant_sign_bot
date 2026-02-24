@@ -15,15 +15,18 @@ use crate::{
 use anyhow::{Result, anyhow};
 use genai::chat::ChatMessage;
 use llm_xml_caster::llm_prompt;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, trace, warn};
+
+const NOT_AT_NOT_REPLY_PROBABILITY: f64 = 0.8;
 
 #[llm_prompt]
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 struct LlmMessageReply {
-    #[prompt(
-        "当前是否需要对用户进行回复，如果用户特别想你回答就 true 大部分情况下都是不需要进行回答的请返回 false"
-    )]
+    #[prompt("用户是否有 at 机器人")]
+    is_at: bool,
+    #[prompt("用户是否聊的和机器人有关")]
     is_match: bool,
     #[prompt("基于当前结果生成一个不回复的原因或者回复的原因")]
     reason: String,
@@ -31,6 +34,7 @@ struct LlmMessageReply {
 
 const AUDIT_LLM_MESSAGE_REPLY_VALID_EXAMPLE: &str = r#"
 <LlmMessageReply>
+    <is_at>false</is_at>
     <is_match>false</is_match>
     <reason>用户没有特别要求回复，因此不进行回复。</reason>
 </LlmMessageReply>"#;
@@ -42,6 +46,7 @@ fn test_llm_message_reply_valid_example() {
     assert_eq!(
         parsed,
         LlmMessageReply {
+            is_at: false,
             is_match: false,
             reason: "用户没有特别要求回复，因此不进行回复。".into()
         }
@@ -118,6 +123,12 @@ where
     info!(group_id=?group_id,message_reply_analysis=?message, "LLM 深度回复匹配分析结果");
 
     if !message.is_match {
+        return Err(anyhow!("AI决定不回复: {}", message.reason));
+    }
+
+    let mut rng = rand::rng();
+
+    if !message.is_at && rng.random_bool(NOT_AT_NOT_REPLY_PROBABILITY) {
         return Err(anyhow!("AI决定不回复: {}", message.reason));
     }
 
