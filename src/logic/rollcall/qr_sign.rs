@@ -48,18 +48,22 @@ pub async fn qr_sign(ctx: Context) -> Result<()> {
     let time = start.elapsed().as_secs_f64();
     info!("二维码解析耗时: {} s", time);
 
+    let mut used = false;
     for ret in rets {
         let mut msg = MessageSend::new_message().text("二维码帮助如下:\n");
         for r in ret {
             msg = msg.text(format!("QQ: {}, 响应: {}\n", r.qq, r.response));
         }
         ctx.send_message_async(msg.build());
+        used = true;
     }
 
-    ctx.send_message_async(from_str(format!(
-        "二维码解析总耗时: {} s",
-        start.elapsed().as_secs_f64()
-    )));
+    if used {
+        ctx.send_message_async(from_str(format!(
+            "二维码解析总耗时: {} s",
+            start.elapsed().as_secs_f64()
+        )));
+    }
 
     Ok(())
 }
