@@ -210,7 +210,8 @@ jobs:
             VCPKG_ROOT: C:\vcpkg
             VCPKGRS_DYNAMIC: "1"
             # 启用微软官方备用资源镜像，极大缓解 GitHub 502/404 下载问题
-            X_VCPKG_ASSET_SOURCES: "x-azurl;https://vcpkgconfdist.azureedge.net/nupkg"
+            # 注意：格式为 x-azurl,URL，使用逗号分隔
+            X_VCPKG_ASSET_SOURCES: "x-azurl,https://vcpkgconfdist.azureedge.net/nupkg"
         strategy:
             fail-fast: false
             matrix:
@@ -243,21 +244,22 @@ jobs:
                   # 增加重试逻辑以应对网络抖动
                   $maxRetries = 3
                   $retryCount = 0
-                  $success = $false
-                  while (-not $success -and $retryCount -lt $maxRetries) {
-                      try {
-                          Write-Host "Attempting vcpkg install (Attempt $($retryCount + 1)/$maxRetries)..."
-                          vcpkg install opencv4[contrib] --triplet $TRIPLET
-                          $success = $true
-                      } catch {
-                          $retryCount++
-                          if ($retryCount -lt $maxRetries) {
-                              Write-Warning "Vcpkg install failed. Retrying in 10 seconds..."
-                              Start-Sleep -Seconds 10
-                          } else {
-                              Write-Error "Vcpkg install failed after $maxRetries attempts."
-                              exit 1
-                          }
+                  while ($retryCount -lt $maxRetries) {
+                      Write-Host "Attempting vcpkg install (Attempt $($retryCount + 1)/$maxRetries)..."
+                      vcpkg install opencv4[contrib] --triplet $TRIPLET
+                      
+                      if ($LASTEXITCODE -eq 0) {
+                          Write-Host "Vcpkg install succeeded."
+                          return
+                      }
+
+                      $retryCount++
+                      if ($retryCount -lt $maxRetries) {
+                          Write-Warning "Vcpkg install failed with exit code $LASTEXITCODE. Retrying in 15 seconds..."
+                          Start-Sleep -Seconds 15
+                      } else {
+                          Write-Error "Vcpkg install failed after $maxRetries attempts."
+                          exit 1
                       }
                   }
 
