@@ -14,3 +14,4 @@ line_data.py
 run.exe
 /searxng
 /ollama
+/flamegraphs_output
