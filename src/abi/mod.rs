@@ -1,3 +1,4 @@
+pub mod client;
 pub mod echo;
 pub mod message;
 pub mod network;

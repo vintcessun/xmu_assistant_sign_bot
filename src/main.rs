@@ -1,12 +1,11 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-use xmu_assistant_bot::*;
-
 use anyhow::{Context, Result};
 use tracing::{info, level_filters::LevelFilter};
+use xmu_assistant_bot::abi::client::client_init;
 use xmu_assistant_bot::abi::router::handler::Router;
-
+use xmu_assistant_bot::*;
 const LOG_PATH: &str = "logs";
 
 #[tokio::main]
@@ -24,6 +23,10 @@ async fn main() -> Result<()> {
     let mut router = abi::run(napcat_config)
         .await
         .context("初始化 ABI 并连接到 Napcat 失败")?;
+
+    let client = router.get_client();
+
+    client_init(client);
 
     info!("Napcat ABI 初始化成功，等待消息...");
 
