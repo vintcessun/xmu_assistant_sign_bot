@@ -32,6 +32,7 @@ jobs:
               run: |
                   cat <<'EOF' > Cross.toml
                   [target.x86_64-unknown-linux-gnu]
+                  image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:edge"
                   pre-build = [
                       "apt-get update",
                       "apt-get install -y pkg-config libssl-dev mold clang libclang-dev libopencv-dev libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libavfilter-dev libswresample-dev libswscale-dev libc6-dev python3",
@@ -42,13 +43,8 @@ jobs:
                   image = "ghcr.io/cross-rs/i686-unknown-linux-gnu:edge"
                   pre-build = [
                       "dpkg --add-architecture i386",
-                      "rm -rf /etc/apt/sources.list.d/*",
-                      "cat <<'SOURCES' > /etc/apt/sources.list\ndeb [arch=amd64,i386] http://archive.ubuntu.com/ubuntu focal main universe restricted multiverse\ndeb [arch=amd64,i386] http://archive.ubuntu.com/ubuntu focal-updates main universe restricted multiverse\ndeb [arch=amd64,i386] http://archive.ubuntu.com/ubuntu focal-security main universe restricted multiverse\nSOURCES",
                       "apt-get update",
-                      "apt-get install -y --no-install-recommends aptitude",
-                      # 注意：Ubuntu Focal (20.04) 针对 i386 架构不提供 libopencv-dev:i386。
-                      # 我们安装不带架构后缀的 libopencv-dev (amd64) 以获取头文件。
-                      "aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' pkg-config libssl-dev:i386 libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 libavdevice-dev:i386 libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386 libc6-dev:i386 clang libclang-dev libopencv-dev python3",
+                      "apt-get install -y pkg-config libssl-dev:i386 libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 libavdevice-dev:i386 libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386 libc6-dev:i386 clang libclang-dev libopencv-dev python3",
                   ]
                   env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/i686-linux-gnu/include", PKG_CONFIG_ALLOW_CROSS = "1", PKG_CONFIG_PATH = "/usr/lib/i386-linux-gnu/pkgconfig", LD_LIBRARY_PATH = "/usr/lib/i386-linux-gnu", OPENCV_LINK_LIBS = "opencv_core,opencv_imgcodecs,opencv_wechat_qrcode,opencv_dnn,opencv_imgproc,opencv_features2d,opencv_flann,opencv_calib3d,opencv_objdetect,opencv_video,opencv_ml,opencv_photo", OPENCV_LINK_PATHS = "/usr/lib/i386-linux-gnu", OPENCV_INCLUDE_PATHS = "/usr/include/opencv4" }
 
@@ -56,11 +52,8 @@ jobs:
                   image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:edge"
                   pre-build = [
                       "dpkg --add-architecture arm64",
-                      "rm -rf /etc/apt/sources.list.d/*",
-                      "cat <<'SOURCES' > /etc/apt/sources.list\ndeb [arch=amd64] http://archive.ubuntu.com/ubuntu focal main universe restricted multiverse\ndeb [arch=amd64] http://archive.ubuntu.com/ubuntu focal-updates main universe restricted multiverse\ndeb [arch=amd64] http://archive.ubuntu.com/ubuntu focal-security main universe restricted multiverse\ndeb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports focal main universe restricted multiverse\ndeb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports focal-updates main universe restricted multiverse\ndeb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports focal-security main universe restricted multiverse\nSOURCES",
                       "apt-get update",
-                      "apt-get install -y --no-install-recommends aptitude",
-                      "aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' pkg-config libssl-dev:arm64 libavcodec-dev:arm64 libavformat-dev:arm64 libavutil-dev:arm64 libavdevice-dev:arm64 libavfilter-dev:arm64 libswresample-dev:arm64 libswscale-dev:arm64 libc6-dev:arm64 clang libclang-dev libopencv-dev:arm64 python3",
+                      "apt-get install -y pkg-config libssl-dev:arm64 libavcodec-dev:arm64 libavformat-dev:arm64 libavutil-dev:arm64 libavdevice-dev:arm64 libavfilter-dev:arm64 libswresample-dev:arm64 libswscale-dev:arm64 libc6-dev:arm64 clang libclang-dev libopencv-dev:arm64 python3",
                   ]
                   env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/aarch64-linux-gnu/include", PKG_CONFIG_ALLOW_CROSS = "1", PKG_CONFIG_PATH = "/usr/lib/aarch64-linux-gnu/pkgconfig", LD_LIBRARY_PATH = "/usr/lib/aarch64-linux-gnu", OPENCV_LINK_LIBS = "opencv_core,opencv_imgcodecs,opencv_wechat_qrcode,opencv_dnn,opencv_imgproc,opencv_features2d,opencv_flann,opencv_calib3d,opencv_objdetect,opencv_video,opencv_ml,opencv_photo", OPENCV_LINK_PATHS = "/usr/lib/aarch64-linux-gnu", OPENCV_INCLUDE_PATHS = "/usr/include/opencv4" }
 
@@ -68,11 +61,8 @@ jobs:
                   image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabihf:edge"
                   pre-build = [
                       "dpkg --add-architecture armhf",
-                      "rm -rf /etc/apt/sources.list.d/*",
-                      "cat <<'SOURCES' > /etc/apt/sources.list\ndeb [arch=amd64] http://archive.ubuntu.com/ubuntu focal main universe restricted multiverse\ndeb [arch=amd64] http://archive.ubuntu.com/ubuntu focal-updates main universe restricted multiverse\ndeb [arch=amd64] http://archive.ubuntu.com/ubuntu focal-security main universe restricted multiverse\ndeb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports focal main universe restricted multiverse\ndeb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports focal-updates main universe restricted multiverse\ndeb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports focal-security main universe restricted multiverse\nSOURCES",
                       "apt-get update",
-                      "apt-get install -y --no-install-recommends aptitude",
-                      "aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libclang-dev libopencv-dev:armhf libc6-dev-armhf-cross python3",
+                      "apt-get install -y pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libclang-dev libopencv-dev:armhf libc6-dev-armhf-cross python3",
                   ]
                   env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/arm-linux-gnueabihf/include", PKG_CONFIG_ALLOW_CROSS = "1", PKG_CONFIG_PATH = "/usr/lib/arm-linux-gnueabihf/pkgconfig", LD_LIBRARY_PATH = "/usr/lib/arm-linux-gnueabihf", OPENCV_LINK_LIBS = "opencv_core,opencv_imgcodecs,opencv_wechat_qrcode,opencv_dnn,opencv_imgproc,opencv_features2d,opencv_flann,opencv_calib3d,opencv_objdetect,opencv_video,opencv_ml,opencv_photo", OPENCV_LINK_PATHS = "/usr/lib/arm-linux-gnueabihf", OPENCV_INCLUDE_PATHS = "/usr/include/opencv4" }
                   EOF
