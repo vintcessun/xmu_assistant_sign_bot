@@ -268,18 +268,18 @@ pub struct CourseTime {
     pub start: ClockTime,
     pub end: ClockTime,
     pub time_bitmap: TimeBitMap,
-    pub week_mask: u32,
+    pub week_mask: BitField32,
     pub day: Weekday,
 }
 
-fn parse_weeks(src: &str) -> u32 {
+fn parse_weeks(src: &str) -> BitField32 {
     let mut mask = 0u32;
     for (i, byte) in src.bytes().enumerate() {
         if byte == b'1' && i < 32 {
             mask |= 1 << i;
         }
     }
-    mask
+    BitField32::new(mask)
 }
 
 impl CourseTime {
@@ -352,5 +352,38 @@ impl ScheduleTable {
             shape: ScheduleTimeShape::new(time_data)?,
             course: ScheduleCourseTime::new(course_data)?,
         })
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+pub struct BitField32(pub u32);
+
+impl BitField32 {
+    /// 获取第 i 位是否为真 (i 从 0 开始)
+    ///
+    /// # 安全性
+    /// 如果 i >= 32，在 Debug 模式下会 panic，在 Release 模式下会触发位移溢出（通常结果为 false）
+    #[inline(always)]
+    pub fn get_bit(&self, i: u8) -> bool {
+        // 将 1 左移 i 位，然后与原值进行“位与”运算
+        // 如果结果不为 0，说明该位为 1
+        (self.0 & (1 << i)) != 0
+    }
+
+    #[inline(always)]
+    pub fn new(val: u32) -> Self {
+        Self(val)
+    }
+
+    /// 设置第 i 位为真
+    #[inline(always)]
+    pub fn set_bit(&mut self, i: u8) {
+        self.0 |= 1 << i;
+    }
+
+    /// 清除第 i 位
+    #[inline(always)]
+    pub fn clear_bit(&mut self, i: u8) {
+        self.0 &= !(1 << i);
     }
 }
