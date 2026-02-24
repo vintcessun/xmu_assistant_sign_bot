@@ -64,9 +64,12 @@ jobs:
                       "dpkg --add-architecture armhf",
                       "apt-get update",
                       "apt-get install -y --no-install-recommends aptitude cmake",
-                      "aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libclang-dev libopencv-dev:armhf libopencv-contrib-dev:armhf libc6-dev-armhf-cross python3",
+                      # 修复 gnu/stubs-soft.h 缺失: 确保安装了标准的 libc6-dev:armhf (Hard-float)
+                      # 并且安装 gcc-arm-linux-gnueabihf 确保编译器和头文件 ABI 匹配。
+                      "aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libclang-dev libopencv-dev:armhf libopencv-contrib-dev:armhf libc6-dev:armhf gcc-arm-linux-gnueabihf python3",
                   ]
-                  env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/arm-linux-gnueabihf/include", PKG_CONFIG_ALLOW_CROSS = "1", OpenCV_DIR = "/usr/lib/arm-linux-gnueabihf/cmake/opencv4" }
+                  # 注入 BINDGEN_EXTRA_CLANG_ARGS 强制指定 hard-float ABI 以匹配 target，解决 stubs.h 包含 soft-float 的问题
+                  env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/arm-linux-gnueabihf/include -mfloat-abi=hard", PKG_CONFIG_ALLOW_CROSS = "1", PKG_CONFIG_PATH = "/usr/lib/arm-linux-gnueabihf/pkgconfig", OpenCV_DIR = "/usr/lib/arm-linux-gnueabihf/cmake/opencv4" }
                   EOF
 
             - name: Prepare LLM tool config
