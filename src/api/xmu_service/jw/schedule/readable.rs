@@ -3,6 +3,8 @@ use crate::api::xmu_service::{
     location::{LOCATIONS, Location},
 };
 use anyhow::{Result, anyhow};
+use num_derive::FromPrimitive;
+use num_traits::FromPrimitive;
 use serde::{Deserialize, Serialize};
 use std::{ops::Index, sync::Arc};
 
@@ -200,6 +202,17 @@ impl From<Arc<Location>> for LocationStore {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, FromPrimitive)]
+pub enum Weekday {
+    Monday = 1,
+    Tuesday = 2,
+    Wednesday = 3,
+    Thursday = 4,
+    Friday = 5,
+    Saturday = 6,
+    Sunday = 7,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CourseTime {
     pub name: String,
@@ -207,6 +220,7 @@ pub struct CourseTime {
     pub start: ClockTime,
     pub end: ClockTime,
     pub week_mask: u32,
+    pub day: Weekday,
 }
 
 fn parse_weeks(src: &str) -> u32 {
@@ -230,13 +244,16 @@ impl CourseTime {
             LOCATIONS
                 .query(location_str)
                 .ok_or(anyhow!("地点(jasmc)解析错误; 原始结构体: {:?}", data))?;
-        }
+        };
+        let day = Weekday::from_i64(data.xq)
+            .ok_or(anyhow!("星期(xq)解析错误; 原始结构体: {:?}", data))?;
         Ok(Self {
             name: data.kcmc,
             location: Arc::new(LocationStore::from(location_str.cloned())),
             start,
             end,
             week_mask: parse_weeks(&data.zcbh),
+            day,
         })
     }
 }

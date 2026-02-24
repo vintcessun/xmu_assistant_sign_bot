@@ -81,7 +81,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_location_vintcessun() -> Result<()> {
-        let castgc = "TGT-4245016-7k39o2TRjw6GeRQr1iTvzpcGUjtcHqw-nLA1bCNS1MScKGDu4ZIfJTwR9wnMV-QhcY8null_main";
+        let castgc = "TGT-4506885-hZ1EnCYrj6-6nx7Q7StF6WeTJye89IKSJcnGaCirrYRAbbO7-AQLV0Iz5Xin-5jChZMnull_main";
         let data = ScheduleListRequest {};
         let schedule_list = ScheduleList::call(castgc, &data).await?;
         for item in schedule_list.datas.kfdxnxqcx.rows {
