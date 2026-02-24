@@ -36,7 +36,12 @@ jobs:
                       "BINDGEN_EXTRA_CLANG_ARGS",
                       "PKG_CONFIG_ALLOW_CROSS",
                       "PKG_CONFIG_PATH",
+                      "PKG_CONFIG_LIBDIR",
                       "OpenCV_DIR",
+                      "CC",
+                      "CXX",
+                      "CFLAGS",
+                      "CXXFLAGS",
                   ]
 
                   [target.x86_64-unknown-linux-gnu]
@@ -51,7 +56,6 @@ jobs:
                   pre-build = [
                       "dpkg --add-architecture i386",
                       "apt-get update",
-                      # 针对 i386 强制对齐策略：安装基础开发工具和 amd64 的 OpenCV 以获得模块定义。
                       "apt-get install -y --no-install-recommends aptitude cmake",
                       "aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' pkg-config libssl-dev:i386 libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 libavdevice-dev:i386 libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386 libc6-dev:i386 clang libclang-dev libopencv-dev libopencv-contrib-dev python3",
                   ]
@@ -71,6 +75,8 @@ jobs:
                       "dpkg --add-architecture armhf",
                       "apt-get update",
                       "apt-get install -y --no-install-recommends aptitude cmake",
+                      # 修复 gnu/stubs-soft.h 缺失: 确保安装了标准的 libc6-dev:armhf (Hard-float)
+                      # 并安装 gcc-arm-linux-gnueabihf 确保编译器和头文件 ABI 匹配。
                       "aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libclang-dev libopencv-dev:armhf libopencv-contrib-dev:armhf libc6-dev:armhf gcc-arm-linux-gnueabihf python3",
                   ]
                   EOF
@@ -92,6 +98,7 @@ jobs:
             - name: Configure cross environment
               run: |
                   T="${{ matrix.target }}"
+                  echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
                   if [[ "$T" == "x86_64"* ]]; then
                     echo "CC=gcc" >> $GITHUB_ENV
                     echo "CXX=g++" >> $GITHUB_ENV
@@ -101,21 +108,24 @@ jobs:
                     echo "CXX=i686-linux-gnu-g++" >> $GITHUB_ENV
                     echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/i686-linux-gnu/include" >> $GITHUB_ENV
                     echo "OpenCV_DIR=/usr/lib/i386-linux-gnu/cmake/opencv4" >> $GITHUB_ENV
-                    echo "PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig" >> $GITHUB_ENV
+                    echo "PKG_CONFIG_LIBDIR=/usr/lib/i386-linux-gnu/pkgconfig" >> $GITHUB_ENV
                   elif [[ "$T" == "aarch64"* ]]; then
                     echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
                     echo "CXX=aarch64-linux-gnu-g++" >> $GITHUB_ENV
                     echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/aarch64-linux-gnu/include" >> $GITHUB_ENV
                     echo "OpenCV_DIR=/usr/lib/aarch64-linux-gnu/cmake/opencv4" >> $GITHUB_ENV
-                    echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig" >> $GITHUB_ENV
+                    echo "PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig" >> $GITHUB_ENV
                   elif [[ "$T" == "armv7"* ]]; then
+                    # 关键修复：强制指定编译器为 hf 版本，并显式指定 CFLAGS/CXXFLAGS 包含 hard-float ABI。
+                    # 这能从根本上解决 stubs.h 误选 stubs-soft.h 的问题。
                     echo "CC=arm-linux-gnueabihf-gcc" >> $GITHUB_ENV
                     echo "CXX=arm-linux-gnueabihf-g++" >> $GITHUB_ENV
+                    echo "CFLAGS=-mfloat-abi=hard" >> $GITHUB_ENV
+                    echo "CXXFLAGS=-mfloat-abi=hard" >> $GITHUB_ENV
                     echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/arm-linux-gnueabihf/include -mfloat-abi=hard" >> $GITHUB_ENV
                     echo "OpenCV_DIR=/usr/lib/arm-linux-gnueabihf/cmake/opencv4" >> $GITHUB_ENV
-                    echo "PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig" >> $GITHUB_ENV
+                    echo "PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig" >> $GITHUB_ENV
                   fi
-                  echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
 
             - name: Build release binary using cross
               run: cross build --release --target ${{ matrix.target }} --verbose
