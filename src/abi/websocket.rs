@@ -48,31 +48,6 @@ impl<T: BotHandler> BotWebsocketClient<T> {
     }
 
     pub async fn connect(&mut self) -> Result<()> {
-        let (reconnect_tx, mut reconnect_rx) = mpsc::channel::<()>(1);
-
-        loop {
-            match self.connect_once(reconnect_tx.clone()).await {
-                Ok(_) => {
-                    info!("WebSocket 连接已建立");
-                    // 等待重连信号
-                    if reconnect_rx.recv().await.is_some() {
-                        warn!("收到重连信号，准备重新连接...");
-                        self.disconnect_tasks();
-                    } else {
-                        break;
-                    }
-                }
-                Err(e) => {
-                    error!(error = ?e, "WebSocket 连接失败，5秒后重试...");
-                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn connect_once(&mut self, reconnect_tx: mpsc::Sender<()>) -> Result<()> {
         info!(host = ?self.config.host, port = ?self.config.port, "正在连接到 WebSocket 服务器");
         debug!(config = ?self.config, "配置详情");
 
@@ -83,7 +58,7 @@ impl<T: BotHandler> BotWebsocketClient<T> {
         let (mut write_event, mut read_event) = ws_stream.split();
 
         let handler = self.handler.clone();
-        let reconnect_tx_event = reconnect_tx.clone();
+
         self.event_read_task = Some(tokio::spawn(async move {
             while let Some(message) = read_event.next().await {
                 match message {
@@ -99,27 +74,23 @@ impl<T: BotHandler> BotWebsocketClient<T> {
                     }
                     Err(e) => {
                         warn!(error = ?e, "读取事件 WebSocket 消息时发生错误，中断读取任务");
-                        let _ = reconnect_tx_event.send(()).await;
                         break;
                     }
                 }
             }
-            let _ = reconnect_tx_event.send(()).await;
         }));
 
         let (event_sender, mut event_receiver) = mpsc::unbounded_channel::<String>();
-        let reconnect_tx_event_w = reconnect_tx.clone();
+
         self.event_write_task = Some(tokio::spawn(async move {
             while let Some(msg) = event_receiver.recv().await {
                 trace!(message = ?msg, "准备发送事件消息");
                 if let Err(e) = write_event.send(Message::Text(msg.into())).await {
                     error!(error = ?e, "通过 WsWriter 传输事件失败");
-                    let _ = reconnect_tx_event_w.send(()).await;
                     break;
                 }
                 trace!("事件消息发送成功");
             }
-            let _ = reconnect_tx_event_w.send(()).await;
         }));
 
         let url_api = format!("ws://{}:{}/api", self.config.host, self.config.port);
@@ -129,7 +100,7 @@ impl<T: BotHandler> BotWebsocketClient<T> {
         let (mut write_api, mut read_api) = ws_stream.split();
 
         let handler = self.handler.clone();
-        let reconnect_tx_api = reconnect_tx.clone();
+
         self.api_read_task = Some(tokio::spawn(async move {
             while let Some(message) = read_api.next().await {
                 match message {
@@ -145,27 +116,23 @@ impl<T: BotHandler> BotWebsocketClient<T> {
                     }
                     Err(e) => {
                         warn!(error = ?e, "读取 API WebSocket 消息时发生错误，中断读取任务");
-                        let _ = reconnect_tx_api.send(()).await;
                         break;
                     }
                 }
             }
-            let _ = reconnect_tx_api.send(()).await;
         }));
 
         let (api_sender, mut api_receiver) = mpsc::unbounded_channel::<String>();
-        let reconnect_tx_api_w = reconnect_tx.clone();
+
         self.api_write_task = Some(tokio::spawn(async move {
             while let Some(msg) = api_receiver.recv().await {
                 trace!(message = ?msg, "准备发送 API 消息");
                 if let Err(e) = write_api.send(Message::Text(msg.into())).await {
                     error!(error = ?e, "通过 WsWriter 传输消息失败");
-                    let _ = reconnect_tx_api_w.send(()).await;
                     break;
                 }
                 trace!("API 消息发送成功");
             }
-            let _ = reconnect_tx_api_w.send(()).await;
         }));
 
         self.handler.init(event_sender, api_sender).await?;
@@ -174,7 +141,7 @@ impl<T: BotHandler> BotWebsocketClient<T> {
         Ok(())
     }
 
-    fn disconnect_tasks(&mut self) {
+    pub fn disconnect(&mut self) {
         if let Some(task) = self.event_read_task.take() {
             task.abort();
         }
@@ -187,10 +154,6 @@ impl<T: BotHandler> BotWebsocketClient<T> {
         if let Some(task) = self.api_write_task.take() {
             task.abort();
         }
-    }
-
-    pub fn disconnect(&mut self) {
-        self.disconnect_tasks();
         // Cannot await in drop; try to call on_disconnect if runtime allows elsewhere.
         let handler = self.handler.clone();
         tokio::spawn(async move {

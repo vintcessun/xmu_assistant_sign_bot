@@ -88,18 +88,22 @@ def main():
         while True:
             time.sleep(CHECK_INTERVAL)
 
-            if not SOURCE_EXE.exists():
-                continue
+            # 1. 检测文件变化（热重载）
+            if SOURCE_EXE.exists():
+                current_mtime = SOURCE_EXE.stat().st_mtime
+                if current_mtime != last_mtime:
+                    log("检测到编译产物变化！", "yellow")
+                    time.sleep(WRITE_BUFFER_TIME)
+                    last_mtime = SOURCE_EXE.stat().st_mtime
+                    start_process()
+                    continue
 
-            current_mtime = SOURCE_EXE.stat().st_mtime
-
-            if current_mtime != last_mtime:
-                log("检测到编译产物变化！", "yellow")
-
-                time.sleep(WRITE_BUFFER_TIME)
-
-                last_mtime = SOURCE_EXE.stat().st_mtime
-                start_process()
+            # 2. 检测进程是否结束（自动重启）
+            if current_process is not None:
+                exit_code = current_process.poll()
+                if exit_code is not None:
+                    log(f"进程已退出，退出码: {exit_code}。正在重启...", "yellow")
+                    start_process()
 
     except KeyboardInterrupt:
         log("\n正在退出监视脚本...", "yellow")
