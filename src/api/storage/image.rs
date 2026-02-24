@@ -114,7 +114,7 @@ pub struct ImageFile {
 impl ImageFile {
     /// 从 Base64 字符串创建新文件
     /// 逻辑：写入磁盘
-    pub async fn create_from_base64(base64_str: String) -> Result<Self> {
+    pub async fn create_from_base64(base64_str: &str) -> Result<Self> {
         let filename = format!("img_{}.png", uuid::Uuid::new_v4());
         debug!(filename = filename, "开始从 Base64 创建图片文件");
 
@@ -122,7 +122,7 @@ impl ImageFile {
         let file = Self::prepare(&filename);
 
         // 2. 解码数据
-        let bytes = general_purpose::STANDARD.decode(&base64_str).map_err(|e| {
+        let bytes = general_purpose::STANDARD.decode(base64_str).map_err(|e| {
             error!(error = ?e, "Base64 解码失败");
             anyhow!("Base64 解码失败: {}", e)
         })?;
