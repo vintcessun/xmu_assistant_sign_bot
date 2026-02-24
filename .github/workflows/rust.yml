@@ -54,7 +54,7 @@ jobs:
                       "apt-get install -y --no-install-recommends aptitude",
                       "aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' pkg-config libssl-dev:i386 libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 libavdevice-dev:i386 libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386 libc6-dev:i386 clang libclang-dev libopencv-dev:i386 python3",
                   ]
-                  env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/i686-linux-gnu/include", PKG_CONFIG_ALLOW_CROSS = "1", PKG_CONFIG_PATH = "/usr/lib/i386-linux-gnu/pkgconfig" }
+                  env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/i686-linux-gnu/include", PKG_CONFIG_ALLOW_CROSS = "1", PKG_CONFIG_PATH = "/usr/lib/i386-linux-gnu/pkgconfig", LD_LIBRARY_PATH = "/usr/lib/i386-linux-gnu" }
 
                   [target.aarch64-unknown-linux-gnu]
                   image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:edge"
@@ -66,7 +66,7 @@ jobs:
                       "apt-get install -y --no-install-recommends aptitude",
                       "aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' pkg-config libssl-dev:arm64 libavcodec-dev:arm64 libavformat-dev:arm64 libavutil-dev:arm64 libavdevice-dev:arm64 libavfilter-dev:arm64 libswresample-dev:arm64 libswscale-dev:arm64 libc6-dev:arm64 clang libclang-dev libopencv-dev:arm64 python3",
                   ]
-                  env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/aarch64-linux-gnu/include", PKG_CONFIG_ALLOW_CROSS = "1", PKG_CONFIG_PATH = "/usr/lib/aarch64-linux-gnu/pkgconfig" }
+                  env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/aarch64-linux-gnu/include", PKG_CONFIG_ALLOW_CROSS = "1", PKG_CONFIG_PATH = "/usr/lib/aarch64-linux-gnu/pkgconfig", LD_LIBRARY_PATH = "/usr/lib/aarch64-linux-gnu" }
 
                   [target.armv7-unknown-linux-gnueabihf]
                   image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabihf:edge"
@@ -78,7 +78,7 @@ jobs:
                       "apt-get install -y --no-install-recommends aptitude",
                       "aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libclang-dev libopencv-dev:armhf libc6-dev-armhf-cross python3",
                   ]
-                  env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/arm-linux-gnueabihf/include", PKG_CONFIG_ALLOW_CROSS = "1", PKG_CONFIG_PATH = "/usr/lib/arm-linux-gnueabihf/pkgconfig" }
+                  env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/arm-linux-gnueabihf/include", PKG_CONFIG_ALLOW_CROSS = "1", PKG_CONFIG_PATH = "/usr/lib/arm-linux-gnueabihf/pkgconfig", LD_LIBRARY_PATH = "/usr/lib/arm-linux-gnueabihf" }
                   EOF
 
             - name: Prepare LLM tool config
@@ -225,7 +225,7 @@ jobs:
               run: |
                   $TRIPLET = if ("${{ matrix.target }}" -like "*x86_64*") { "x64-windows" } elseif ("${{ matrix.target }}" -like "*i686*") { "x86-windows" } else { "arm64-windows" }
                   git -C $env:VCPKG_ROOT pull
-                  vcpkg install opencv4[contrib,nonfree] --triplet $TRIPLET
+                  vcpkg install opencv4[contrib] --triplet $TRIPLET
 
             - name: Install FFmpeg 7.1 Shared (Download or Compile)
               shell: pwsh
@@ -323,13 +323,15 @@ jobs:
             - name: Configure environment variables for build
               shell: pwsh
               run: |
-                  # 1. 自动寻找 Windows SDK UCRT 路径
+                  # 1. 自动寻找 Windows SDK 路径 (包含 ucrt 和 um)
                   $SDK_ROOT = "C:\Program Files (x86)\Windows Kits\10\Include"
                   $SDK_VERSION = (Get-ChildItem $SDK_ROOT).Name | Sort-Object {[version]$_} -Descending | Select-Object -First 1
                   $UCRT_PATH = "$SDK_ROOT\$SDK_VERSION\ucrt"
+                  $UM_PATH = "$SDK_ROOT\$SDK_VERSION\um"
+                  $SHARED_PATH = "$SDK_ROOT\$SDK_VERSION\shared"
                   Write-Host "UCRT path: $UCRT_PATH"
 
-                  # 2. 自动寻找 MSVC Include 路径 (寻找 vcruntime.h)
+                  # 2. 自动寻找 MSVC Include 路径
                   $VS_INSTALL_DIR = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
                   $MSVC_INCLUDE = ""
                   if ($VS_INSTALL_DIR) {
@@ -341,47 +343,43 @@ jobs:
                   }
                   Write-Host "MSVC include path: $MSVC_INCLUDE"
 
-                  # 3. 设置 BINDGEN_EXTRA_CLANG_ARGS
-                  # 必须包含 UCRT, MSVC 和 FFMPEG 头文件
+                  # 3. 设置 BINDGEN_EXTRA_CLANG_ARGS (解决 crtdbg.h 找不到的问题)
                   $FFMPEG_INC = "C:\ffmpeg\include"
-                  $CLANG_ARGS = "-I`"$UCRT_PATH`" -I`"$FFMPEG_INC`""
+                  $VCPKG_INC = "$env:VCPKG_ROOT\installed\${{ contains(matrix.target, 'x86_64') && 'x64' || contains(matrix.target, 'i686') && 'x86' || 'arm64' }}-windows\\include"
+                  $CLANG_ARGS = "-I`"$UCRT_PATH`" -I`"$UM_PATH`" -I`"$SHARED_PATH`" -I`"$FFMPEG_INC`" -I`"$VCPKG_INC`""
                   if ($MSVC_INCLUDE) {
                       $CLANG_ARGS += " -I`"$MSVC_INCLUDE`""
                   }
                   "BINDGEN_EXTRA_CLANG_ARGS=$CLANG_ARGS" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-                  # 4. 设置 FFmpeg 相关路径 (直接使用 C:\ffmpeg 提升可靠性)
-                  $FFMPEG_ROOT = "C:\ffmpeg"
-                  $FFMPEG_BIN = "C:\ffmpeg\bin"
-                  $FFMPEG_INC = "C:\ffmpeg\include"
-                  $FFMPEG_LIB = "C:\ffmpeg\lib"
-
-                  "FFMPEG_DIR=$FFMPEG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  # 4. 设置 FFmpeg 相关路径
+                  "FFMPEG_DIR=C:\ffmpeg" | Out-File -FilePath $env:GITHUB_ENV -Append
                   "FFMPEG_NO_AVFFT=1" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-                  # 5. 修复 INCLUDE 和 LIB 环境变量 (追加模式)
-                  $CURRENT_INCLUDE = if ($env:INCLUDE) { $env:INCLUDE } else { "" }
-                  "INCLUDE=$FFMPEG_INC;$MSVC_INCLUDE;$CURRENT_INCLUDE" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-                  $LIB_PATHS = "C:\ffmpeg\lib;C:\ffmpeg\lib\x64"
-                  $CURRENT_LIB = if ($env:LIB) { $env:LIB } else { "" }
-                  "LIB=$LIB_PATHS;$CURRENT_LIB" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-                  # 6. 允许跨平台编译
+                  # 5. 允许跨平台编译
                   "PKG_CONFIG_ALLOW_CROSS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-                  # 输出调试信息
-                  Write-Host "FFmpeg root path: $FFMPEG_ROOT"
-                  Write-Host "FFmpeg bin path: $FFMPEG_BIN"
-                  Write-Host "FFmpeg include path: $FFMPEG_INC"
-                  Write-Host "FFmpeg lib path: $LIB_PATHS"
-                  Write-Host "Set BINDGEN_EXTRA_CLANG_ARGS: $CLANG_ARGS"
 
             - name: Install Windows MSVC toolchain
               run: |
                   rustup target add ${{ matrix.target }}
                   rustc -V
                   cargo -V
+
+            - name: Verify OpenCV and critical libraries
+              shell: pwsh
+              run: |
+                  $LIB_DIR = "C:\vcpkg\installed\${{ contains(matrix.target, 'x86_64') && 'x64' || contains(matrix.target, 'i686') && 'x86' || 'arm64' }}-windows\\lib"
+                  # 核心 OpenCV 模块列表，完全匹配本地文件名格式
+                  $LIBS = "opencv_core4", "opencv_imgcodecs4", "opencv_wechat_qrcode4", "opencv_dnn4", "opencv_imgproc4", "opencv_features2d4", "opencv_flann4", "opencv_calib3d4", "opencv_objdetect4", "opencv_video4", "opencv_ml4", "opencv_photo4"
+                  Write-Host "Verifying critical libraries in $LIB_DIR"
+                  foreach ($lib in $LIBS) {
+                      $libPath = Join-Path $LIB_DIR "$lib.lib"
+                      if (!(Test-Path $libPath)) {
+                          Write-Error "CRITICAL FAILURE: Library $libPath not found. Please ensure vcpkg installed opencv4[contrib] correctly."
+                          exit 1
+                      }
+                  }
+                  Write-Host "All critical libraries verified successfully."
 
             - name: Build release binary
               run: cargo build --release --target ${{ matrix.target }} --verbose
