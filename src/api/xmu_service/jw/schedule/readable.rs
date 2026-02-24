@@ -250,7 +250,7 @@ impl From<Arc<Location>> for LocationStore {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, FromPrimitive)]
+#[derive(Debug, Clone, Deserialize, Serialize, FromPrimitive, PartialEq, Eq, Hash)]
 pub enum Weekday {
     Monday = 1,
     Tuesday = 2,

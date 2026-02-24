@@ -28,13 +28,6 @@ jobs:
             - name: Checkout source
               uses: actions/checkout@v4
 
-            - name: Cache OpenCV
-              uses: UrielCh/opencv-cache-action@V1
-              with:
-                  branch: 4.8.0
-                  BUILD_LIST: core,imgproc,imgcodecs,videoio,highgui,video,calib3d,features2d,objdetect,dnn,ml,photo,wechat_qrcode
-                  NO_CONTRIB: ""
-
             - name: Create Cross.toml dynamically
               run: |
                   cat <<'EOF' > Cross.toml
@@ -43,6 +36,7 @@ jobs:
                       "apt-get update",
                       "apt-get install -y pkg-config libssl-dev mold clang libclang-dev libopencv-dev libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libavfilter-dev libswresample-dev libswscale-dev libc6-dev python3",
                   ]
+                  env = { PKG_CONFIG_ALLOW_CROSS = "1", OPENCV_LINK_LIBS = "opencv_core,opencv_imgcodecs,opencv_wechat_qrcode,opencv_dnn,opencv_imgproc,opencv_features2d,opencv_flann,opencv_calib3d,opencv_objdetect,opencv_video,opencv_ml,opencv_photo", OPENCV_LINK_PATHS = "/usr/lib/x86_64-linux-gnu", OPENCV_INCLUDE_PATHS = "/usr/include/opencv4" }
 
                   [target.i686-unknown-linux-gnu]
                   image = "ghcr.io/cross-rs/i686-unknown-linux-gnu:edge"
@@ -52,11 +46,10 @@ jobs:
                       "cat <<'SOURCES' > /etc/apt/sources.list\ndeb [arch=amd64,i386] http://archive.ubuntu.com/ubuntu focal main universe restricted multiverse\ndeb [arch=amd64,i386] http://archive.ubuntu.com/ubuntu focal-updates main universe restricted multiverse\ndeb [arch=amd64,i386] http://archive.ubuntu.com/ubuntu focal-security main universe restricted multiverse\nSOURCES",
                       "apt-get update",
                       "apt-get install -y --no-install-recommends aptitude",
-                      # 注意：Ubuntu Focal (20.04) 不再提供 libopencv-dev:i386，我们依赖外部缓存或手动安装。
-                      # 这里移除 libopencv-dev:i386 以避免安装失败。
-                      "aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' pkg-config libssl-dev:i386 libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 libavdevice-dev:i386 libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386 libc6-dev:i386 clang libclang-dev python3",
+                      # 注意：Ubuntu Focal (20.04) 针对 i386 架构可能不提供完整的 libopencv-dev:i386。
+                      "aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' pkg-config libssl-dev:i386 libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 libavdevice-dev:i386 libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386 libc6-dev:i386 clang libclang-dev libopencv-dev:i386 python3",
                   ]
-                  env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/i686-linux-gnu/include", PKG_CONFIG_ALLOW_CROSS = "1", PKG_CONFIG_PATH = "/usr/lib/i386-linux-gnu/pkgconfig", LD_LIBRARY_PATH = "/usr/lib/i386-linux-gnu" }
+                  env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/i686-linux-gnu/include", PKG_CONFIG_ALLOW_CROSS = "1", PKG_CONFIG_PATH = "/usr/lib/i386-linux-gnu/pkgconfig", LD_LIBRARY_PATH = "/usr/lib/i386-linux-gnu", OPENCV_LINK_LIBS = "opencv_core,opencv_imgcodecs,opencv_wechat_qrcode,opencv_dnn,opencv_imgproc,opencv_features2d,opencv_flann,opencv_calib3d,opencv_objdetect,opencv_video,opencv_ml,opencv_photo", OPENCV_LINK_PATHS = "/usr/lib/i386-linux-gnu", OPENCV_INCLUDE_PATHS = "/usr/include/opencv4" }
 
                   [target.aarch64-unknown-linux-gnu]
                   image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:edge"
@@ -68,7 +61,7 @@ jobs:
                       "apt-get install -y --no-install-recommends aptitude",
                       "aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' pkg-config libssl-dev:arm64 libavcodec-dev:arm64 libavformat-dev:arm64 libavutil-dev:arm64 libavdevice-dev:arm64 libavfilter-dev:arm64 libswresample-dev:arm64 libswscale-dev:arm64 libc6-dev:arm64 clang libclang-dev libopencv-dev:arm64 python3",
                   ]
-                  env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/aarch64-linux-gnu/include", PKG_CONFIG_ALLOW_CROSS = "1", PKG_CONFIG_PATH = "/usr/lib/aarch64-linux-gnu/pkgconfig", LD_LIBRARY_PATH = "/usr/lib/aarch64-linux-gnu" }
+                  env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/aarch64-linux-gnu/include", PKG_CONFIG_ALLOW_CROSS = "1", PKG_CONFIG_PATH = "/usr/lib/aarch64-linux-gnu/pkgconfig", LD_LIBRARY_PATH = "/usr/lib/aarch64-linux-gnu", OPENCV_LINK_LIBS = "opencv_core,opencv_imgcodecs,opencv_wechat_qrcode,opencv_dnn,opencv_imgproc,opencv_features2d,opencv_flann,opencv_calib3d,opencv_objdetect,opencv_video,opencv_ml,opencv_photo", OPENCV_LINK_PATHS = "/usr/lib/aarch64-linux-gnu", OPENCV_INCLUDE_PATHS = "/usr/include/opencv4" }
 
                   [target.armv7-unknown-linux-gnueabihf]
                   image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabihf:edge"
@@ -80,7 +73,7 @@ jobs:
                       "apt-get install -y --no-install-recommends aptitude",
                       "aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libclang-dev libopencv-dev:armhf libc6-dev-armhf-cross python3",
                   ]
-                  env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/arm-linux-gnueabihf/include", PKG_CONFIG_ALLOW_CROSS = "1", PKG_CONFIG_PATH = "/usr/lib/arm-linux-gnueabihf/pkgconfig", LD_LIBRARY_PATH = "/usr/lib/arm-linux-gnueabihf" }
+                  env = { BINDGEN_EXTRA_CLANG_ARGS = "-I/usr/arm-linux-gnueabihf/include", PKG_CONFIG_ALLOW_CROSS = "1", PKG_CONFIG_PATH = "/usr/lib/arm-linux-gnueabihf/pkgconfig", LD_LIBRARY_PATH = "/usr/lib/arm-linux-gnueabihf", OPENCV_LINK_LIBS = "opencv_core,opencv_imgcodecs,opencv_wechat_qrcode,opencv_dnn,opencv_imgproc,opencv_features2d,opencv_flann,opencv_calib3d,opencv_objdetect,opencv_video,opencv_ml,opencv_photo", OPENCV_LINK_PATHS = "/usr/lib/arm-linux-gnueabihf", OPENCV_INCLUDE_PATHS = "/usr/include/opencv4" }
                   EOF
 
             - name: Prepare LLM tool config
@@ -98,20 +91,11 @@ jobs:
               run: cargo install cross --force
 
             - name: Build release binary using cross
-              run: |
-                  # 如果是 i686 目标，确保 OpenCV 库能被找到
-                  # 注意：UrielCh/opencv-cache-action 会将库安装到系统路径或指定路径
-                  # cross 使用 Docker 容器，可能需要显式传递库路径
-                  cross build --release --target ${{ matrix.target }} --verbose
+              run: cross build --release --target ${{ matrix.target }} --verbose
               env:
                   # Override .cargo/config.toml to prevent host-specific flags (like target-cpu=native)
                   # from being leaked into the cross-compilation environment.
                   RUSTFLAGS: ""
-                  # 强制显式注入 OpenCV 路径以避开 pkg-config 探测失败的问题
-                  OPENCV_LINK_LIBS: "opencv_core,opencv_imgcodecs,opencv_wechat_qrcode,opencv_dnn,opencv_imgproc,opencv_features2d,opencv_flann,opencv_calib3d,opencv_objdetect,opencv_video,opencv_ml,opencv_photo"
-                  # 对于 i686，如果系统路径没有，尝试包含可能的缓存路径
-                  OPENCV_LINK_PATHS: "/usr/lib/${{ contains(matrix.target, 'i686') && 'i386-linux-gnu' || contains(matrix.target, 'aarch64') && 'aarch64-linux-gnu' || 'arm-linux-gnueabihf' }}"
-                  OPENCV_INCLUDE_PATHS: "/usr/include/opencv4"
 
             - name: Rename artifact
               shell: bash
