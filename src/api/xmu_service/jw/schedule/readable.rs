@@ -51,6 +51,51 @@ where
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+pub struct TimeBitMap {
+    // 23 * 64 = 1472 bits, 足够 1440 分钟
+    bits: [u64; 23],
+}
+
+impl TimeBitMap {
+    pub fn new() -> Self {
+        Self { bits: [0u64; 23] }
+    }
+
+    pub fn from_range(start: ClockTime, end: ClockTime) -> Self {
+        let mut bitmap = Self::new();
+        bitmap.add_range(start, end);
+        bitmap
+    }
+
+    /// 核心：添加由 ClockTime 定义的区间 [start, end)
+    pub fn add_range(&mut self, start: ClockTime, end: ClockTime) {
+        // 由于你确定没有跨天，直接迭代
+        // 如果 start < end，正常填充；如果用户误填，这里也不会崩溃
+        for m in start.0..end.0 {
+            let idx = (m / 64) as usize;
+            let bit = (m % 64) as u64;
+            self.bits[idx] |= 1 << bit;
+        }
+    }
+
+    /// 极致查询：传入当前的 ClockTime
+    #[inline(always)]
+    pub fn is_active(&self, time: ClockTime) -> bool {
+        let m = time.0 as usize;
+        let idx = m / 64;
+        let bit = m % 64;
+        (self.bits[idx] & (1 << bit)) != 0
+    }
+
+    /// 批量合并：将另一个计划合并进来
+    pub fn merge(&mut self, other: &Self) {
+        for i in 0..23 {
+            self.bits[i] |= other.bits[i];
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ClockTime(u16); // 内部存储从 00:00 开始的分钟数
 
@@ -89,6 +134,7 @@ pub struct TimeShape {
     pub id: i64,
     pub start: ClockTime,
     pub end: ClockTime,
+    pub time_bitmap: TimeBitMap,
 }
 
 impl TimeShape {
@@ -97,11 +143,13 @@ impl TimeShape {
             .ok_or(anyhow!("开始时间(kssj)解析错误; 原始结构体: {:?}", data))?;
         let end = ClockTime::from_military(data.jssj)
             .ok_or(anyhow!("结束时间(jssj)解析错误; 原始结构体: {:?}", data))?;
+        let time_bitmap = TimeBitMap::from_range(start, end);
         Ok(TimeShape {
             name: data.mc,
             id: data.px,
             start,
             end,
+            time_bitmap,
         })
     }
 }
@@ -219,6 +267,7 @@ pub struct CourseTime {
     pub location: Arc<LocationStore>,
     pub start: ClockTime,
     pub end: ClockTime,
+    pub time_bitmap: TimeBitMap,
     pub week_mask: u32,
     pub day: Weekday,
 }
@@ -247,11 +296,13 @@ impl CourseTime {
         };
         let day = Weekday::from_i64(data.xq)
             .ok_or(anyhow!("星期(xq)解析错误; 原始结构体: {:?}", data))?;
+        let time_bitmap = TimeBitMap::from_range(start, end);
         Ok(Self {
             name: data.kcmc,
             location: Arc::new(LocationStore::from(location_str.cloned())),
             start,
             end,
+            time_bitmap,
             week_mask: parse_weeks(&data.zcbh),
             day,
         })
