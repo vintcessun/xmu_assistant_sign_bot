@@ -43,6 +43,7 @@ jobs:
                       "CFLAGS",
                       "CXXFLAGS",
                       "LIBRARY_PATH",
+                      "CARGO_ENCODED_RUSTFLAGS",
                   ]
 
                   [target.x86_64-unknown-linux-gnu]
@@ -140,7 +141,10 @@ jobs:
               env:
                   # Override .cargo/config.toml to prevent host-specific flags (like target-cpu=native)
                   # from being leaked into the cross-compilation environment.
+                  # We use RUSTFLAGS="" to clear the top-level flags, but cross-rs often reads from .cargo/config.toml
+                  # Setting CARGO_ENCODED_RUSTFLAGS to empty string is a more robust way to clear flags.
                   RUSTFLAGS: ""
+                  CARGO_ENCODED_RUSTFLAGS: ""
 
             - name: Rename artifact
               shell: bash
