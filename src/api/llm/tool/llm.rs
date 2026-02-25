@@ -11,7 +11,7 @@ use llm_xml_caster::{LlmPrompt, generate_as_with_retries};
 use serde::de::DeserializeOwned;
 use tracing::{debug, error, info, trace, warn};
 
-const LOW_MODEL: &str = "ep-20260225003643-2w6k5";
+const LOW_MODEL: &str = "ep-20260225232137-4rlsz";
 const HIGH_MODEL: &str = "gemini-2.5-flash";
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
