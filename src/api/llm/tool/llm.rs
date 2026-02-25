@@ -11,7 +11,8 @@ use llm_xml_caster::{LlmPrompt, generate_as_with_retries};
 use serde::de::DeserializeOwned;
 use tracing::{debug, error, info, trace, warn};
 
-const LOW_MODEL: &str = "ep-20260225232137-4rlsz";
+const LOW_MODEL: &str = "ep-20260225003643-2w6k5";
+const LOW_ALL_MODEL: &str = "qwen3-vl:4b-8k";
 const HIGH_MODEL: &str = "gemini-2.5-flash";
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
@@ -104,9 +105,10 @@ where
 
     let mut i = 1;
     loop {
-        trace!("开始调用 LLM (结构化模式): {} 第 {} 次", LOW_MODEL, i);
+        let model_name = if i < 10 { LOW_MODEL } else { LOW_ALL_MODEL };
+        trace!("开始调用 LLM (结构化模式): {} 第 {} 次", model_name, i);
         let result =
-            generate_as_with_retries(&CLIENT, LOW_MODEL, message.clone(), valid_example, 10).await;
+            generate_as_with_retries(&CLIENT, model_name, message.clone(), valid_example, 10).await;
         match result {
             Ok(res) => return Ok(res),
             Err(e) => {
@@ -119,7 +121,7 @@ where
                 }
                 #[cfg(test)]
                 println!("LLM 结构化调用失败错误信息: {:?} 第 {} 次", e, i);
-                warn!(model_name = LOW_MODEL, error = ?e, "LLM 结构化调用失败 第 {} 次", i);
+                warn!(model_name = model_name, error = ?e, "LLM 结构化调用失败 第 {} 次", i);
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             }
         }
