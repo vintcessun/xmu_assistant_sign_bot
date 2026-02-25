@@ -12,7 +12,7 @@ const CONFIG: Config = Config {
     },
     bot: BotConfig {
         command_prefix: "/",
-        self_qq: "1363408373",
+        self_qq: "3451169043",
     },
 };
 
@@ -74,7 +74,7 @@ impl Default for BotConfig {
     fn default() -> Self {
         BotConfig {
             command_prefix: "/",
-            self_qq: "1363408373",
+            self_qq: "3451169043",
         }
     }
 }
