@@ -112,7 +112,7 @@ where
 
     let chat_message = [
     vec![ChatMessage::system(
-        "你是一个智能的理解用户回复的助手，请根据 embedding 的结果和用户的提问进行回复的生成",
+        "你是一个智能的理解用户回复的助手，请根据 embedding 的结果和用户的提问进行回复的生成，在回复文件时务必发送回文件的ID以便查找对应文件，回复一个文件像这样[文件,file_id=aaaaaaaa]代表一个文件",
     ),
     ChatMessage::system(format!(
         "以下是根据用户提问搜索到的相关内容: {:?}",

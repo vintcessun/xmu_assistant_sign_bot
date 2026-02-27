@@ -146,7 +146,7 @@ where
     let chat_message = [
         vec![
             ChatMessage::system(
-                "你是一个智能的助手，请根据用户的提问和上下文，完成回复文本的书写。",
+                "你是一个智能的助手，请根据用户的提问和上下文，完成回复文本的书写。在回复文件时务必发送回文件的ID以便查找对应文件，回复一个文件像这样[文件,file_id=aaaaaaaa]代表一个文件",
             ),
             ChatMessage::system("上下文:"),
         ],
