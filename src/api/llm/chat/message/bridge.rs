@@ -104,13 +104,6 @@ const MESSAGE_SEND_LLM_RESPONSE_VALID_EXAMPLE: &str = r#"
                 <qq>123456789</qq>
             </At>
         </item>
-        <item>
-            <Image>
-                <file>
-                    <id>abcdef12</id>
-                </file>
-            </Image>
-        </item>
     </message>
 </MessageSendLlmResponse>"#;
 
@@ -132,11 +125,6 @@ fn test_message_send_llm_response_parsing() {
                 },
                 SegmentSendLlmResponse::At {
                     qq: "123456789".to_string()
-                },
-                SegmentSendLlmResponse::Image {
-                    file: LlmFileWithIdOrOptionAlias {
-                        id: "abcdef12".to_string()
-                    }
                 },
             ]
         }
