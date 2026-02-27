@@ -664,7 +664,7 @@ fn generate_web_data(out_dir: &str) {
                 let html_content = fs::read_to_string(&path).expect("无法读取 HTML 文件");
 
                 code.push_str(&format!(
-                    "pub const {}: &str = {:?};\n",
+                    "#[allow(dead_code)]\npub const {}: &str = {:?};\n",
                     var_name, html_content
                 ));
             }
