@@ -55,13 +55,19 @@ def start_process():
 
     stop_process()
 
-    try:
-        log(f"正在复制: {SOURCE_EXE.name} -> {RUN_EXE.name}", "cyan")
-        # 确保目录存在
-        RUN_EXE.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(SOURCE_EXE, RUN_EXE)
-    except Exception as e:
-        log(f"复制文件失败: {e}", "red")
+    if SOURCE_EXE.exists():
+        try:
+            log(f"正在复制: {SOURCE_EXE.name} -> {RUN_EXE.name}", "cyan")
+            # 确保目录存在
+            RUN_EXE.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(SOURCE_EXE, RUN_EXE)
+        except Exception as e:
+            log(f"复制文件失败: {e}", "red")
+            return
+    elif RUN_EXE.exists():
+        log(f"源文件不存在，将直接使用现有的 {RUN_EXE.name}", "yellow")
+    else:
+        log(f"错误: {SOURCE_EXE.name} 和 {RUN_EXE.name} 都不存在", "red")
         return
 
     log("🚀 启动新版本...", "green")
@@ -75,11 +81,18 @@ def main():
     global last_mtime
 
     if not SOURCE_EXE.exists():
-        log(f"错误: 找不到源文件 {SOURCE_EXE}", "red")
-        log("请先运行一次: cargo build --release", "yellow")
-        return
+        if RUN_EXE.exists():
+            log(
+                f"警告: 找不到源文件 {SOURCE_EXE}，但发现已存在 {RUN_EXE}，将忽略并继续",
+                "yellow",
+            )
+        else:
+            log(f"错误: 找不到源文件 {SOURCE_EXE} 且 {RUN_EXE} 不存在，未编译", "red")
+            log("请先运行一次: cargo build --release", "yellow")
+            return
+    else:
+        last_mtime = SOURCE_EXE.stat().st_mtime
 
-    last_mtime = SOURCE_EXE.stat().st_mtime
     start_process()
 
     log(f"👀 正在监控 {SOURCE_EXE} 的变化...", "cyan")
