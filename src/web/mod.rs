@@ -36,9 +36,17 @@ fn router() -> Router {
 }
 
 fn main_router(router: Router) -> Router {
-    router.route("/status", get(status_handler))
+    router
+        .route("/status", get(status_handler))
+        .route("/index", get(index_handler))
 }
 
 async fn status_handler() -> &'static str {
     "Web API is running"
+}
+
+include!(concat!(env!("OUT_DIR"), "/web_data.rs"));
+
+async fn index_handler() -> &'static str {
+    INDEX_HTML
 }
