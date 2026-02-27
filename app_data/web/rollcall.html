@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
     <head>
         <meta charset="UTF-8" />
@@ -138,10 +138,12 @@
                     />
                 </div>
                 <button
-                    onclick="submitManual('/process-sign', 'user', 'input-user')"
+                    onclick="
+                        submitManual('/rollcall/sign', 'user', 'input-user')
+                    "
                     class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700"
                 >
-                    提交签到
+                    查询签到
                 </button>
             </div>
 
@@ -158,11 +160,59 @@
                     />
                 </div>
                 <button
-                    onclick="submitManual('/process-auto-sign', 'user', 'input-auto-user')"
+                    onclick="
+                        submitManual(
+                            '/rollcall/auto_sign',
+                            'user',
+                            'input-auto-user',
+                        )
+                    "
                     class="w-full bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700"
                 >
                     开启自动签到
                 </button>
+
+                <div class="mt-6 border-t pt-4">
+                    <h3 class="text-sm font-bold mb-3">特定课程签到</h3>
+                    <div class="mb-4">
+                        <label
+                            class="block text-sm font-medium text-gray-700 mb-1"
+                            >QQ号</label
+                        >
+                        <input
+                            type="text"
+                            id="input-spec-user"
+                            class="w-full border rounded-lg px-3 py-2"
+                            placeholder="输入QQ号"
+                        />
+                    </div>
+                    <div class="mb-4">
+                        <label
+                            class="block text-sm font-medium text-gray-700 mb-1"
+                            >签到 ID</label
+                        >
+                        <input
+                            type="text"
+                            id="input-spec-rollcall"
+                            class="w-full border rounded-lg px-3 py-2"
+                            placeholder="输入签到 ID"
+                        />
+                    </div>
+                    <button
+                        onclick="
+                            submitManual(
+                                '/rollcall/spec_sign',
+                                'user',
+                                'input-spec-user',
+                                'rollcall_id',
+                                'input-spec-rollcall',
+                            )
+                        "
+                        class="w-full bg-purple-500 text-white py-2 rounded-lg hover:bg-purple-600"
+                    >
+                        指定签到
+                    </button>
+                </div>
             </div>
 
             <div id="panel-push" class="tab-panel hidden">
@@ -178,7 +228,13 @@
                     />
                 </div>
                 <button
-                    onclick="submitManual('/process-push-sign', 'rollcall_id', 'input-rollcall')"
+                    onclick="
+                        submitManual(
+                            '/rollcall/push_sign',
+                            'rollcall_id',
+                            'input-rollcall',
+                        )
+                    "
                     class="w-full bg-orange-600 text-white py-2 rounded-lg hover:bg-orange-700"
                 >
                     执行推送签到
@@ -218,7 +274,7 @@
                 <section>
                     <h3 class="font-bold text-blue-600">1. 二维码处理</h3>
                     <p class="bg-gray-100 p-2 rounded mt-1 font-mono text-xs">
-                        POST /process-qr
+                        POST /rollcall/qr
                     </p>
                     <p class="mt-1">
                         参数:
@@ -228,46 +284,13 @@
                     </p>
                     <p class="mt-1 text-xs">功能: 处理二维码签到数据</p>
                     <p class="mt-1 text-xs">
-                        参数说明: content 为二维码解析内容，格式为 "/j?p=..."
-                        或包含该格式的URL
+                        返回值: <code>QrSignResponse</code> 数组
                     </p>
-                    <p class="mt-1 text-xs">
-                        返回值:
-                        包含用户签到结果的数组，每个元素包含用户名和签到结果
-                    </p>
-                    <div
-                        class="mt-2 p-2 bg-blue-50 rounded border border-blue-200 text-xs"
-                    >
-                        <p class="font-medium text-blue-700">返回样例:</p>
-                        <pre class="mt-1 text-xs overflow-x-auto">
-[
-  {
-    "user_name": "张三",
-    "sign_result": "{\"id\":123,\"status\":\"on_call\"}"
-  },
-  {
-    "user_name": "李四", 
-    "sign_result": "{\"error_code\":\"qr_code_expired\",\"message\":\"qr_code_expired\"}"
-  }
-]</pre
-                        >
-                        <p class="mt-1">
-                            数据结构:
-                            <code
-                                >PushSignData { user_name: String, sign_result:
-                                String }</code
-                            >
-                        </p>
-                        <p class="mt-1">
-                            说明: sign_result
-                            为服务器返回的原始JSON字符串，包含签到ID和状态信息
-                        </p>
-                    </div>
                 </section>
                 <section>
                     <h3 class="font-bold text-green-600">2. 签到信息查询</h3>
                     <p class="bg-gray-100 p-2 rounded mt-1 font-mono text-xs">
-                        POST /process-sign
+                        POST /rollcall/sign
                     </p>
                     <p class="mt-1">
                         参数:
@@ -277,80 +300,13 @@
                     </p>
                     <p class="mt-1 text-xs">功能: 查询用户的签到状态信息</p>
                     <p class="mt-1 text-xs">
-                        参数说明: user 为QQ号，用于标识用户
+                        返回值: <code>SignResponse</code> 数组
                     </p>
-                    <p class="mt-1 text-xs">
-                        返回值: 包含用户ID、用户名和详细签到信息的结构化数据
-                    </p>
-                    <div
-                        class="mt-2 p-2 bg-green-50 rounded border border-green-200 text-xs"
-                    >
-                        <p class="font-medium text-green-700">返回样例:</p>
-                        <pre class="mt-1 text-xs overflow-x-auto">
-{
-  "user_id": "123456",
-  "user_name": "张三",
-  "sign_data": [
-    {
-      "type": "number",
-      "data": {
-        "course_title": "高等数学",
-        "course_code": "MATH101",
-        "activity_id": 1001,
-        "instructors": ["王教授", "李教授"],
-        "sign_num": 45,
-        "student_num": 60,
-        "number_code": "123456",
-        "status": "absent"
-      }
-    },
-    {
-      "type": "radar",
-      "data": {
-        "course_title": "大学物理",
-        "course_code": "PHYS201",
-        "activity_id": 1002,
-        "instructors": ["赵教授"],
-        "sign_num": 30,
-        "student_num": 50,
-        "status": "absent"
-      }
-    },
-    {
-      "type": "qr",
-      "data":{
-        "course_title": "大学物理",
-        "course_code": "PHYS201",
-        "activity_id": 1002,
-        "instructors": ["赵教授"],
-        "sign_num": 30,
-        "student_num": 50,
-        "status": "on_call_fine"
-      }
-    }
-  ]
-}</pre
-                        >
-                        <p class="mt-1">
-                            数据结构:
-                            <code
-                                >SignResponse { user_id: String, user_name:
-                                String, sign_data: Vec&lt;SignData&gt; }</code
-                            >
-                        </p>
-                        <p class="mt-1">
-                            SignData 类型: number(数字签到), radar(雷达签到),
-                            qr(二维码签到)
-                        </p>
-                        <p class="mt-1">
-                            状态说明: "absent"=未签到, "on_call_fine"=已签到
-                        </p>
-                    </div>
                 </section>
                 <section>
                     <h3 class="font-bold text-purple-600">3. 自动签到</h3>
                     <p class="bg-gray-100 p-2 rounded mt-1 font-mono text-xs">
-                        POST /process-auto-sign
+                        POST /rollcall/auto_sign
                     </p>
                     <p class="mt-1">
                         参数:
@@ -358,72 +314,15 @@
                             >{ "user": "string" }</code
                         >
                     </p>
-                    <p class="mt-1 text-xs">功能: 执行自动签到操作</p>
+                    <p class="mt-1 text-xs">功能: 执行全课程自动签到</p>
                     <p class="mt-1 text-xs">
-                        参数说明: user 为QQ号，用于标识用户
+                        返回值: <code>AutoSignResponse</code> 数组
                     </p>
-                    <p class="mt-1 text-xs">
-                        返回值:
-                        自动签到结果数组，包含雷达签到、数字签到、二维码签到的成功/已签到状态
-                    </p>
-                    <div
-                        class="mt-2 p-2 bg-purple-50 rounded border border-purple-200 text-xs"
-                    >
-                        <p class="font-medium text-purple-700">返回样例:</p>
-                        <pre class="mt-1 text-xs overflow-x-auto">
-[
-  {
-    "type": "radar",
-    "data": {
-      "status": "success",
-      "data": {
-        "course_name": "高等数学",
-        "student_location": "教学楼A区",
-        "latitude": 24.123456,
-        "longitude": 118.123456,
-        "student_distance": 15.5
-      }
-    }
-  },
-  {
-    "type": "number",
-    "data": {
-      "status": "already_signed",
-      "data": {
-        "course_name": "大学英语"
-      }
-    }
-  },
-  {
-    "type": "qr",
-    "data": {
-      "status": "success",//这里success无法签到二维码
-      "data": {
-        "course_name": "计算机基础"
-      }
-    }
-  }
-]</pre
-                        >
-                        <p class="mt-1">
-                            数据结构: <code>Vec&lt;AutoSignData&gt;</code>，其中
-                            AutoSignData 可以是:
-                        </p>
-                        <ul class="mt-1 pl-4 list-disc">
-                            <li>radar: 雷达签到 (success/already_signed)</li>
-                            <li>number: 数字签到 (success/already_signed)</li>
-                            <li>qr: 二维码签到 (success/already_signed)</li>
-                        </ul>
-                        <p class="mt-1">
-                            success 状态包含详细签到信息，already_signed
-                            状态仅包含课程名称
-                        </p>
-                    </div>
                 </section>
                 <section>
                     <h3 class="font-bold text-purple-600">4. 特定自动签到</h3>
                     <p class="bg-gray-100 p-2 rounded mt-1 font-mono text-xs">
-                        POST /process-spec-sign
+                        POST /rollcall/spec_sign
                     </p>
                     <p class="mt-1">
                         参数:
@@ -431,51 +330,15 @@
                             >{ "user": "string", "rollcall_id": "string" }</code
                         >
                     </p>
-                    <p class="mt-1 text-xs">功能: 执行自动签到操作</p>
+                    <p class="mt-1 text-xs">功能: 执行指定课程自动签到</p>
                     <p class="mt-1 text-xs">
-                        参数说明: user 为QQ号，用于标识用户；rollcall_id
-                        为签到ID，用于指定签到活动
+                        返回值: <code>AutoSignResponse</code> 数组
                     </p>
-                    <p class="mt-1 text-xs">
-                        返回值:
-                        自动签到结果对象，包含雷达签到、数字签到、二维码签到的成功/已签到状态
-                    </p>
-                    <div
-                        class="mt-2 p-2 bg-purple-50 rounded border border-purple-200 text-xs"
-                    >
-                        <p class="font-medium text-purple-700">返回样例:</p>
-                        <pre class="mt-1 text-xs overflow-x-auto">
-{
-  "type": "radar",
-  "data": {
-    "status": "success",
-    "data": {
-      "course_name": "高等数学",
-      "student_location": "教学楼A区",
-      "latitude": 24.123456,
-      "longitude": 118.123456,
-      "student_distance": 15.5
-    }
-  }
-}
-</pre
-                        >
-                        <p class="mt-1">数据结构: AutoSignData 可以是:</p>
-                        <ul class="mt-1 pl-4 list-disc">
-                            <li>radar: 雷达签到 (success/already_signed)</li>
-                            <li>number: 数字签到 (success/already_signed)</li>
-                            <li>qr: 二维码签到 (success/already_signed)</li>
-                        </ul>
-                        <p class="mt-1">
-                            success 状态包含详细签到信息，already_signed
-                            状态仅包含课程名称
-                        </p>
-                    </div>
                 </section>
                 <section>
                     <h3 class="font-bold text-orange-600">5. 推送签到</h3>
                     <p class="bg-gray-100 p-2 rounded mt-1 font-mono text-xs">
-                        POST /process-push-sign
+                        POST /rollcall/push_sign
                     </p>
                     <p class="mt-1">
                         参数:
@@ -483,88 +346,10 @@
                             >{ "rollcall_id": "string" }</code
                         >
                     </p>
+                    <p class="mt-1 text-xs">功能: 推送签到给所有用户</p>
                     <p class="mt-1 text-xs">
-                        功能: 推送签到给指定签到ID的所有用户
+                        返回值: <code>PushSignResponse</code> 数组
                     </p>
-                    <p class="mt-1 text-xs">
-                        参数说明: rollcall_id
-                        为签到ID，可通过签到信息查询接口获得
-                    </p>
-                    <p class="mt-1 text-xs">
-                        返回值:
-                        包含用户签到结果的数组，每个元素包含用户名和签到结果
-                    </p>
-                    <div
-                        class="mt-2 p-2 bg-orange-50 rounded border border-orange-200 text-xs"
-                    >
-                        <p class="font-medium text-orange-700">返回样例:</p>
-                        <pre class="mt-1 text-xs overflow-x-auto">
-[
-  {
-    "user_name": "张三",
-    "sign_result": "{\"id\":1001,\"status\":\"success\",\"distance\":12.5}"
-  },
-  {
-    "user_name": "李四",
-    "sign_result": "{\"id\":1002,\"status\":\"success\",\"distance\":8.3}"
-  }
-]</pre
-                        >
-                        <p class="mt-1">
-                            数据结构:
-                            <code>Vec&lt;PushSignData&gt;</code
-                            >，与二维码处理接口相同
-                        </p>
-                        <p class="mt-1">
-                            说明: 对于雷达签到，sign_result
-                            包含距离信息；对于数字签到，包含签到结果状态
-                        </p>
-                        <p class="mt-1">
-                            支持类型: 数字签到、雷达签到（自动选择最近位置）
-                        </p>
-                    </div>
-                </section>
-                <section>
-                    <h3 class="font-bold text-gray-600">底层函数说明</h3>
-                    <p class="mt-1 text-xs">
-                        所有功能基于 rust 实现，提供高性能的异步签到处理：
-                    </p>
-                    <ul class="mt-1 text-xs pl-4 list-disc">
-                        <li>
-                            <code>broadcast_qr_sign_data</code>:
-                            广播二维码签到，支持多用户并发处理
-                        </li>
-                        <li>
-                            <code>sign_core_data</code>:
-                            获取用户签到状态，包含详细课程信息
-                        </li>
-                        <li>
-                            <code>auto_sign_core_data</code>:
-                            自动签到，支持雷达、数字、二维码签到类型
-                        </li>
-                        <li>
-                            <code>push_sign_core_data</code>:
-                            推送签到，针对特定签到ID批量处理
-                        </li>
-                    </ul>
-                    <div
-                        class="mt-2 p-2 bg-gray-50 rounded border border-gray-200 text-xs"
-                    >
-                        <p class="font-medium text-gray-700">使用示例:</p>
-                        <pre class="mt-1 text-xs overflow-x-auto">
-# 二维码处理
-curl -X POST http://localhost:8083/process-qr   -H "Content-Type: application/json"   -d '{"content": "/j?p=0~123!1~456!2~qr!3~data123"}'
-
-# 签到信息查询  
-curl -X POST http://localhost:8083/process-sign   -H "Content-Type: application/json"   -d '{"user": "123456"}'
-
-# 自动签到
-curl -X POST http://localhost:8083/process-auto-sign   -H "Content-Type: application/json"   -d '{"user": "123456"}'
-
-# 推送签到
-curl -X POST http://localhost:8083/process-push-sign   -H "Content-Type: application/json"   -d '{"rollcall_id": "1001"}'</pre
-                        >
-                    </div>
                 </section>
             </div>
         </div>
@@ -614,79 +399,48 @@ curl -X POST http://localhost:8083/process-push-sign   -H "Content-Type: applica
                 // 根据不同的endpoint解析不同的数据结构
                 const message = data.message;
 
-                // 检查是否是数组（二维码处理、推送签到）
+                // 检查是否是数组（二维码处理、推送签到、自动签到、查询签到）
                 if (Array.isArray(message)) {
+                    // QrSignResponse: { qq: i64, response: AutoSignResponse }
+                    // PushSignResponse: { qq: i64, response: Vec<AutoSignResponse> }
                     if (
-                        endpoint === "/process-qr" ||
-                        endpoint === "/process-push-sign"
+                        endpoint === "/rollcall/qr" ||
+                        endpoint === "/rollcall/push_sign"
                     ) {
-                        // 二维码处理或推送签到返回的数组
                         return {
-                            type: "array",
+                            type: "array_response",
                             endpoint: endpoint,
                             data: message,
                             summary: `共 ${message.length} 条记录`,
-                            items: message.map((item) => {
-                                // 尝试解析sign_result中的JSON
-                                let signResult = item.sign_result;
-                                try {
-                                    signResult = JSON.parse(item.sign_result);
-                                } catch (e) {
-                                    // 如果解析失败，保持原样
-                                }
-                                return {
-                                    user_name: item.user_name,
-                                    sign_result: signResult,
-                                    raw: item,
-                                };
-                            }),
+                            items: message.map((item) => ({
+                                qq: item.qq,
+                                response: item.response, // 可能是对象也可能是数组
+                            })),
                         };
                     }
-                    // 自动签到返回的数组
-                    if (endpoint === "/process-auto-sign") {
+                    // Vec<AutoSignResponse>
+                    if (
+                        endpoint === "/rollcall/auto_sign" ||
+                        endpoint === "/rollcall/spec_sign"
+                    ) {
                         return {
-                            type: "auto_sign",
+                            type: "auto_sign_list",
                             endpoint: endpoint,
                             data: message,
-                            summary: `共 ${message.length} 个签到任务`,
-                            items: message.map((item) => {
-                                const type = item.type || "Unknown";
-                                const status =
-                                    (item.data && item.data.status) ||
-                                    "Unknown";
-                                const data =
-                                    (item.data && item.data.data) || {};
-                                return {
-                                    type: type,
-                                    status: status,
-                                    data: data,
-                                    raw: item,
-                                };
-                            }),
+                            summary: `共 ${message.length} 个签到结果`,
+                            items: message,
                         };
                     }
-                }
-
-                // 签到信息查询返回的对象
-                if (
-                    endpoint === "/process-sign" &&
-                    message &&
-                    typeof message === "object"
-                ) {
-                    return {
-                        type: "sign_info",
-                        endpoint: endpoint,
-                        data: message,
-                        user_id: message.user_id,
-                        user_name: message.user_name,
-                        sign_count: message.sign_data?.length || 0,
-                        sign_data: message.sign_data || [],
-                        summary: `用户 ${message.user_name} (${
-                            message.user_id
-                        }) 的签到信息，共 ${
-                            message.sign_data?.length || 0
-                        } 条记录`,
-                    };
+                    // Vec<SignResponse>
+                    if (endpoint === "/rollcall/sign") {
+                        return {
+                            type: "sign_info_list",
+                            endpoint: endpoint,
+                            data: message,
+                            summary: `共查询到 ${message.length} 门课程`,
+                            items: message,
+                        };
+                    }
                 }
 
                 // 默认情况：直接显示消息
@@ -701,31 +455,68 @@ curl -X POST http://localhost:8083/process-push-sign   -H "Content-Type: applica
             }
 
             // 手动提交函数
-            async function submitManual(endpoint, key, inputId) {
+            async function submitManual(
+                endpoint,
+                key,
+                inputId,
+                secondKey,
+                secondInputId,
+            ) {
                 const val = document.getElementById(inputId).value;
                 if (!val) return alert("请输入内容");
+
+                let body = { [key]: val };
+                if (secondKey && secondInputId) {
+                    const secondVal =
+                        document.getElementById(secondInputId).value;
+                    if (!secondVal) return alert("请输入内容");
+                    body[secondKey] = secondVal;
+                }
 
                 status.textContent = "正在提交...";
                 try {
                     const res = await fetch(endpoint, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ [key]: val }),
+                        body: JSON.stringify(body),
                     });
                     const data = await res.json();
                     // 解析API响应
                     const parsedResponse = parseApiResponse(
                         data,
                         res.ok,
-                        endpoint
+                        endpoint,
                     );
                     showResponse(parsedResponse, res.ok);
                 } catch (err) {
                     showResponse(
                         { type: "error", message: err.message },
-                        false
+                        false,
                     );
                 }
+            }
+
+            function formatAutoSignResponse(response) {
+                let text = `[${response.type}] `;
+                const status = response.data.status;
+                const innerData = response.data.data;
+
+                if (status === "success") {
+                    if (response.type === "radar") {
+                        text += `成功: ${innerData.course_name} at ${innerData.student_location} (${innerData.student_distance.toFixed(1)}m)`;
+                    } else if (response.type === "number") {
+                        text += `成功: ${innerData.course_name}, 签到码: ${innerData.number_code}`;
+                    } else if (response.type === "qr") {
+                        text += `成功: ${innerData.course_name}, 结果: ${innerData.sign_result}`;
+                    }
+                } else if (status === "already_signed") {
+                    text += `已签到: ${innerData.course_name}`;
+                } else if (status === "pending") {
+                    text += `待处理: ${innerData.course_name}`;
+                } else {
+                    text += `状态: ${status}`;
+                }
+                return text;
             }
 
             function showResponse(response, isOk) {
@@ -734,94 +525,38 @@ curl -X POST http://localhost:8083/process-push-sign   -H "Content-Type: applica
                 if (response.type === "error") {
                     displayText = `错误: ${response.message}`;
                     if (response.raw && response.raw.detail) {
-                        displayText += `
-详情: ${response.raw.detail}`;
+                        displayText += `\n详情: ${response.raw.detail}`;
                     }
-                } else if (response.type === "array") {
-                    displayText = `${response.summary}
-
-`;
+                } else if (response.type === "array_response") {
+                    displayText = `${response.summary}\n\n`;
                     response.items.forEach((item, index) => {
-                        displayText += `${index + 1}. 用户: ${item.user_name}
-`;
-                        if (typeof item.sign_result === "object") {
-                            displayText += `   结果: ${JSON.stringify(
-                                item.sign_result,
-                                null,
-                                2
-                            )}
-`;
+                        displayText += `${index + 1}. QQ: ${item.qq}\n`;
+                        if (Array.isArray(item.response)) {
+                            item.response.forEach((r) => {
+                                displayText += `   - ${formatAutoSignResponse(r)}\n`;
+                            });
                         } else {
-                            displayText += `   结果: ${item.sign_result}
-`;
+                            displayText += `   - ${formatAutoSignResponse(item.response)}\n`;
                         }
-                        displayText += "";
+                        displayText += "\n";
                     });
-                } else if (response.type === "auto_sign") {
-                    displayText = `${response.summary}
-
-`;
+                } else if (response.type === "auto_sign_list") {
+                    displayText = `${response.summary}\n\n`;
                     response.items.forEach((item, index) => {
-                        displayText += `${index + 1}. 类型: ${item.type}
-`;
-                        displayText += `   状态: ${item.status}
-`;
-                        if (item.status === "success" && item.data) {
-                            if (item.type === "radar") {
-                                displayText += `   课程: ${item.data.course_name}
-`;
-                                displayText += `   位置: ${item.data.student_location}
-`;
-                                displayText += `   坐标: (${item.data.latitude}, ${item.data.longitude})
-`;
-                                displayText += `   距离: ${item.data.student_distance}米
-`;
-                            } else if (item.type === "number") {
-                                displayText += `   课程: ${item.data.course_name}
-`;
-                                displayText += `   签到码: ${item.data.number_code}
-`;
-                            } else if (item.type === "qr") {
-                                displayText += `   课程: ${item.data.course_name}
-`;
-                                displayText += `   说明: 二维码签到需要手动扫描
-`;
-                            }
-                        } else if (item.status === "already_signed") {
-                            displayText += `   课程: ${item.data.course_name}
-`;
-                            displayText += `   说明: 已签到
-`;
-                        }
-                        displayText += "";
+                        displayText += `${index + 1}. ${formatAutoSignResponse(item)}\n`;
                     });
-                } else if (response.type === "sign_info") {
-                    displayText = `${response.summary}
-
-`;
-                    response.sign_data.forEach((item, index) => {
-                        displayText += `${index + 1}. 类型: ${item.type}
-`;
-                        const data = item.data || {};
-                        displayText += `   课程: ${data.course_title} (${data.course_code})
-`;
-                        displayText += `   签到ID: ${data.activity_id}
-`;
-                        displayText += `   教师: ${
-                            Array.isArray(data.instructors)
-                                ? data.instructors.join(", ")
-                                : data.instructors
+                } else if (response.type === "sign_info_list") {
+                    displayText = `${response.summary}\n\n`;
+                    response.items.forEach((item, index) => {
+                        const b = item.builder;
+                        const e = item.extra;
+                        displayText += `${index + 1}. [${e.type}] ${b.course_title} (${b.course_code})\n`;
+                        displayText += `   ID: ${b.activity_id}, 教师: ${b.instructors.join(", ")}, 状态: ${b.status}\n`;
+                        displayText += `   签到人数: ${b.sign_num}/${b.student_num}\n`;
+                        if (e.type === "number") {
+                            displayText += `   签到码: ${e.data.number_code}\n`;
                         }
-`;
-                        displayText += `   签到人数: ${data.sign_num}/${data.student_num}
-`;
-                        if (item.type === "number") {
-                            displayText += `   签到码: ${data.number_code}
-`;
-                        }
-                        displayText += `   状态: ${data.status}
-`;
-                        displayText += "";
+                        displayText += "\n";
                     });
                 } else {
                     displayText = response.message;
@@ -881,7 +616,7 @@ curl -X POST http://localhost:8083/process-push-sign   -H "Content-Type: applica
                             ctx.getImageData(0, 0, canvas.width, canvas.height)
                                 .data,
                             canvas.width,
-                            canvas.height
+                            canvas.height,
                         );
                         if (code) {
                             qrContent.textContent = code.data;
@@ -897,7 +632,7 @@ curl -X POST http://localhost:8083/process-push-sign   -H "Content-Type: applica
 
             async function processqrCode(content) {
                 try {
-                    const res = await fetch("/process-qr", {
+                    const res = await fetch("/rollcall/qr", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ content: content }),
@@ -907,13 +642,13 @@ curl -X POST http://localhost:8083/process-push-sign   -H "Content-Type: applica
                     const parsedResponse = parseApiResponse(
                         data,
                         res.ok,
-                        "/process-qr"
+                        "/rollcall/qr",
                     );
                     showResponse(parsedResponse, res.ok);
                 } catch (err) {
                     showResponse(
                         { type: "error", message: err.message },
-                        false
+                        false,
                     );
                 }
             }

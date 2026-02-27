@@ -1,3 +1,4 @@
+use crate::logic::rollcall;
 use axum::{
     Json, Router,
     http::StatusCode,
@@ -55,7 +56,7 @@ struct MessageResponse<T> {
 }
 
 async fn qr_handler(Json(payload): Json<QrRequest>) -> impl IntoResponse {
-    match crate::logic::rollcall::qr_sign_request(&payload.content).await {
+    match rollcall::qr_sign_request(&payload.content).await {
         Ok(result) => (StatusCode::OK, Json(MessageResponse { message: result })).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -76,7 +77,7 @@ async fn content_handler(Json(payload): Json<UserRequest>) -> impl IntoResponse 
                 .into_response();
         }
     };
-    match crate::logic::rollcall::sign_request(qq).await {
+    match rollcall::sign_request(qq).await {
         Ok(result) => (StatusCode::OK, Json(MessageResponse { message: result })).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -97,7 +98,7 @@ async fn auto_sign_handler(Json(payload): Json<UserRequest>) -> impl IntoRespons
                 .into_response();
         }
     };
-    match crate::logic::rollcall::auto_sign_request(qq).await {
+    match rollcall::auto_sign_request(qq).await {
         Ok(result) => (StatusCode::OK, Json(MessageResponse { message: result })).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -118,7 +119,7 @@ async fn push_sign_handler(Json(payload): Json<PushRequest>) -> impl IntoRespons
                 .into_response();
         }
     };
-    match crate::logic::rollcall::push_sign_request(rollcall_id).await {
+    match rollcall::push_sign_request(rollcall_id).await {
         Ok(result) => (StatusCode::OK, Json(MessageResponse { message: result })).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -149,7 +150,7 @@ async fn spec_sign_handler(Json(payload): Json<SpecRequest>) -> impl IntoRespons
                 .into_response();
         }
     };
-    match crate::logic::rollcall::spec_sign_request(qq, rollcall_id).await {
+    match rollcall::spec_sign_request(qq, rollcall_id).await {
         Ok(result) => (StatusCode::OK, Json(MessageResponse { message: result })).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
