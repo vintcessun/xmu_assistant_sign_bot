@@ -18,7 +18,7 @@ use std::sync::LazyLock;
 use tracing::{debug, error, info};
 
 // 定义常量
-const CHAT_MODEL: &str = "gemini-2.5-flash";
+const CHAT_MODEL: &str = "gemini-flash-lite-latest";
 const EMBED_MODEL: &str = "text-embedding-3-large";
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
