@@ -31,6 +31,8 @@ pub async fn auto_sign(ctx: Context) -> Result<()> {
 
     let ret = auto_sign_request_inner(qq, client).await?;
 
+    ctx.send_message_async(from_str(format!("签到完成，{} 门课程", ret.len())));
+
     for e in ret {
         ctx.send_message_async(from_str(format!("{}", e)));
     }

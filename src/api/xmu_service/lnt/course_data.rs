@@ -6,9 +6,15 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, LazyLock};
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct Instructor {
+    pub name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct CourseDataResponse {
     pub course_code: String,
     pub name: String,
+    pub instructors: Vec<Instructor>,
     //pub allow_admin_update_basic_info: Option<Value>,
     //pub allow_update_basic_info: Option<Value>,
     //pub allowed_to_invite_assistant: Option<Value>,
