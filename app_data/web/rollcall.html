@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>网页签到工具</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsqr.min.js"></script>
+        <style>
+            .zoom-controls {
+                position: absolute;
+                bottom: 10px;
+                right: 10px;
+                z-index: 10;
+                display: flex;
+                gap: 5px;
+            }
+            .zoom-btn {
+                width: 40px;
+                height: 40px;
+                background: rgba(0, 0, 0, 0.7);
+                color: white;
+                border: none;
+                border-radius: 50%;
+                font-size: 18px;
+                font-weight: bold;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.2s;
+            }
+            .zoom-btn:hover {
+                background: rgba(0, 0, 0, 0.9);
+                transform: scale(1.1);
+            }
+            .zoom-level {
+                position: absolute;
+                bottom: 10px;
+                left: 10px;
+                background: rgba(0, 0, 0, 0.7);
+                color: white;
+                padding: 5px 10px;
+                border-radius: 15px;
+                font-size: 12px;
+                z-index: 10;
+            }
+            .tab-active {
+                border-bottom: 2px solid #2563eb;
+                color: #2563eb;
+            }
+            pre {
+                white-space: pre-wrap;
+                word-wrap: break-word;
+            }
+        </style>
+    </head>
+    <body class="bg-gray-100 min-h-screen p-4 flex flex-col items-center">
+        <div class="max-w-md w-full bg-white rounded-xl shadow-lg p-6 mb-8">
+            <h1 class="text-2xl font-bold text-center text-gray-800 mb-6">
+                签到助手系统
+            </h1>
+
+            <div class="flex border-b mb-6 overflow-x-auto whitespace-nowrap">
+                <button
+                    onclick="switchTab('qr')"
+                    id="tab-qr"
+                    class="flex-1 py-2 px-4 text-sm font-medium tab-active"
+                >
+                    扫码处理
+                </button>
+                <button
+                    onclick="switchTab('sign')"
+                    id="tab-sign"
+                    class="flex-1 py-2 px-4 text-sm font-medium text-gray-500"
+                >
+                    签到信息
+                </button>
+                <button
+                    onclick="switchTab('auto')"
+                    id="tab-auto"
+                    class="flex-1 py-2 px-4 text-sm font-medium text-gray-500"
+                >
+                    自动签到
+                </button>
+                <button
+                    onclick="switchTab('push')"
+                    id="tab-push"
+                    class="flex-1 py-2 px-4 text-sm font-medium text-gray-500"
+                >
+                    推送签到
+                </button>
+            </div>
+
+            <div id="panel-qr" class="tab-panel">
+                <div
+                    class="relative w-full aspect-square bg-gray-900 rounded-lg overflow-hidden mb-4"
+                >
+                    <video
+                        id="video"
+                        class="w-full h-full object-cover transform transition-transform duration-300"
+                    ></video>
+                    <div class="zoom-level" id="zoomLevel">100%</div>
+                    <div class="zoom-controls" id="zoomControls">
+                        <button class="zoom-btn" id="zoomOut">-</button>
+                        <button class="zoom-btn" id="zoomReset">1:1</button>
+                        <button class="zoom-btn" id="zoomIn">+</button>
+                    </div>
+                    <div
+                        class="absolute left-1/4 top-1/4 w-1/2 h-1/2 border-2 border-green-500 pointer-events-none"
+                    >
+                        <div
+                            class="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 border-green-500"
+                        ></div>
+                        <div
+                            class="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 border-green-500"
+                        ></div>
+                    </div>
+                </div>
+                <button
+                    id="startBtn"
+                    class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 mb-4"
+                >
+                    开启摄像头
+                </button>
+            </div>
+
+            <div id="panel-sign" class="tab-panel hidden">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1"
+                        >QQ号</label
+                    >
+                    <input
+                        type="text"
+                        id="input-user"
+                        class="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="输入QQ号"
+                    />
+                </div>
+                <button
+                    onclick="submitManual('/process-sign', 'user', 'input-user')"
+                    class="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700"
+                >
+                    提交签到
+                </button>
+            </div>
+
+            <div id="panel-auto" class="tab-panel hidden">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1"
+                        >QQ号</label
+                    >
+                    <input
+                        type="text"
+                        id="input-auto-user"
+                        class="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="输入QQ号"
+                    />
+                </div>
+                <button
+                    onclick="submitManual('/process-auto-sign', 'user', 'input-auto-user')"
+                    class="w-full bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700"
+                >
+                    开启自动签到
+                </button>
+            </div>
+
+            <div id="panel-push" class="tab-panel hidden">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1"
+                        >签到 ID (Rollcall ID)</label
+                    >
+                    <input
+                        type="text"
+                        id="input-rollcall"
+                        class="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="输入签到 ID"
+                    />
+                </div>
+                <button
+                    onclick="submitManual('/process-push-sign', 'rollcall_id', 'input-rollcall')"
+                    class="w-full bg-orange-600 text-white py-2 rounded-lg hover:bg-orange-700"
+                >
+                    执行推送签到
+                </button>
+            </div>
+
+            <div
+                id="status"
+                class="text-center text-gray-500 mt-4 text-sm font-medium"
+            >
+                准备就绪
+            </div>
+            <div
+                id="qrResult"
+                class="hidden mt-4 p-3 bg-gray-50 rounded border border-gray-200"
+            >
+                <p class="text-xs text-gray-500">原始数据：</p>
+                <p id="qrContent" class="text-sm font-mono break-all"></p>
+            </div>
+            <div
+                id="processResult"
+                class="hidden mt-4 p-3 bg-blue-50 rounded border border-blue-200"
+            >
+                <p class="text-xs text-blue-700">返回消息：</p>
+                <pre
+                    id="processContent"
+                    class="text-sm font-medium text-blue-800 mt-1"
+                ></pre>
+            </div>
+        </div>
+
+        <div class="max-w-md w-full bg-white rounded-xl shadow-lg p-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4 border-b pb-2">
+                API 使用文档
+            </h2>
+            <div class="space-y-6 text-sm text-gray-600">
+                <section>
+                    <h3 class="font-bold text-blue-600">1. 二维码处理</h3>
+                    <p class="bg-gray-100 p-2 rounded mt-1 font-mono text-xs">
+                        POST /process-qr
+                    </p>
+                    <p class="mt-1">
+                        参数:
+                        <code class="bg-gray-100 px-1"
+                            >{ "content": "string" }</code
+                        >
+                    </p>
+                    <p class="mt-1 text-xs">功能: 处理二维码签到数据</p>
+                    <p class="mt-1 text-xs">
+                        参数说明: content 为二维码解析内容，格式为 "/j?p=..."
+                        或包含该格式的URL
+                    </p>
+                    <p class="mt-1 text-xs">
+                        返回值:
+                        包含用户签到结果的数组，每个元素包含用户名和签到结果
+                    </p>
+                    <div
+                        class="mt-2 p-2 bg-blue-50 rounded border border-blue-200 text-xs"
+                    >
+                        <p class="font-medium text-blue-700">返回样例:</p>
+                        <pre class="mt-1 text-xs overflow-x-auto">
+[
+  {
+    "user_name": "张三",
+    "sign_result": "{\"id\":123,\"status\":\"on_call\"}"
+  },
+  {
+    "user_name": "李四", 
+    "sign_result": "{\"error_code\":\"qr_code_expired\",\"message\":\"qr_code_expired\"}"
+  }
+]</pre
+                        >
+                        <p class="mt-1">
+                            数据结构:
+                            <code
+                                >PushSignData { user_name: String, sign_result:
+                                String }</code
+                            >
+                        </p>
+                        <p class="mt-1">
+                            说明: sign_result
+                            为服务器返回的原始JSON字符串，包含签到ID和状态信息
+                        </p>
+                    </div>
+                </section>
+                <section>
+                    <h3 class="font-bold text-green-600">2. 签到信息查询</h3>
+                    <p class="bg-gray-100 p-2 rounded mt-1 font-mono text-xs">
+                        POST /process-sign
+                    </p>
+                    <p class="mt-1">
+                        参数:
+                        <code class="bg-gray-100 px-1"
+                            >{ "user": "string" }</code
+                        >
+                    </p>
+                    <p class="mt-1 text-xs">功能: 查询用户的签到状态信息</p>
+                    <p class="mt-1 text-xs">
+                        参数说明: user 为QQ号，用于标识用户
+                    </p>
+                    <p class="mt-1 text-xs">
+                        返回值: 包含用户ID、用户名和详细签到信息的结构化数据
+                    </p>
+                    <div
+                        class="mt-2 p-2 bg-green-50 rounded border border-green-200 text-xs"
+                    >
+                        <p class="font-medium text-green-700">返回样例:</p>
+                        <pre class="mt-1 text-xs overflow-x-auto">
+{
+  "user_id": "123456",
+  "user_name": "张三",
+  "sign_data": [
+    {
+      "type": "number",
+      "data": {
+        "course_title": "高等数学",
+        "course_code": "MATH101",
+        "activity_id": 1001,
+        "instructors": ["王教授", "李教授"],
+        "sign_num": 45,
+        "student_num": 60,
+        "number_code": "123456",
+        "status": "absent"
+      }
+    },
+    {
+      "type": "radar",
+      "data": {
+        "course_title": "大学物理",
+        "course_code": "PHYS201",
+        "activity_id": 1002,
+        "instructors": ["赵教授"],
+        "sign_num": 30,
+        "student_num": 50,
+        "status": "absent"
+      }
+    },
+    {
+      "type": "qr",
+      "data":{
+        "course_title": "大学物理",
+        "course_code": "PHYS201",
+        "activity_id": 1002,
+        "instructors": ["赵教授"],
+        "sign_num": 30,
+        "student_num": 50,
+        "status": "on_call_fine"
+      }
+    }
+  ]
+}</pre
+                        >
+                        <p class="mt-1">
+                            数据结构:
+                            <code
+                                >SignResponse { user_id: String, user_name:
+                                String, sign_data: Vec&lt;SignData&gt; }</code
+                            >
+                        </p>
+                        <p class="mt-1">
+                            SignData 类型: number(数字签到), radar(雷达签到),
+                            qr(二维码签到)
+                        </p>
+                        <p class="mt-1">
+                            状态说明: "absent"=未签到, "on_call_fine"=已签到
+                        </p>
+                    </div>
+                </section>
+                <section>
+                    <h3 class="font-bold text-purple-600">3. 自动签到</h3>
+                    <p class="bg-gray-100 p-2 rounded mt-1 font-mono text-xs">
+                        POST /process-auto-sign
+                    </p>
+                    <p class="mt-1">
+                        参数:
+                        <code class="bg-gray-100 px-1"
+                            >{ "user": "string" }</code
+                        >
+                    </p>
+                    <p class="mt-1 text-xs">功能: 执行自动签到操作</p>
+                    <p class="mt-1 text-xs">
+                        参数说明: user 为QQ号，用于标识用户
+                    </p>
+                    <p class="mt-1 text-xs">
+                        返回值:
+                        自动签到结果数组，包含雷达签到、数字签到、二维码签到的成功/已签到状态
+                    </p>
+                    <div
+                        class="mt-2 p-2 bg-purple-50 rounded border border-purple-200 text-xs"
+                    >
+                        <p class="font-medium text-purple-700">返回样例:</p>
+                        <pre class="mt-1 text-xs overflow-x-auto">
+[
+  {
+    "type": "radar",
+    "data": {
+      "status": "success",
+      "data": {
+        "course_name": "高等数学",
+        "student_location": "教学楼A区",
+        "latitude": 24.123456,
+        "longitude": 118.123456,
+        "student_distance": 15.5
+      }
+    }
+  },
+  {
+    "type": "number",
+    "data": {
+      "status": "already_signed",
+      "data": {
+        "course_name": "大学英语"
+      }
+    }
+  },
+  {
+    "type": "qr",
+    "data": {
+      "status": "success",//这里success无法签到二维码
+      "data": {
+        "course_name": "计算机基础"
+      }
+    }
+  }
+]</pre
+                        >
+                        <p class="mt-1">
+                            数据结构: <code>Vec&lt;AutoSignData&gt;</code>，其中
+                            AutoSignData 可以是:
+                        </p>
+                        <ul class="mt-1 pl-4 list-disc">
+                            <li>radar: 雷达签到 (success/already_signed)</li>
+                            <li>number: 数字签到 (success/already_signed)</li>
+                            <li>qr: 二维码签到 (success/already_signed)</li>
+                        </ul>
+                        <p class="mt-1">
+                            success 状态包含详细签到信息，already_signed
+                            状态仅包含课程名称
+                        </p>
+                    </div>
+                </section>
+                <section>
+                    <h3 class="font-bold text-purple-600">4. 特定自动签到</h3>
+                    <p class="bg-gray-100 p-2 rounded mt-1 font-mono text-xs">
+                        POST /process-spec-sign
+                    </p>
+                    <p class="mt-1">
+                        参数:
+                        <code class="bg-gray-100 px-1"
+                            >{ "user": "string", "rollcall_id": "string" }</code
+                        >
+                    </p>
+                    <p class="mt-1 text-xs">功能: 执行自动签到操作</p>
+                    <p class="mt-1 text-xs">
+                        参数说明: user 为QQ号，用于标识用户；rollcall_id
+                        为签到ID，用于指定签到活动
+                    </p>
+                    <p class="mt-1 text-xs">
+                        返回值:
+                        自动签到结果对象，包含雷达签到、数字签到、二维码签到的成功/已签到状态
+                    </p>
+                    <div
+                        class="mt-2 p-2 bg-purple-50 rounded border border-purple-200 text-xs"
+                    >
+                        <p class="font-medium text-purple-700">返回样例:</p>
+                        <pre class="mt-1 text-xs overflow-x-auto">
+{
+  "type": "radar",
+  "data": {
+    "status": "success",
+    "data": {
+      "course_name": "高等数学",
+      "student_location": "教学楼A区",
+      "latitude": 24.123456,
+      "longitude": 118.123456,
+      "student_distance": 15.5
+    }
+  }
+}
+</pre
+                        >
+                        <p class="mt-1">数据结构: AutoSignData 可以是:</p>
+                        <ul class="mt-1 pl-4 list-disc">
+                            <li>radar: 雷达签到 (success/already_signed)</li>
+                            <li>number: 数字签到 (success/already_signed)</li>
+                            <li>qr: 二维码签到 (success/already_signed)</li>
+                        </ul>
+                        <p class="mt-1">
+                            success 状态包含详细签到信息，already_signed
+                            状态仅包含课程名称
+                        </p>
+                    </div>
+                </section>
+                <section>
+                    <h3 class="font-bold text-orange-600">5. 推送签到</h3>
+                    <p class="bg-gray-100 p-2 rounded mt-1 font-mono text-xs">
+                        POST /process-push-sign
+                    </p>
+                    <p class="mt-1">
+                        参数:
+                        <code class="bg-gray-100 px-1"
+                            >{ "rollcall_id": "string" }</code
+                        >
+                    </p>
+                    <p class="mt-1 text-xs">
+                        功能: 推送签到给指定签到ID的所有用户
+                    </p>
+                    <p class="mt-1 text-xs">
+                        参数说明: rollcall_id
+                        为签到ID，可通过签到信息查询接口获得
+                    </p>
+                    <p class="mt-1 text-xs">
+                        返回值:
+                        包含用户签到结果的数组，每个元素包含用户名和签到结果
+                    </p>
+                    <div
+                        class="mt-2 p-2 bg-orange-50 rounded border border-orange-200 text-xs"
+                    >
+                        <p class="font-medium text-orange-700">返回样例:</p>
+                        <pre class="mt-1 text-xs overflow-x-auto">
+[
+  {
+    "user_name": "张三",
+    "sign_result": "{\"id\":1001,\"status\":\"success\",\"distance\":12.5}"
+  },
+  {
+    "user_name": "李四",
+    "sign_result": "{\"id\":1002,\"status\":\"success\",\"distance\":8.3}"
+  }
+]</pre
+                        >
+                        <p class="mt-1">
+                            数据结构:
+                            <code>Vec&lt;PushSignData&gt;</code
+                            >，与二维码处理接口相同
+                        </p>
+                        <p class="mt-1">
+                            说明: 对于雷达签到，sign_result
+                            包含距离信息；对于数字签到，包含签到结果状态
+                        </p>
+                        <p class="mt-1">
+                            支持类型: 数字签到、雷达签到（自动选择最近位置）
+                        </p>
+                    </div>
+                </section>
+                <section>
+                    <h3 class="font-bold text-gray-600">底层函数说明</h3>
+                    <p class="mt-1 text-xs">
+                        所有功能基于 rust 实现，提供高性能的异步签到处理：
+                    </p>
+                    <ul class="mt-1 text-xs pl-4 list-disc">
+                        <li>
+                            <code>broadcast_qr_sign_data</code>:
+                            广播二维码签到，支持多用户并发处理
+                        </li>
+                        <li>
+                            <code>sign_core_data</code>:
+                            获取用户签到状态，包含详细课程信息
+                        </li>
+                        <li>
+                            <code>auto_sign_core_data</code>:
+                            自动签到，支持雷达、数字、二维码签到类型
+                        </li>
+                        <li>
+                            <code>push_sign_core_data</code>:
+                            推送签到，针对特定签到ID批量处理
+                        </li>
+                    </ul>
+                    <div
+                        class="mt-2 p-2 bg-gray-50 rounded border border-gray-200 text-xs"
+                    >
+                        <p class="font-medium text-gray-700">使用示例:</p>
+                        <pre class="mt-1 text-xs overflow-x-auto">
+# 二维码处理
+curl -X POST http://localhost:8083/process-qr   -H "Content-Type: application/json"   -d '{"content": "/j?p=0~123!1~456!2~qr!3~data123"}'
+
+# 签到信息查询  
+curl -X POST http://localhost:8083/process-sign   -H "Content-Type: application/json"   -d '{"user": "123456"}'
+
+# 自动签到
+curl -X POST http://localhost:8083/process-auto-sign   -H "Content-Type: application/json"   -d '{"user": "123456"}'
+
+# 推送签到
+curl -X POST http://localhost:8083/process-push-sign   -H "Content-Type: application/json"   -d '{"rollcall_id": "1001"}'</pre
+                        >
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <script>
+            const video = document.getElementById("video");
+            const status = document.getElementById("status");
+            const processResult = document.getElementById("processResult");
+            const processContent = document.getElementById("processContent");
+            const qrResult = document.getElementById("qrResult");
+            const qrContent = document.getElementById("qrContent");
+
+            // Tab 切换逻辑
+            function switchTab(tab) {
+                document
+                    .querySelectorAll(".tab-panel")
+                    .forEach((p) => p.classList.add("hidden"));
+                document.querySelectorAll('button[id^="tab-"]').forEach((b) => {
+                    b.classList.remove("tab-active", "text-blue-600");
+                    b.classList.add("text-gray-500");
+                });
+
+                document
+                    .getElementById(`panel-${tab}`)
+                    .classList.remove("hidden");
+                const activeBtn = document.getElementById(`tab-${tab}`);
+                activeBtn.classList.add("tab-active", "text-blue-600");
+                activeBtn.classList.remove("text-gray-500");
+
+                // 切换时清除旧状态
+                processResult.classList.add("hidden");
+                qrResult.classList.add("hidden");
+                status.textContent = "已切换到 " + activeBtn.innerText;
+            }
+
+            // API响应解析函数
+            function parseApiResponse(data, isOk, endpoint) {
+                // 如果是错误响应
+                if (!isOk) {
+                    return {
+                        type: "error",
+                        message: data.detail || "请求失败",
+                        raw: data,
+                    };
+                }
+
+                // 根据不同的endpoint解析不同的数据结构
+                const message = data.message;
+
+                // 检查是否是数组（二维码处理、推送签到）
+                if (Array.isArray(message)) {
+                    if (
+                        endpoint === "/process-qr" ||
+                        endpoint === "/process-push-sign"
+                    ) {
+                        // 二维码处理或推送签到返回的数组
+                        return {
+                            type: "array",
+                            endpoint: endpoint,
+                            data: message,
+                            summary: `共 ${message.length} 条记录`,
+                            items: message.map((item) => {
+                                // 尝试解析sign_result中的JSON
+                                let signResult = item.sign_result;
+                                try {
+                                    signResult = JSON.parse(item.sign_result);
+                                } catch (e) {
+                                    // 如果解析失败，保持原样
+                                }
+                                return {
+                                    user_name: item.user_name,
+                                    sign_result: signResult,
+                                    raw: item,
+                                };
+                            }),
+                        };
+                    }
+                    // 自动签到返回的数组
+                    if (endpoint === "/process-auto-sign") {
+                        return {
+                            type: "auto_sign",
+                            endpoint: endpoint,
+                            data: message,
+                            summary: `共 ${message.length} 个签到任务`,
+                            items: message.map((item) => {
+                                const type = item.type || "Unknown";
+                                const status =
+                                    (item.data && item.data.status) ||
+                                    "Unknown";
+                                const data =
+                                    (item.data && item.data.data) || {};
+                                return {
+                                    type: type,
+                                    status: status,
+                                    data: data,
+                                    raw: item,
+                                };
+                            }),
+                        };
+                    }
+                }
+
+                // 签到信息查询返回的对象
+                if (
+                    endpoint === "/process-sign" &&
+                    message &&
+                    typeof message === "object"
+                ) {
+                    return {
+                        type: "sign_info",
+                        endpoint: endpoint,
+                        data: message,
+                        user_id: message.user_id,
+                        user_name: message.user_name,
+                        sign_count: message.sign_data?.length || 0,
+                        sign_data: message.sign_data || [],
+                        summary: `用户 ${message.user_name} (${
+                            message.user_id
+                        }) 的签到信息，共 ${
+                            message.sign_data?.length || 0
+                        } 条记录`,
+                    };
+                }
+
+                // 默认情况：直接显示消息
+                return {
+                    type: "raw",
+                    message:
+                        typeof message === "string"
+                            ? message
+                            : JSON.stringify(message, null, 2),
+                    raw: data,
+                };
+            }
+
+            // 手动提交函数
+            async function submitManual(endpoint, key, inputId) {
+                const val = document.getElementById(inputId).value;
+                if (!val) return alert("请输入内容");
+
+                status.textContent = "正在提交...";
+                try {
+                    const res = await fetch(endpoint, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ [key]: val }),
+                    });
+                    const data = await res.json();
+                    // 解析API响应
+                    const parsedResponse = parseApiResponse(
+                        data,
+                        res.ok,
+                        endpoint
+                    );
+                    showResponse(parsedResponse, res.ok);
+                } catch (err) {
+                    showResponse(
+                        { type: "error", message: err.message },
+                        false
+                    );
+                }
+            }
+
+            function showResponse(response, isOk) {
+                let displayText = "";
+
+                if (response.type === "error") {
+                    displayText = `错误: ${response.message}`;
+                    if (response.raw && response.raw.detail) {
+                        displayText += `
+详情: ${response.raw.detail}`;
+                    }
+                } else if (response.type === "array") {
+                    displayText = `${response.summary}
+
+`;
+                    response.items.forEach((item, index) => {
+                        displayText += `${index + 1}. 用户: ${item.user_name}
+`;
+                        if (typeof item.sign_result === "object") {
+                            displayText += `   结果: ${JSON.stringify(
+                                item.sign_result,
+                                null,
+                                2
+                            )}
+`;
+                        } else {
+                            displayText += `   结果: ${item.sign_result}
+`;
+                        }
+                        displayText += "";
+                    });
+                } else if (response.type === "auto_sign") {
+                    displayText = `${response.summary}
+
+`;
+                    response.items.forEach((item, index) => {
+                        displayText += `${index + 1}. 类型: ${item.type}
+`;
+                        displayText += `   状态: ${item.status}
+`;
+                        if (item.status === "success" && item.data) {
+                            if (item.type === "radar") {
+                                displayText += `   课程: ${item.data.course_name}
+`;
+                                displayText += `   位置: ${item.data.student_location}
+`;
+                                displayText += `   坐标: (${item.data.latitude}, ${item.data.longitude})
+`;
+                                displayText += `   距离: ${item.data.student_distance}米
+`;
+                            } else if (item.type === "number") {
+                                displayText += `   课程: ${item.data.course_name}
+`;
+                                displayText += `   签到码: ${item.data.number_code}
+`;
+                            } else if (item.type === "qr") {
+                                displayText += `   课程: ${item.data.course_name}
+`;
+                                displayText += `   说明: 二维码签到需要手动扫描
+`;
+                            }
+                        } else if (item.status === "already_signed") {
+                            displayText += `   课程: ${item.data.course_name}
+`;
+                            displayText += `   说明: 已签到
+`;
+                        }
+                        displayText += "";
+                    });
+                } else if (response.type === "sign_info") {
+                    displayText = `${response.summary}
+
+`;
+                    response.sign_data.forEach((item, index) => {
+                        displayText += `${index + 1}. 类型: ${item.type}
+`;
+                        const data = item.data || {};
+                        displayText += `   课程: ${data.course_title} (${data.course_code})
+`;
+                        displayText += `   签到ID: ${data.activity_id}
+`;
+                        displayText += `   教师: ${
+                            Array.isArray(data.instructors)
+                                ? data.instructors.join(", ")
+                                : data.instructors
+                        }
+`;
+                        displayText += `   签到人数: ${data.sign_num}/${data.student_num}
+`;
+                        if (item.type === "number") {
+                            displayText += `   签到码: ${data.number_code}
+`;
+                        }
+                        displayText += `   状态: ${data.status}
+`;
+                        displayText += "";
+                    });
+                } else {
+                    displayText = response.message;
+                }
+
+                processContent.textContent = displayText;
+                processResult.classList.remove("hidden");
+                processResult.className = isOk
+                    ? "mt-4 p-3 bg-green-50 rounded border border-green-200"
+                    : "mt-4 p-3 bg-red-50 rounded border border-red-200";
+                status.textContent = isOk ? "执行成功" : "执行失败";
+            }
+
+            // --- 原有扫码逻辑保持不变并集成 ---
+            let currentZoom = 1.0;
+            document.getElementById("zoomIn").onclick = () => {
+                currentZoom += 0.2;
+                applyZoom();
+            };
+            document.getElementById("zoomOut").onclick = () => {
+                if (currentZoom > 0.4) currentZoom -= 0.2;
+                applyZoom();
+            };
+            document.getElementById("zoomReset").onclick = () => {
+                currentZoom = 1.0;
+                applyZoom();
+            };
+            function applyZoom() {
+                video.style.transform = `scale(${currentZoom})`;
+                document.getElementById("zoomLevel").textContent =
+                    Math.round(currentZoom * 100) + "%";
+            }
+
+            document.getElementById("startBtn").onclick = async () => {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: "environment" },
+                    });
+                    video.srcObject = stream;
+                    video.play();
+                    status.textContent = "正在扫描...";
+                    startScanning();
+                } catch (err) {
+                    status.textContent = "设备不支持或拒绝权限";
+                }
+            };
+
+            function startScanning() {
+                const canvas = document.createElement("canvas");
+                const ctx = canvas.getContext("2d");
+                function tick() {
+                    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        const code = jsqr(
+                            ctx.getImageData(0, 0, canvas.width, canvas.height)
+                                .data,
+                            canvas.width,
+                            canvas.height
+                        );
+                        if (code) {
+                            qrContent.textContent = code.data;
+                            qrResult.classList.remove("hidden");
+                            processqrCode(code.data);
+                            return; // 扫码成功后停止，如需连续扫码可移除
+                        }
+                    }
+                    requestAnimationFrame(tick);
+                }
+                tick();
+            }
+
+            async function processqrCode(content) {
+                try {
+                    const res = await fetch("/process-qr", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ content: content }),
+                    });
+                    const data = await res.json();
+                    // 使用新的解析逻辑
+                    const parsedResponse = parseApiResponse(
+                        data,
+                        res.ok,
+                        "/process-qr"
+                    );
+                    showResponse(parsedResponse, res.ok);
+                } catch (err) {
+                    showResponse(
+                        { type: "error", message: err.message },
+                        false
+                    );
+                }
+            }
+        </script>
+    </body>
+</html>

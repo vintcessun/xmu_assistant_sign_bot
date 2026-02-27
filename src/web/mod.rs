@@ -4,9 +4,11 @@ use tracing::{error, info};
 
 pub mod file;
 pub mod md;
+pub mod rollcall;
 
 use file::file_router;
 use md::md_router;
+use rollcall::rollcall_router;
 
 const URL: &str = "https://zzy.vintces.icu";
 const LOCAL: &str = "0.0.0.0:3080";
@@ -31,7 +33,8 @@ pub async fn start() -> Result<()> {
 fn router() -> Router {
     let router = Router::new();
     let router = router.nest("/file", file_router());
-    let router = router.nest("/md", md_router()); // 嵌套 md 模块路由
+    let router = router.nest("/md", md_router());
+    let router = router.nest("/rollcall", rollcall_router());
     main_router(router)
 }
 

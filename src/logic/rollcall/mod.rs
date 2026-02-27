@@ -1,3 +1,4 @@
+mod api;
 mod auto_sign;
 mod auto_sign_data;
 mod data;
@@ -12,6 +13,7 @@ mod time_sign;
 mod timetable;
 mod utils;
 
+pub use api::SignApiHandler;
 pub use auto_sign::AutoSignHandler;
 pub use push_sign::PushSignHandler;
 pub use qr_sign::QrSignHandler;
