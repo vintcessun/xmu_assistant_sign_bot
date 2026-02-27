@@ -14,3 +14,8 @@ pub static MODEL_MAP: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::n
     let mut m = HashMap::new();
     m
 });
+
+pub const AK: &str = "";
+pub const SK: &str = "";
+pub const REGION: &str = "cn-beijing";
+pub const ENDPOINT: &str = "https://ark.cn-beijing.volcengineapi.com";

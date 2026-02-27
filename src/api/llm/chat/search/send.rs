@@ -20,7 +20,9 @@ use tracing::{debug, error, info, trace, warn};
 #[llm_prompt]
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct SearchMessageReply {
-    #[prompt("当前是否需要对用户进行回复，如果搜索结果非常相关则回复 true，否则回复 false")]
+    #[prompt(
+        "当前是否需要对用户进行回复，如果搜索结果非常相关则回复 true，否则回复 false，如果关系不紧密或者联系不大都要设置为 false ，对于这个大部分情况下都是无关的，除非搜索到的信息关联性及其大，如果是无法准确回答的问题也是设置为 false，总之大部分情况都是 false，只有在搜索结果非常相关的情况下才设置为 true"
+    )]
     is_match: bool,
     #[prompt("基于搜索的结果生成不进行回复或者进行回复的原因")]
     reason: String,
