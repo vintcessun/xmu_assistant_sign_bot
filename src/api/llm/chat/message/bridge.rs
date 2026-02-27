@@ -34,16 +34,16 @@ pub struct LlmFileWithIdOrOptionAlias {
 impl LlmFileWithIdOrOptionAlias {
     pub async fn to_llm_file(&self) -> Result<Arc<LlmFile>> {
         let id = FileShortId::from_llm(&self.id).map_err(|e| {
-            debug!(file_id = %self.id, error = ?e, "从 LLM ID 解析 FileShortId 失败");
+            error!(file_id = %self.id, error = ?e, "从 LLM ID 解析 FileShortId 失败");
             e
         })?;
         let file = LlmFile::get_by_id(id)
             .map_err(|e| {
-                debug!(file_short_id = ?id, error = ?e, "获取 LlmFile 失败");
+                error!(file_short_id = ?id, error = ?e, "获取 LlmFile 失败");
                 e
             })?
             .ok_or_else(|| {
-                debug!(file_short_id = ?id, "LlmFile 未找到");
+                error!(file_short_id = ?id, "LlmFile 未找到");
                 anyhow!("文件ID:{}未找到", id)
             })?;
         debug!(file_short_id = ?id, "成功获取 LlmFile");
