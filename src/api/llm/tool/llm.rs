@@ -1,5 +1,7 @@
 use std::sync::LazyLock;
 
+use crate::api::llm::tool::choose::{all_num, router};
+
 use super::config::MODEL_MAP;
 use anyhow::Result;
 use genai::{
@@ -11,8 +13,7 @@ use llm_xml_caster::{LlmPrompt, generate_as_with_retries};
 use serde::de::DeserializeOwned;
 use tracing::{debug, error, info, trace, warn};
 
-const LOW_MODEL: &str = "ep-20260225003643-2w6k5";
-const LOW_ALL_MODEL: &str = "qwen3-vl:4b-8k";
+const LOW_MODEL: &str = "qwen3-vl:4b-8k";
 const HIGH_MODEL: &str = "gemini-2.5-flash";
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
@@ -100,12 +101,19 @@ pub async fn ask_as<T>(message: Vec<ChatMessage>, valid_example: &str) -> Result
 where
     T: DeserializeOwned + LlmPrompt,
 {
-    #[cfg(test)]
-    println!("使用的模型: {}", LOW_MODEL);
-
     let mut i = 1;
     loop {
-        let model_name = if i < 10 { LOW_MODEL } else { LOW_ALL_MODEL };
+        let model_name = if i <= all_num() * 2
+            && let Some(model) = router(i).await
+        {
+            model
+        } else {
+            LOW_MODEL
+        };
+
+        #[cfg(test)]
+        println!("使用的模型: {}", model_name);
+
         trace!("开始调用 LLM (结构化模式): {} 第 {} 次", model_name, i);
         let result =
             generate_as_with_retries(&CLIENT, model_name, message.clone(), valid_example, 10).await;
