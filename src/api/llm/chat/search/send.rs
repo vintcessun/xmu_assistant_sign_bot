@@ -60,6 +60,10 @@ pub async fn send_message_from_store<T>(ctx: &mut Context<T, Message>) -> Result
 where
     T: BotClient + BotHandler + std::fmt::Debug + 'static,
 {
+    if !reply_probability() {
+        return Ok(());
+    }
+
     let message = ctx.get_message();
 
     let group_id = match ctx.get_target() {
@@ -156,10 +160,6 @@ where
     info!(group_id=?group_id,message_reply_analysis=?message, "LLM 搜索回复匹配分析结果");
     if !message.is_match {
         return Err(anyhow!("未命中搜索回复: {}", message.reason));
-    }
-
-    if !reply_probability() {
-        return Ok(());
     }
 
     let backlist = Backlist::search(&msg, 5)
