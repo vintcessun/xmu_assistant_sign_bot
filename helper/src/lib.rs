@@ -380,16 +380,11 @@ pub fn register_handler_with_help(input: TokenStream) -> TokenStream {
                         let cmd_part = &text[prefix_len..];
                         let b = cmd_part.as_bytes();
 
-                        match (b[0], b[1]) {
-                            #(
-                                (b1, b2) if [b1, b2] == *<#all_cmds as Handler<T, M>>::FILTER_CMD.unwrap().as_bytes().get(0..2).unwrap_or(&[0,0]) => {
-                                    if cmd_part.starts_with(<#all_cmds as Handler<T, M>>::FILTER_CMD.unwrap()) {
-                                        let _ = <#all_cmds as Handler<T, M>>::handle(&#all_cmds, &context);
-                                    }
-                                }
-                            )*
-                            _ => {}
-                        }
+                        #(
+                            if cmd_part.starts_with(<#all_cmds as Handler<T, M>>::FILTER_CMD.unwrap()) {
+                                let _ = <#all_cmds as Handler<T, M>>::handle(&#all_cmds, &context);
+                            }
+                        )*
                     }
 
                     #(
