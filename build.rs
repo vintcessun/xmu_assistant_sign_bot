@@ -169,7 +169,7 @@ fn is_command_handler(attrs: &[Attribute]) -> bool {
 fn parse_file_for_handlers(
     file_path: &Path,
     module_prefix: &str,
-    command_handlers: &mut Vec<String>,
+    command_handlers: &mut Vec<(usize, String)>,
     other_handlers: &mut Vec<String>,
 ) {
     // 使用 expect! 替代 ? 确保在 build.rs 中失败时 panic
@@ -196,12 +196,15 @@ fn parse_file_for_handlers(
             let handler_path = format!("{}::{}", module_prefix, handler_struct_name);
 
             if is_command {
-                command_handlers.push(handler_path);
+                command_handlers.push((fn_name.len(), handler_path));
             } else {
                 other_handlers.push(handler_path);
             }
         }
     }
+
+    // 根据函数名长度排序 command_handlers，确保较长的命令优先匹配
+    command_handlers.sort_by(|a, b| b.0.cmp(&a.0));
 }
 
 fn generate_logic_handlers() {
@@ -260,7 +263,11 @@ fn generate_logic_handlers() {
     }
 
     // 3. 收集 Handler 路径字符串 (保持为 String)
-    let cmd_args = command_handlers.to_vec().join(",\n        ");
+    let cmd_args = command_handlers
+        .iter()
+        .map(|(_, path)| path.clone())
+        .collect::<Vec<_>>()
+        .join(",\n        ");
 
     let other_args = other_handlers.to_vec().join(",\n        ");
 
