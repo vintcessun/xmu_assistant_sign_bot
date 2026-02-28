@@ -211,6 +211,7 @@ pub fn handler(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     let cmd_const = if let Some(ref cmd) = args.command {
+        let cmd = format!("{} ", cmd.value());
         quote! { Some(#cmd) }
     } else {
         quote! { None }
