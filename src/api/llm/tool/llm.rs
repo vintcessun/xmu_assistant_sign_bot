@@ -1,8 +1,5 @@
-use std::sync::LazyLock;
-
-use crate::api::llm::tool::choose::{all_num, router};
-
 use super::config::MODEL_MAP;
+use crate::api::llm::tool::choose::{all_num, router};
 use anyhow::Result;
 use genai::{
     Client, ModelIden, ServiceTarget,
@@ -11,6 +8,7 @@ use genai::{
 };
 use llm_xml_caster::{LlmPrompt, generate_as_with_retries};
 use serde::de::DeserializeOwned;
+use std::sync::LazyLock;
 use tracing::{debug, error, info, trace, warn};
 
 const LOW_MODEL: &str = "qwen3-vl:4b-8k";
