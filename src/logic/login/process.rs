@@ -112,27 +112,35 @@ pub async fn process_login<T: BotClient + BotHandler + fmt::Debug>(
     let login_data = update_and_login(&session, data, id).await?;
 
     info!(user_id = id, "开始获取并处理用户身份信息");
-    let zzy_profile = login_base(login_data.clone()).await?;
-    info!(
-        user_id = id,
-        entry_year = zzy_profile.entry_year,
-        trans_dept = ?zzy_profile.trans_dept,
-        "成功获取用户身份信息"
-    );
 
-    ctx.send_message_async(message::from_str(format!(
-        "信息:{} 转入学院:{:?}",
-        zzy_profile.entry_year, zzy_profile.trans_dept
-    )));
+    match login_base(login_data.clone()).await {
+        Ok(zzy_profile) => {
+            info!(
+                user_id = id,
+                entry_year = zzy_profile.entry_year,
+                trans_dept = ?zzy_profile.trans_dept,
+                "成功获取用户身份信息"
+            );
 
-    // 假设 entry_year 总是 "YYYY" 格式，长度至少为 4，使用 unsafe 切片消除运行时边界检查。
-    let year = unsafe { zzy_profile.entry_year.get_unchecked(2..4).to_string() };
+            ctx.send_message_async(message::from_str(format!(
+                "信息:{} 转入学院:{:?}",
+                zzy_profile.entry_year, zzy_profile.trans_dept
+            )));
 
-    let dept = zzy_profile.trans_dept.join(",");
+            // 假设 entry_year 总是 "YYYY" 格式，长度至少为 4，使用 unsafe 切片消除运行时边界检查。
+            let year = unsafe { zzy_profile.entry_year.get_unchecked(2..4).to_string() };
 
-    info!(user_id = id, year = year, dept = dept, "更新群头衔");
-    ctx.set_title(format!("{}转{}", year, dept)).await?;
-    info!(user_id = id, "登录流程执行完毕");
+            let dept = zzy_profile.trans_dept.join(",");
+
+            info!(user_id = id, year = year, dept = dept, "更新群头衔");
+            ctx.set_title(format!("{}转{}", year, dept)).await?;
+            info!(user_id = id, "登录流程执行完毕");
+        }
+        Err(e) => {
+            warn!(user_id = id, error = ?e, "获取用户转专业信息失败，登录流程执行完毕");
+            ctx.send_message_async(message::from_str("获取用户转专业信息失败"));
+        }
+    };
 
     Ok(login_data)
 }
