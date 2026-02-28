@@ -142,7 +142,8 @@ pub async fn ask_as_high<T>(message: Vec<ChatMessage>, valid_example: &str) -> R
 where
     T: DeserializeOwned + LlmPrompt,
 {
-    Ok(generate_as_with_retries(&CLIENT, HIGH_MODEL, message.clone(), valid_example, 3).await?)
+    ask_as(message, valid_example).await
+    //Ok(generate_as_with_retries(&CLIENT, HIGH_MODEL, message.clone(), valid_example, 3).await?)
 }
 
 pub async fn ask_str(chat_message: Vec<ChatMessage>) -> Result<String> {

@@ -19,7 +19,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, trace, warn};
 
-const NOT_AT_NOT_REPLY_PROBABILITY: f64 = 0.8;
+const NOT_AT_NOT_REPLY_PROBABILITY: f64 = 0.95;
 
 #[llm_prompt]
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
