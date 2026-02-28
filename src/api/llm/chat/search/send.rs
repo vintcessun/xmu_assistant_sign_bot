@@ -14,11 +14,11 @@ use crate::{
 use anyhow::{Result, anyhow};
 use genai::chat::{Binary, ChatMessage, ContentPart};
 use llm_xml_caster::llm_prompt;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, trace, warn};
 
 const MATCH_REPLY_PROBABILITY: f64 = 0.05;
-
 
 #[llm_prompt]
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -50,8 +50,6 @@ fn test_search_message_reply_valid_example() {
         }
     );
 }
-
-
 
 fn reply_probability() -> bool {
     let mut rng = rand::rng();
@@ -156,12 +154,12 @@ where
     trace!(reply_analysis = ?message, "LLM 搜索回复匹配分析完成");
 
     info!(group_id=?group_id,message_reply_analysis=?message, "LLM 搜索回复匹配分析结果");
-    if !message.is_match{
+    if !message.is_match {
         return Err(anyhow!("未命中搜索回复: {}", message.reason));
     }
 
     if !reply_probability() {
-        return OK(());
+        return Ok(());
     }
 
     let backlist = Backlist::search(&msg, 5)
