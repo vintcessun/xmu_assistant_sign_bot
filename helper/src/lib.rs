@@ -211,6 +211,16 @@ pub fn handler(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     let cmd_const = if let Some(ref cmd) = args.command {
+        let clean_cmd = cmd.value().replace('_', "");
+        let clean_fn = fn_name.to_string().replace('_', "");
+        if clean_cmd != clean_fn {
+            return Error::new_spanned(
+                cmd,
+                "The 'command' attribute must match the function name with underscores removed.",
+            )
+            .to_compile_error()
+            .into();
+        }
         quote! { Some(#cmd) }
     } else {
         quote! { None }
@@ -376,14 +386,17 @@ pub fn register_handler_with_help(input: TokenStream) -> TokenStream {
                     let prefix = config::get_command_prefix();
                     let prefix_len = prefix.len();
 
-                    if text.starts_with(prefix) && text.len() >= prefix_len + 2 {
-                        let cmd_part = &text[prefix_len..];
+                    'matching_cmd: {
+                        if text.starts_with(prefix) {
+                            let cmd_part = &text[prefix_len..];
 
-                        #(
-                            if cmd_part.starts_with(<#all_cmds as Handler<T, M>>::FILTER_CMD.unwrap()) {
-                                let _ = <#all_cmds as Handler<T, M>>::handle(&#all_cmds, &context);
-                            }
-                        )*
+                            #(
+                                if cmd_part.starts_with(<#all_cmds as Handler<T, M>>::FILTER_CMD.unwrap()) {
+                                    let _ = <#all_cmds as Handler<T, M>>::handle(&#all_cmds, &context);
+                                    break 'matching_cmd;
+                                }
+                            )*
+                        }
                     }
 
                     #(
