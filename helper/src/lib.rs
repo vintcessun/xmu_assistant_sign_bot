@@ -378,7 +378,6 @@ pub fn register_handler_with_help(input: TokenStream) -> TokenStream {
 
                     if text.starts_with(prefix) && text.len() >= prefix_len + 2 {
                         let cmd_part = &text[prefix_len..];
-                        let b = cmd_part.as_bytes();
 
                         #(
                             if cmd_part.starts_with(<#all_cmds as Handler<T, M>>::FILTER_CMD.unwrap()) {
