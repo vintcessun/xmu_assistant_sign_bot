@@ -211,7 +211,6 @@ pub fn handler(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     let cmd_const = if let Some(ref cmd) = args.command {
-        let cmd = format!("{} ", cmd.value());
         quote! { Some(#cmd) }
     } else {
         quote! { None }
@@ -386,7 +385,6 @@ pub fn register_handler_with_help(input: TokenStream) -> TokenStream {
                                 (b1, b2) if [b1, b2] == *<#all_cmds as Handler<T, M>>::FILTER_CMD.unwrap().as_bytes().get(0..2).unwrap_or(&[0,0]) => {
                                     if cmd_part.starts_with(<#all_cmds as Handler<T, M>>::FILTER_CMD.unwrap()) {
                                         let _ = <#all_cmds as Handler<T, M>>::handle(&#all_cmds, &context);
-                                        return;
                                     }
                                 }
                             )*
