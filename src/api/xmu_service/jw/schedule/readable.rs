@@ -8,6 +8,7 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use serde::{Deserialize, Serialize};
 use std::{ops::Index, sync::Arc};
+use std::fmt::{Display, Formatter};
 
 #[cfg(test)]
 #[derive(Debug, Deserialize, Serialize)]
@@ -260,6 +261,22 @@ pub enum Weekday {
     Friday = 5,
     Saturday = 6,
     Sunday = 7,
+}
+
+
+impl Display for Weekday {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Weekday::Monday => "周一",
+            Weekday::Tuesday => "周二",
+            Weekday::Wednesday => "周三",
+            Weekday::Thursday => "周四",
+            Weekday::Friday => "周五",
+            Weekday::Saturday => "周六",
+            Weekday::Sunday => "周日",
+        };
+        write!(f, "{}", s)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
