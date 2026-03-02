@@ -5,6 +5,7 @@ use crate::abi::message::MessageSend;
 use crate::abi::message::api::SendGroupMessageParams;
 use crate::abi::network::BotClient;
 use crate::logic::rollcall::auto_sign_data::AutoSignResponse;
+use crate::logic::rollcall::auto_sign_data::auto_sign_response::QRSign;
 use crate::logic::rollcall::data::TIMETABLE_GROUP;
 use crate::{
     api::{
@@ -60,6 +61,13 @@ async fn time_sign_task() -> Result<()> {
             if time_val.is_active(ClockTime::now()) {
                 tasks.push(async move {
                     let response = auto_sign_request(qq).await?;
+                    let response = response
+                        .into_iter()
+                        .filter(|x| match &x {
+                            &AutoSignResponse::Qr(data) => matches!(data, QRSign::Success(_)),
+                            _ => false,
+                        })
+                        .collect::<Vec<_>>();
                     Ok::<TimeSignUpdateResponse, anyhow::Error>(TimeSignUpdateResponse {
                         qq,
                         group_id: *group_id,
@@ -77,6 +85,7 @@ async fn time_sign_task() -> Result<()> {
         .collect::<Vec<_>>();
     let client = get_client();
     let mut tasks = Vec::with_capacity(ret.len());
+
     for r in ret {
         if r.response.is_empty() {
             continue;

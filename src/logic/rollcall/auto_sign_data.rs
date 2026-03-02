@@ -237,14 +237,14 @@ impl AutoSignRequest {
         let user_info = Profile::get(&self.session).await?;
 
         self.client
-            .put(
+            .put_json(
                 format!("https://lnt.xmu.edu.cn/api/rollcall/{activity_id}/answer_number_rollcall"),
                 &json!({"deviceId": self.device_id, "numberCode": number}),
             )
             .await?;
 
         self.client
-            .post(
+            .post_json(
                 "https://lnt.xmu.edu.cn/statistics/api/learning-activity",
                 &json!({
                     "is_mobile": true,
@@ -311,7 +311,7 @@ impl AutoSignRequest {
         let student_distance = radar_data.distance;
 
         self.client
-            .post(
+            .post_json(
                 "https://lnt.xmu.edu.cn/statistics/api/learning-activity",
                 &json!({
                     "is_mobile": true,
@@ -336,7 +336,7 @@ impl AutoSignRequest {
             .await?;
 
         self.client
-            .post(
+            .post_json(
                 "https://lnt.xmu.edu.cn/statistics/api/rollcall/extra-data",
                 &json!({
                         "is_mobile": true,
@@ -399,7 +399,7 @@ impl AutoSignRequest {
             .await?;
 
         self.client
-            .post(
+            .post_json(
                 "https://lnt.xmu.edu.cn/statistics/api/learning-activity",
                 &json!({
                     "is_mobile": true,
