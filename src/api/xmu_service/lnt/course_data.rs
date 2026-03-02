@@ -64,7 +64,7 @@ impl CourseDataStruct {
 
         let res = client
             .get(format!(
-                "https://lnt.xmu.edu.cn/api/courses/{course_id}?fields=name,course_code"
+                "https://lnt.xmu.edu.cn/api/courses/{course_id}?fields=name,course_code,instructors"
             ))
             .await?;
         let course_data = res.json_smart::<CourseDataResponse>().await?;

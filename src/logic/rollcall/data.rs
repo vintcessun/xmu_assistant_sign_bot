@@ -6,10 +6,10 @@ use smol_str::SmolStr;
 use std::sync::LazyLock;
 
 pub static TIMETABLE_DATA: LazyLock<HotTable<i64, ScheduleCourseTime>> =
-    LazyLock::new(|| HotTable::new("logic_command_sign_time"));
+    LazyLock::new(|| HotTable::new("logic_command_sign_time_v3"));
 
 pub static TIMETABLE_GROUP: LazyLock<HotTable<i64, i64>> =
-    LazyLock::new(|| HotTable::new("logic_command_sign_time_group"));
+    LazyLock::new(|| HotTable::new("logic_command_sign_time_group_v3"));
 
 pub use super::super::login::DATA as LOGIN_DATA;
 

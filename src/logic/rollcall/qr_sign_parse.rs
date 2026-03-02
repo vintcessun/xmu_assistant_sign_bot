@@ -51,6 +51,7 @@ const TAG_LIST: [&str; 11] = [
 ];
 
 pub struct QrSignParsed {
+    pub course_id: i64,
     pub rollcall_id: i64,
     pub data: String,
 }
@@ -85,6 +86,10 @@ pub fn parse_data(source_data: &str) -> Result<QrSignParsed> {
         }
     }
 
+    let course_id: i64 = data_map
+        .get("courseId")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
     let rollcall_id: i64 = data_map
         .get("rollcallId")
         .and_then(|v| v.parse().ok())
@@ -92,11 +97,12 @@ pub fn parse_data(source_data: &str) -> Result<QrSignParsed> {
     let sign_data = data_map.get("data").cloned().unwrap_or_default();
 
     trace!(
-        "解析结果 - rollcallId: {}, data: {}",
-        rollcall_id, sign_data
+        "解析结果 - courseId: {}, rollcallId: {}, data: {}",
+        course_id, rollcall_id, sign_data
     );
 
     Ok(QrSignParsed {
+        course_id,
         rollcall_id,
         data: sign_data,
     })
@@ -116,7 +122,7 @@ fn extract_url_tail(input: &str) -> String {
 
 impl QrSignRequest {
     pub async fn request(&self, data: &QrSignParsed) -> Result<AutoSignResponse> {
-        let request = AutoSignRequest::get(data.rollcall_id, self.qq, self.client.clone()).await?;
+        let request = AutoSignRequest::get(data.course_id, self.qq, self.client.clone()).await?;
         request.qr(data.rollcall_id, &data.data).await
     }
 

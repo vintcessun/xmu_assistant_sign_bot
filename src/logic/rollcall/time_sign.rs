@@ -78,6 +78,10 @@ async fn time_sign_task() -> Result<()> {
     let client = get_client();
     let mut tasks = Vec::with_capacity(ret.len());
     for r in ret {
+        if r.response.is_empty() {
+            continue;
+        }
+
         let params = SendGroupMessageParams {
             group_id: r.group_id,
             message: Arc::new(
