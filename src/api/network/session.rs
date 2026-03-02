@@ -493,4 +493,38 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_post_json() -> Result<()> {
+        let client = SessionClient::new();
+        let url = "https://httpbin.org/post";
+
+        #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+        struct TestData {
+            name: String,
+            age: u32,
+        }
+
+        let data = TestData {
+            name: "Cline".to_string(),
+            age: 1,
+        };
+
+        let resp = client.post_json(url, &data).await?;
+        assert!(resp.status().is_success());
+
+        let body: serde_json::Value = resp.json().await?;
+        debug!(body = ?body, "收到 httpbin 响应");
+
+        // httpbin 会在 json 字段中返回发送的 JSON 数据
+        let returned_json = body
+            .get("json")
+            .ok_or_else(|| anyhow::anyhow!("响应中缺少 json 字段"))?;
+        let returned_data: TestData = serde_json::from_value(returned_json.clone())?;
+
+        assert_eq!(data, returned_data);
+        assert_eq!(body["headers"]["Content-Type"], "application/json");
+
+        Ok(())
+    }
 }
