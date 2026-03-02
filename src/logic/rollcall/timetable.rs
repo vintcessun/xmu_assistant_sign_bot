@@ -2,16 +2,10 @@ use super::super::BuildHelp;
 use super::data::TIMETABLE_DATA as DATA;
 use super::data::TIMETABLE_GROUP;
 use super::time::TIME_SIGN_TASK;
+use crate::logic::login::process::process_login_castgc;
 use crate::{
     abi::{logic_import::*, message::from_str},
-    api::{
-        network::SessionClient,
-        xmu_service::{
-            jw::ScheduleCourseTime, llm::choose_timetable::ChooseTimetable,
-            login::request_qrcode_castgc,
-        },
-    },
-    logic::login::process::send_msg_and_wait,
+    api::xmu_service::{jw::ScheduleCourseTime, llm::choose_timetable::ChooseTimetable},
 };
 use anyhow::anyhow;
 use std::sync::Arc;
@@ -29,11 +23,7 @@ pub async fn sign_time(ctx: Context) -> Result<()> {
         Message::Group(msg) => msg.group_id,
         Message::Private(_) => return Err(anyhow!("请在群聊中使用此命令")),
     };
-
-    let client = SessionClient::new();
-    let login_data = send_msg_and_wait(&mut ctx, &client, id).await?;
-
-    request_qrcode_castgc(&client, login_data).await?;
+    let client = process_login_castgc(&mut ctx, id).await?;
 
     let (schedule, _) = ChooseTimetable::get_from_client(&client, ctx.get_message_text()).await?;
 
