@@ -144,7 +144,7 @@ impl SessionClient {
         &self,
         mut method: reqwest::Method,
         mut url: Url,
-        mut body: Option<String>,
+        mut body: Option<(String, &'static str)>,
         headers: Option<reqwest::header::HeaderMap>, // 新增参数
     ) -> Result<Response> {
         let mut redirect_count = 0;
@@ -193,12 +193,9 @@ impl SessionClient {
                 builder = builder.header(COOKIE, c);
             }
 
-            // 3. 注入 Body (如果是 POST)
-            if let Some(ref b) = body {
-                builder = builder.header(
-                    reqwest::header::CONTENT_TYPE,
-                    "application/x-www-form-urlencoded",
-                );
+            // 3. 注入 Body (如果是 POST/PUT)
+            if let Some((ref b, content_type)) = body {
+                builder = builder.header(reqwest::header::CONTENT_TYPE, content_type);
                 builder = builder.body(b.clone());
             }
 
@@ -293,8 +290,32 @@ impl SessionClient {
             error!(error = ?e, "POST 请求体 URL 编码失败");
             e
         })?;
-        self.request_internal(reqwest::Method::POST, url, Some(body), None)
-            .await
+        self.request_internal(
+            reqwest::Method::POST,
+            url,
+            Some((body, "application/x-www-form-urlencoded")),
+            None,
+        )
+        .await
+    }
+
+    pub async fn post_json<U: IntoUrl, T: serde::Serialize + ?Sized>(
+        &self,
+        url: U,
+        data: &T,
+    ) -> Result<Response> {
+        let url = url.into_url()?;
+        let body = serde_json::to_string(data).map_err(|e| {
+            error!(error = ?e, "POST 请求体 JSON 编码失败");
+            e
+        })?;
+        self.request_internal(
+            reqwest::Method::POST,
+            url,
+            Some((body, "application/json")),
+            None,
+        )
+        .await
     }
 
     pub async fn put<U: IntoUrl, T: serde::Serialize + ?Sized>(
@@ -307,8 +328,32 @@ impl SessionClient {
             error!(error = ?e, "PUT 请求体 URL 编码失败");
             e
         })?;
-        self.request_internal(reqwest::Method::PUT, url, Some(body), None)
-            .await
+        self.request_internal(
+            reqwest::Method::PUT,
+            url,
+            Some((body, "application/x-www-form-urlencoded")),
+            None,
+        )
+        .await
+    }
+
+    pub async fn put_json<U: IntoUrl, T: serde::Serialize + ?Sized>(
+        &self,
+        url: U,
+        data: &T,
+    ) -> Result<Response> {
+        let url = url.into_url()?;
+        let body = serde_json::to_string(data).map_err(|e| {
+            error!(error = ?e, "PUT 请求体 JSON 编码失败");
+            e
+        })?;
+        self.request_internal(
+            reqwest::Method::PUT,
+            url,
+            Some((body, "application/json")),
+            None,
+        )
+        .await
     }
 
     pub fn set_cookie(&self, key: &str, value: &str, url: &url::Url) {
