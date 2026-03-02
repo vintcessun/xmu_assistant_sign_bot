@@ -129,7 +129,7 @@ pub static LOCATIONS: LazyLock<LocationService> = LazyLock::new(|| {
     ])
 });
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Region {
     XiangAn,
     SiMing,
@@ -151,6 +151,14 @@ pub struct Location {
     pub longitude: f64,
     pub latitude: f64,
 }
+
+impl PartialEq for Location {
+    fn eq(&self, other: &Self) -> bool {
+        self.region == other.region && self.name == other.name
+    }
+}
+
+impl Eq for Location {}
 
 impl Location {
     pub fn new(region: Region, name: &'static str, longitude: f64, latitude: f64) -> Self {

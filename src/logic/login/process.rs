@@ -3,7 +3,7 @@ use crate::abi::message::MessageSend;
 use crate::api::xmu_service::jw::{UserInfo, Zzy, ZzyProfile};
 use crate::api::xmu_service::lnt::Profile;
 use crate::api::xmu_service::login::{
-    LoginData, LoginRequest, get_qrcode_id, request_qrcode, wait_qrcode,
+    LoginData, LoginRequest, get_qrcode_id, request_qrcode, request_qrcode_castgc, wait_qrcode,
 };
 use crate::{abi::logic_import::*, api::network::SessionClient};
 use anyhow::Result;
@@ -40,13 +40,13 @@ pub async fn login_base(login_data: Arc<LoginData>) -> Result<ZzyProfile> {
         }
         Err(e) => {
             warn!(error = ?e, "获取 LNT 用户信息失败，尝试使用 JW 用户信息登录");
-            let userinfo = UserInfo::get(&login_data.castgc).await?;
-            debug!(user_id = userinfo.user_id, "通过 JW 成功获取用户学号");
-            userinfo.user_id
+            let user_info = UserInfo::get(&login_data.castgc).await?;
+            debug!(user_id = user_info.user_id, "通过 JW 成功获取用户学号");
+            user_info.user_id
         }
     };
 
-    trace!(user_id = user_id, "开始获取正方系统用户信息");
+    trace!(user_id = user_id, "开始获取转专业用户信息");
     let data = Zzy::get(&login_data.castgc, &user_id).await?;
 
     let zzy_profile = data.get_profile()?;
@@ -79,7 +79,7 @@ pub async fn send_msg_and_wait<T: BotClient + BotHandler + fmt::Debug>(
                 .text(format!("将为{id}登录：\n"))
                 .text("请使用企业微信扫码登录")
                 .image_url(qrcode_url)
-                .text("\n或者直接点击链接登录：")
+                .text("\n或者移动端直接点击链接登录：")
                 .text(qrcode_login)
                 .build(),
         )
@@ -143,4 +143,29 @@ pub async fn process_login<T: BotClient + BotHandler + fmt::Debug>(
     };
 
     Ok(login_data)
+}
+
+pub async fn process_login_castgc<T: BotClient + BotHandler + fmt::Debug>(
+    ctx: &mut Context<T, Message>,
+    id: i64,
+) -> Result<SessionClient> {
+    if let Some(data) = DATA.get(&id)
+        && UserInfo::get(&data.castgc).await.is_ok()
+    {
+        info!(user_id = id, "用户已登录，直接使用现有登录数据");
+        let session = SessionClient::new();
+        session.set_cookie(
+            "CASTGC",
+            &data.castgc,
+            &url::Url::parse("https://ids.xmu.edu.cn").unwrap(),
+        );
+        return Ok(session);
+    }
+
+    let client = SessionClient::new();
+    let login_data = send_msg_and_wait(ctx, &client, id).await?;
+
+    request_qrcode_castgc(&client, login_data).await?;
+
+    Ok(client)
 }

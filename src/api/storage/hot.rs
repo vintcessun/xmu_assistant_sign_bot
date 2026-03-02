@@ -206,9 +206,21 @@ impl StorageEngine {
                                     loaded_count += 1;
                                 }
                                 (Err(e), _) => {
+                                    #[cfg(test)]
+                                    println!(
+                                        "Failed to deserialize key: {:?}, error: {:?}",
+                                        k_bytes, e
+                                    );
+
                                     error!(table = table_name, error = ?e, "Hot 存储加载：键反序列化失败，跳过记录");
                                 }
                                 (_, Err(e)) => {
+                                    #[cfg(test)]
+                                    println!(
+                                        "Failed to deserialize value for key {:?}: {:?}",
+                                        k_bytes, e
+                                    );
+
                                     error!(table = table_name, error = ?e, "Hot 存储加载：值反序列化失败，跳过记录");
                                 }
                             }
@@ -250,6 +262,9 @@ fn process_op(txn: &redb::WriteTransaction, op: StoreOp) {
                         "Hot 存储后台写入: 插入/更新成功"
                     ),
                     Err(e) => {
+                        #[cfg(test)]
+                        println!("Failed to insert key: {:?}, error: {:?}", key, e);
+
                         error!(table = table_name, key_size = key.len(), error = ?e, "Hot 存储后台写入: 插入/更新操作失败")
                     }
                 },

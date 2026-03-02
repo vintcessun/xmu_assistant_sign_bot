@@ -7,8 +7,8 @@ use chrono::Timelike;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use serde::{Deserialize, Serialize};
-use std::{ops::Index, sync::Arc};
 use std::fmt::{Display, Formatter};
+use std::{ops::Index, sync::Arc};
 
 #[cfg(test)]
 #[derive(Debug, Deserialize, Serialize)]
@@ -53,7 +53,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TimeBitMap {
     // 23 * 64 = 1472 bits, 足够 1440 分钟
     bits: [u64; 23],
@@ -207,12 +207,18 @@ impl Index<i64> for ScheduleTimeShape {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(from = "Option<String>")]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(from = "Option<String>", into = "Option<String>")]
 pub struct LocationStore {
     #[serde(skip_deserializing)]
     pub pos: Option<Location>,
     pub location_str: Option<String>,
+}
+
+impl From<LocationStore> for Option<String> {
+    fn from(ls: LocationStore) -> Self {
+        ls.location_str
+    }
 }
 
 impl From<Option<String>> for LocationStore {
@@ -263,7 +269,6 @@ pub enum Weekday {
     Sunday = 7,
 }
 
-
 impl Display for Weekday {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let s = match self {
@@ -279,7 +284,7 @@ impl Display for Weekday {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct CourseTime {
     pub name: String,
     pub location: Arc<LocationStore>,
@@ -327,7 +332,7 @@ impl CourseTime {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ScheduleCourseTime {
     pub times: Vec<CourseTime>,
 }
@@ -373,7 +378,7 @@ impl ScheduleTable {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 pub struct BitField32(pub u32);
 
 impl BitField32 {
@@ -412,5 +417,51 @@ impl ClockTime {
     pub fn now() -> Self {
         let now = chrono::Utc::now().with_timezone(&TIME_ZONE);
         Self::new(now.hour() as u8, now.minute() as u8)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::{
+        storage::ColdTable,
+        xmu_service::jw::{ScheduleList, ScheduleListRequest},
+    };
+    use std::process::exit;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_schedule_course_time_save() {
+        let castgc = "TGT-4405969-pmHg8jgHP6m--sUUzyI-2sN6Sx8UweIUlomnrNJgHTcWVTk0nKoKcuEYm7rT1DsrV6gnull_main";
+        let data = ScheduleListRequest {};
+        let schedule_list = ScheduleList::call(castgc, &data).await.unwrap();
+        let schedule = Schedule::get(castgc, &schedule_list.datas.kfdxnxqcx.rows[0])
+            .await
+            .unwrap();
+
+        let data = ScheduleCourseTime::new(schedule).unwrap();
+        println!("ScheduleCourseTime created successfully: {:?}", data);
+
+        let json_str = serde_json::to_string(&data).unwrap();
+        println!("Serialized ScheduleCourseTime to JSON: {}", json_str);
+        let deserialized: ScheduleCourseTime = serde_json::from_str(&json_str).unwrap();
+        println!(
+            "Deserialized ScheduleCourseTime from JSON: {:?}",
+            deserialized
+        );
+        assert_eq!(data, deserialized);
+
+        println!("Testing ScheduleCourseTime creation...");
+        let table = ColdTable::<i64, ScheduleCourseTime>::new("logic_command_sign_time_v2");
+        println!("Inserting schedule course time data into cold table...");
+        table.insert(&2218870695, &data).await.unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_schedule_course_time_load() {
+        let table = ColdTable::<i64, ScheduleCourseTime>::new("logic_command_sign_time_v2");
+        println!("Loading schedule course time data from cold table...");
+        let data = table.get(&2218870695).unwrap();
+        println!("ScheduleCourseTime loaded successfully: {:?}", data);
+        exit(0);
     }
 }
