@@ -1,14 +1,8 @@
 use super::BuildHelp;
 use crate::{
     abi::{logic_import::*, message::MessageSend},
-    api::{
-        network::SessionClient,
-        xmu_service::{
-            jw::ScheduleRenderer, llm::choose_timetable::ChooseTimetable,
-            login::request_qrcode_castgc,
-        },
-    },
-    logic::login::process::send_msg_and_wait,
+    api::xmu_service::{jw::ScheduleRenderer, llm::choose_timetable::ChooseTimetable},
+    logic::login::process::process_login_castgc,
 };
 use anyhow::anyhow;
 
@@ -20,10 +14,7 @@ help_msg=r#"用法:/timetable <描述>
 pub async fn timetable(ctx: Context) -> Result<()> {
     let sender = ctx.message.get_sender();
     let id = sender.user_id.ok_or(anyhow!("获取用户ID失败"))?;
-    let client = SessionClient::new();
-    let login_data = send_msg_and_wait(&mut ctx, &client, id).await?;
-
-    request_qrcode_castgc(&client, login_data).await?;
+    let client = process_login_castgc(&mut ctx, id).await?;
 
     let (schedule, week) =
         ChooseTimetable::get_from_client(&client, ctx.get_message_text()).await?;
