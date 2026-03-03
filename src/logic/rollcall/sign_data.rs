@@ -64,7 +64,7 @@ impl SignData {
             let long = e.longitude;
 
             let res = client
-                .put(
+                .put_json(
                     format!(
                         "https://lnt.xmu.edu.cn/api/rollcall/{activity_id}/answer?api_version=1.1.2"
                     ),
