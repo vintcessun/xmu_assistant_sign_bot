@@ -141,7 +141,11 @@ impl Display for AutoSignResponse {
             },
             AutoSignResponse::Qr(qr_sign) => match qr_sign {
                 auto_sign_response::QRSign::Success(data) => {
-                    write!(f, "二维码签到成功{}", data.course_name)?;
+                    write!(
+                        f,
+                        "二维码签到成功{}，签到详情{}",
+                        data.course_name, data.sign_result
+                    )?;
                 }
                 auto_sign_response::QRSign::AlreadySigned(data) => {
                     write!(f, "二维码签到{}已签到", data.course_name)?;
@@ -292,7 +296,7 @@ impl AutoSignRequest {
 
         let res = self
             .client
-            .put(
+            .put_json(
                 format!(
                     "https://lnt.xmu.edu.cn/api/rollcall/{activity_id}/answer?api_version=1.1.2",
                 ),
@@ -389,7 +393,7 @@ impl AutoSignRequest {
 
         let res = self
             .client
-            .put(
+            .put_json(
                 format!("https://lnt.xmu.edu.cn/api/rollcall/{activity_id}/answer_qr_rollcall"),
                 &json!({
                     "data": qrcode,

@@ -15,13 +15,15 @@ help_msg=r#"用法:/pushsign <ID>
 pub async fn push_sign(ctx: Context) -> Result<()> {
     let rollcall_id = ctx
         .get_message_text()
-        .trim()
+        .chars()
+        .filter(|c| c.is_ascii_digit())
+        .collect::<String>()
         .parse::<i64>()
         .map_err(|e| anyhow!("无效的签到ID {e}"))?;
 
     let ret = push_sign_request(rollcall_id).await?;
     for r in ret {
-        ctx.send_message(from_str(format!(
+        ctx.send_message_async(from_str(format!(
             "QQ: {}\n{}",
             r.qq,
             r.response
@@ -29,8 +31,7 @@ pub async fn push_sign(ctx: Context) -> Result<()> {
                 .map(|r| format!("{}\n", r))
                 .collect::<Vec<_>>()
                 .join("\n")
-        )))
-        .await?;
+        )));
     }
 
     Ok(())
@@ -60,7 +61,10 @@ pub async fn push_sign_request(rollcall_id: i64) -> Result<Vec<PushSignResponse>
                 response: response.unwrap(),
             }
         })
-        .collect::<Vec<_>>();
+        .collect::<Vec<_>>()
+        .into_iter()
+        .filter(|x| !x.response.is_empty())
+        .collect();
 
     Ok(ret)
 }
