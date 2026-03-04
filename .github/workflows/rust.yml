@@ -48,6 +48,9 @@ jobs:
                     sudo dpkg --add-architecture armhf
                     sudo apt-get update
                     sudo apt-get install -y --no-install-recommends aptitude cmake gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev:armhf libssl-dev:armhf pkg-config ninja-build
+                    sudo aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' \
+                      libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf \
+                      libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf
                   else
                     # x86_64 or aarch64 native
                     sudo apt-get install -y mold clang pkg-config libssl-dev libclang-dev libopencv-dev \
