@@ -120,9 +120,11 @@ jobs:
                     export PKG_CONFIG_LIBDIR="/usr/lib/arm-linux-gnueabihf/pkgconfig"
                     export CC_armv7_unknown_linux_gnueabihf="arm-linux-gnueabihf-gcc"
                     export CXX_armv7_unknown_linux_gnueabihf="arm-linux-gnueabihf-g++"
-                    export CFLAGS_armv7_unknown_linux_gnueabihf="-mfloat-abi=hard"
-                    export CXXFLAGS_armv7_unknown_linux_gnueabihf="-mfloat-abi=hard"
-                    export BINDGEN_EXTRA_CLANG_ARGS="-I/usr/include/arm-linux-gnueabihf"
+                    
+                    # 针对 ffmpeg-sys-next 的全局变量注入，仅在此 armv7 Job 中生效
+                    export CFLAGS="-mfloat-abi=hard -I/usr/arm-linux-gnueabihf/include"
+                    export CXXFLAGS="-mfloat-abi=hard -I/usr/arm-linux-gnueabihf/include"
+                    export BINDGEN_EXTRA_CLANG_ARGS="-I/usr/arm-linux-gnueabihf/include"
                   fi
 
                   cargo build --release --target ${{ matrix.target }} --verbose
