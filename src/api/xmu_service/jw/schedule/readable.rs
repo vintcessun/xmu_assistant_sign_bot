@@ -96,6 +96,42 @@ impl TimeBitMap {
             self.bits[i] |= other.bits[i];
         }
     }
+
+    /// extend(-10): 开始提前10min，结束不动 (向低位扩展)
+    /// extend(10):  结束延后10min，开始不动 (向高位扩展)
+    pub fn extend(&mut self, mins: i32) {
+        if mins == 0 {
+            return;
+        }
+
+        let abs_mins = mins.unsigned_abs();
+
+        for _ in 0..abs_mins {
+            if mins < 0 {
+                // 开始提前：向低索引/低位方向“生长”
+                // 原理：self |= (self >> 1)
+                let mut carry = 0u64;
+                for i in (0..23).rev() {
+                    let next_carry = self.bits[i] & 1; // 捕获即将移入低块的位
+                    let shifted = (self.bits[i] >> 1) | (carry << 63);
+                    self.bits[i] |= shifted;
+                    carry = next_carry;
+                }
+            } else {
+                // 结束延后：向高索引/高位方向“生长”
+                // 原理：self |= (self << 1)
+                let mut carry = 0u64;
+                for i in 0..23 {
+                    let next_carry = self.bits[i] >> 63; // 捕获即将移入高块的位
+                    let shifted = (self.bits[i] << 1) | carry;
+                    self.bits[i] |= shifted;
+                    carry = next_carry;
+                }
+                // 保持清洁：超过 1440 分钟的部分重置为 0
+                self.bits[22] &= 0x00000000FFFFFFFF;
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

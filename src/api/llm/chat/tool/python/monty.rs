@@ -26,12 +26,7 @@ pub async fn run_python_code(request: PythonExecRequest) -> Result<String> {
 
         #[cfg(test)]
         println!("运行代码: \n{}", code_clean);
-        let runner = MontyRun::new(
-            code_clean.to_string(),
-            script_name_clean,
-            input_names,
-            vec![],
-        )?;
+        let runner = MontyRun::new(code_clean.to_string(), script_name_clean, input_names)?;
         let mut collect = PrintWriter::Collect(String::with_capacity(128));
         let result = runner.run(
             input_values,
@@ -62,8 +57,7 @@ def fib(n):
 fib(x)
 "#;
 
-        let runner =
-            MontyRun::new(code.to_owned(), "fib.py", vec!["x".to_owned()], vec![]).unwrap();
+        let runner = MontyRun::new(code.to_owned(), "fib.py", vec!["x".to_owned()]).unwrap();
         let result = runner
             .run(
                 vec![MontyObject::Int(10)],
@@ -78,8 +72,7 @@ fib(x)
     #[test]
     fn test_serialize() {
         // Serialize parsed code
-        let runner =
-            MontyRun::new("x + 1".to_owned(), "main.py", vec!["x".to_owned()], vec![]).unwrap();
+        let runner = MontyRun::new("x + 1".to_owned(), "main.py", vec!["x".to_owned()]).unwrap();
         let bytes = runner.dump().unwrap();
 
         // Later, restore and run
@@ -107,7 +100,6 @@ add(x, y)
             code.to_owned(),
             "duck.py",
             vec!["x".to_owned(), "y".to_owned()],
-            vec![],
         )
         .unwrap();
         let result = runner
@@ -146,7 +138,6 @@ div(x, y)
             code.to_owned(),
             "div.py",
             vec!["x".to_owned(), "y".to_owned()],
-            vec![],
         )
         .unwrap();
         let result = runner.run(
@@ -168,13 +159,7 @@ def parse_json(s):
 
 parse_json(x)
 "#;
-        let runner = MontyRun::new(
-            code.to_owned(),
-            "json_parse.py",
-            vec!["x".to_owned()],
-            vec![],
-        )
-        .unwrap();
+        let runner = MontyRun::new(code.to_owned(), "json_parse.py", vec!["x".to_owned()]).unwrap();
         let result = runner.run(
             vec![MontyObject::String(
                 r#"{"key": "value", "num": 42}"#.to_owned(),
@@ -198,8 +183,7 @@ def fib(n):
 result = fib(x)
 print("Fibonacci result is:", result)
 "#;
-        let runner =
-            MontyRun::new(code.to_owned(), "fib.py", vec!["x".to_owned()], vec![]).unwrap();
+        let runner = MontyRun::new(code.to_owned(), "fib.py", vec!["x".to_owned()]).unwrap();
         let result = runner
             .run(vec![MontyObject::Int(10)], NoLimitTracker, &mut collect)
             .unwrap();
