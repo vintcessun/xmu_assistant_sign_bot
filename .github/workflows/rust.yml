@@ -43,20 +43,11 @@ jobs:
                   if [[ "$T" == "i686"* ]]; then
                     sudo dpkg --add-architecture i386
                     sudo apt-get update
-                    sudo apt-get install -y --no-install-recommends aptitude cmake gcc-multilib g++-multilib
-                    sudo aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' \
-                      pkg-config libssl-dev:i386 libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 \
-                      libavdevice-dev:i386 libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386 \
-                      libc6-dev:i386 clang libclang-dev libopencv-dev:i386 libopencv-contrib-dev:i386 python3 mold
+                    sudo apt-get install -y --no-install-recommends aptitude cmake gcc-multilib g++-multilib libssl-dev:i386 pkg-config ninja-build yasm
                   elif [[ "$T" == "armv7"* ]]; then
                     sudo dpkg --add-architecture armhf
                     sudo apt-get update
-                    sudo apt-get install -y --no-install-recommends aptitude cmake
-                    sudo aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' \
-                      pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf \
-                      libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf \
-                      libclang-dev libopencv-dev:armhf libopencv-contrib-dev:armhf libc6-dev:armhf \
-                      gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf python3 mold
+                    sudo apt-get install -y --no-install-recommends aptitude cmake gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev:armhf libssl-dev:armhf pkg-config ninja-build
                   else
                     # x86_64 or aarch64 native
                     sudo apt-get install -y mold clang pkg-config libssl-dev libclang-dev libopencv-dev \
@@ -75,37 +66,60 @@ jobs:
               with:
                   key: ${{ matrix.target }}
 
-            - name: Configure Cargo for Target
+            - name: Build OpenCV (i686 only)
+              if: matrix.target == 'i686-unknown-linux-gnu'
               run: |
-                  mkdir -p .cargo
+                  VERSION="4.10.0"
+                  wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/${VERSION}.zip
+                  wget -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/refs/tags/${VERSION}.zip
+                  unzip -q opencv.zip && unzip -q opencv_contrib.zip
+                  mkdir -p build && cd build
+                  cmake -GNinja \
+                    -DCMAKE_BUILD_TYPE=Release \
+                    -DCMAKE_INSTALL_PREFIX=/opt/opencv-32bit \
+                    -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib-${VERSION}/modules \
+                    -DBUILD_SHARED_LIBS=OFF \
+                    -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
+                    -DENABLE_SSE2=ON \
+                    -DCMAKE_C_FLAGS="-m32" -DCMAKE_CXX_FLAGS="-m32" \
+                    ../opencv-${VERSION}
+                  sudo ninja install
+
+            - name: Build release binary
+              shell: bash
+              run: |
                   T="${{ matrix.target }}"
+                  mkdir -p .cargo
                   if [[ "$T" == "i686"* ]]; then
                     cat <<EOF > .cargo/config.toml
                   [target.i686-unknown-linux-gnu]
                   linker = "gcc"
                   rustflags = ["-C", "link-arg=-m32", "-C", "target-feature=+sse2"]
                   EOF
-                    # Force environment variables for build scripts that ignore cargo config
-                    echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
-                    echo "PKG_CONFIG_LIBDIR=/usr/lib/i386-linux-gnu/pkgconfig" >> $GITHUB_ENV
-                    echo "CC_i686_unknown_linux_gnu=gcc" >> $GITHUB_ENV
-                    echo "CFLAGS_i686_unknown_linux_gnu=-m32 -msse2" >> $GITHUB_ENV
+                    export PKG_CONFIG_ALLOW_CROSS=1
+                    export PKG_CONFIG_PATH="/opt/opencv-32bit/lib/pkgconfig:/usr/lib/i386-linux-gnu/pkgconfig"
+                    export PKG_CONFIG_LIBDIR="/opt/opencv-32bit/lib/pkgconfig:/usr/lib/i386-linux-gnu/pkgconfig"
+                    export OpenCV_DIR="/opt/opencv-32bit/lib/cmake/opencv4"
+                    export CC_i686_unknown_linux_gnu="gcc -m32"
+                    export CXX_i686_unknown_linux_gnu="g++ -m32"
+                    export CFLAGS_i686_unknown_linux_gnu="-m32 -msse2"
+                    export CXXFLAGS_i686_unknown_linux_gnu="-m32 -msse2"
                   elif [[ "$T" == "armv7"* ]]; then
                     cat <<EOF > .cargo/config.toml
                   [target.armv7-unknown-linux-gnueabihf]
                   linker = "arm-linux-gnueabihf-gcc"
                   EOF
-                    echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
-                    echo "PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig" >> $GITHUB_ENV
-                    echo "CC_armv7_unknown_linux_gnueabihf=arm-linux-gnueabihf-gcc" >> $GITHUB_ENV
-                    echo "CXX_armv7_unknown_linux_gnueabihf=arm-linux-gnueabihf-g++" >> $GITHUB_ENV
-                    echo "CFLAGS_armv7_unknown_linux_gnueabihf=-mfloat-abi=hard" >> $GITHUB_ENV
-                    echo "CXXFLAGS_armv7_unknown_linux_gnueabihf=-mfloat-abi=hard" >> $GITHUB_ENV
-                    echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/include/arm-linux-gnueabihf" >> $GITHUB_ENV
+                    export PKG_CONFIG_ALLOW_CROSS=1
+                    export PKG_CONFIG_PATH="/usr/lib/arm-linux-gnueabihf/pkgconfig"
+                    export PKG_CONFIG_LIBDIR="/usr/lib/arm-linux-gnueabihf/pkgconfig"
+                    export CC_armv7_unknown_linux_gnueabihf="arm-linux-gnueabihf-gcc"
+                    export CXX_armv7_unknown_linux_gnueabihf="arm-linux-gnueabihf-g++"
+                    export CFLAGS_armv7_unknown_linux_gnueabihf="-mfloat-abi=hard"
+                    export CXXFLAGS_armv7_unknown_linux_gnueabihf="-mfloat-abi=hard"
+                    export BINDGEN_EXTRA_CLANG_ARGS="-I/usr/include/arm-linux-gnueabihf"
                   fi
 
-            - name: Build release binary
-              run: cargo build --release --target ${{ matrix.target }} --verbose
+                  cargo build --release --target ${{ matrix.target }} --verbose
               env:
                   RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
                   OPENSSL_STATIC: 1
