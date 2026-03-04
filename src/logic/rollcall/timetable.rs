@@ -48,18 +48,11 @@ help_msg=r#"用法:/delsigntime
 pub async fn del_sign_time(ctx: Context) -> Result<()> {
     let sender = ctx.message.get_sender();
     let id = sender.user_id.ok_or(anyhow!("获取用户ID失败"))?;
-    let group_id = match &*ctx.message {
-        Message::Group(msg) => msg.group_id,
-        Message::Private(_) => return Err(anyhow!("请在群聊中使用此命令")),
-    };
 
-    TIMETABLE_GROUP.remove(&id);
+    TIMETABLE_GROUP.remove(&id)?;
     TIME_SIGN_TASK.force_update().await?;
 
-    ctx.send_message_async(from_str(format!(
-        "课程时间表已更新，包含 {} 段时间",
-        course_time.times.len()
-    )));
+    ctx.send_message_async(from_str("课程时间表已删除"));
 
     Ok(())
 }

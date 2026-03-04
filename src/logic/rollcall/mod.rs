@@ -20,6 +20,7 @@ pub use qr_sign::QrSignHandler;
 pub use sign::SignHandler;
 pub use spec_sign::SpecSignHandler;
 pub use time_sign::TimeSignHandler;
+pub use timetable::DelSignTimeHandler;
 pub use timetable::SignTimeHandler;
 
 pub use auto_sign::auto_sign_request;
