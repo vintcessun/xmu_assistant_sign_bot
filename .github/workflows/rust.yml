@@ -46,7 +46,7 @@ jobs:
                     sudo apt-get install -y --no-install-recommends aptitude cmake gcc-multilib g++-multilib libssl-dev:i386 pkg-config ninja-build yasm nasm
                     sudo aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' \
                       libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 libavdevice-dev:i386 \
-                      libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386
+                      libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386 libpostproc-dev:i386
                   elif [[ "$T" == "armv7"* ]]; then
                     sudo dpkg --add-architecture armhf
                     sudo apt-get update
@@ -84,9 +84,9 @@ jobs:
                   tar -xf ffmpeg-${FFMPEG_VER}.tar.bz2
                   cd ffmpeg-${FFMPEG_VER}
                   if [[ "$T" == "i686"* ]]; then
-                    ./configure --prefix=$HOME/deps/ffmpeg --extra-cflags="-m32" --extra-cxxflags="-m32" --extra-ldflags="-m32" --arch=x86 --target-os=linux --enable-pic --disable-debug --disable-doc --enable-gpl --enable-static --disable-shared
+                    ./configure --prefix=$HOME/deps/ffmpeg --extra-cflags="-m32" --extra-cxxflags="-m32" --extra-ldflags="-m32" --arch=x86 --target-os=linux --enable-pic --disable-debug --disable-doc --enable-gpl --enable-static --disable-shared --enable-postproc
                   else
-                    ./configure --prefix=$HOME/deps/ffmpeg --cross-prefix=arm-linux-gnueabihf- --arch=armel --target-os=linux --enable-pic --disable-debug --disable-doc --enable-gpl --enable-static --disable-shared --extra-cflags="-mfloat-abi=hard"
+                    ./configure --prefix=$HOME/deps/ffmpeg --cross-prefix=arm-linux-gnueabihf- --arch=armel --target-os=linux --enable-pic --disable-debug --disable-doc --enable-gpl --enable-static --disable-shared --extra-cflags="-mfloat-abi=hard" --enable-postproc
                   fi
                   make -j$(nproc) && make install
                   cd ..
@@ -141,10 +141,8 @@ jobs:
                   rustflags = ["-L", "$HOME/deps/opencv/lib", "-L", "$HOME/deps/ffmpeg/lib"]
                   EOF
                     export PKG_CONFIG_ALLOW_CROSS=1
-                    export PKG_CONFIG_PATH="$HOME/deps/opencv/lib/pkgconfig:$HOME/deps/ffmpeg/lib/pkgconfig:/usr/lib/arm-linux-gnueabihf/pkgconfig"
-                    export PKG_CONFIG_LIBDIR="$HOME/deps/opencv/lib/pkgconfig:$HOME/deps/ffmpeg/lib/pkgconfig:/usr/lib/arm-linux-gnueabihf/pkgconfig"
-                    export OpenCV_DIR="$HOME/deps/opencv/lib/cmake/opencv4"
-                    export FFMPEG_DIR="$HOME/deps/ffmpeg"
+                    export PKG_CONFIG_PATH="/usr/lib/arm-linux-gnueabihf/pkgconfig"
+                    export PKG_CONFIG_LIBDIR="/usr/lib/arm-linux-gnueabihf/pkgconfig"
                     export CC_armv7_unknown_linux_gnueabihf="arm-linux-gnueabihf-gcc"
                     export CXX_armv7_unknown_linux_gnueabihf="arm-linux-gnueabihf-g++"
                     export CFLAGS_armv7_unknown_linux_gnueabihf="-mfloat-abi=hard -I/usr/arm-linux-gnueabihf/include"
