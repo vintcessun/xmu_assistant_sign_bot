@@ -7,14 +7,13 @@ use crate::abi::network::BotClient;
 use crate::logic::rollcall::auto_sign_data::AutoSignResponse;
 use crate::logic::rollcall::auto_sign_data::auto_sign_response::{NumberSign, QRSign, RadarSign};
 use crate::logic::rollcall::data::TIMETABLE_GROUP;
+use crate::logic::rollcall::{sign_request, spec_sign_request};
 use crate::{
     api::{
         scheduler::{TaskRunner, TimeTask},
         xmu_service::jw::ClockTime,
     },
-    logic::rollcall::{
-        auto_sign_request, data::TIMETABLE_DATA, time::TIME_SIGN_TASK, utils::uniform,
-    },
+    logic::rollcall::{data::TIMETABLE_DATA, time::TIME_SIGN_TASK, utils::uniform},
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -60,8 +59,17 @@ async fn time_sign_task() -> Result<()> {
             let time_val = entry.value();
             if time_val.is_active(ClockTime::now()) {
                 tasks.push(async move {
-                    let response = auto_sign_request(qq).await?;
-                    let response = response
+                    let mut ret = vec![];
+                    let sign_data = sign_request(qq).await?;
+                    for data in &sign_data {
+                        trace!(qq=qq, sign_data=?data, "准备进行定时签到");
+                        if data.builder.sign_num >= data.builder.student_num / 10 {
+                            trace!(qq=qq, sign_data=?data, "签到人数足够，开始定时签到");
+                            let response = spec_sign_request(qq, data.builder.activity_id).await?;
+                            ret.extend(response)
+                        }
+                    }
+                    let response = ret
                         .into_iter()
                         .filter(|x| match x {
                             AutoSignResponse::Qr(data) => matches!(data, QRSign::Success(_)),

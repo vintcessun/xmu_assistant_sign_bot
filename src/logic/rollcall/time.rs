@@ -29,7 +29,7 @@ impl TimeTask for TimeSignUpdateTask {
     }
 
     fn interval(&self) -> Duration {
-        Duration::from_hours(24)
+        Duration::from_secs(240)
     }
 
     async fn run(&self) -> Result<Self::Output> {
@@ -75,7 +75,10 @@ pub fn get_today_courses(qq: i64) -> Option<TimeBitMap> {
             && week_number > 0
             && course.week_mask.get_bit((week_number - 1) as u8)
         {
-            bitmap.merge(&course.time_bitmap);
+            let mut course_bitmap = course.time_bitmap;
+            course_bitmap.extend(-10);
+            course_bitmap.extend(10);
+            bitmap.merge(&course_bitmap);
         }
     }
 
