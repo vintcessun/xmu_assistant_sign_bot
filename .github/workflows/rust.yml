@@ -293,6 +293,11 @@ jobs:
                   targets: ${{ matrix.target }}
                   components: rustfmt, clippy
 
+            - name: Rust Cache
+              uses: Swatinem/rust-cache@v2
+              with:
+                  key: ${{ matrix.target }}
+
             - name: Configure environment variables for build
               shell: pwsh
               run: |
@@ -410,6 +415,11 @@ jobs:
               with:
                   targets: ${{ matrix.target }}
                   components: rustfmt, clippy
+
+            - name: Rust Cache
+              uses: Swatinem/rust-cache@v2
+              with:
+                  key: ${{ matrix.target }}
 
             - name: Install macOS target
               run: rustup target add ${{ matrix.target }}
