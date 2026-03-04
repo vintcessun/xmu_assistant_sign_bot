@@ -43,17 +43,11 @@ jobs:
                   if [[ "$T" == "i686"* ]]; then
                     sudo dpkg --add-architecture i386
                     sudo apt-get update
-                    sudo apt-get install -y --no-install-recommends aptitude cmake gcc-multilib g++-multilib libssl-dev:i386 pkg-config ninja-build yasm
-                    sudo aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' \
-                      libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 libavdevice-dev:i386 \
-                      libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386
+                    sudo apt-get install -y --no-install-recommends aptitude cmake gcc-multilib g++-multilib libssl-dev:i386 pkg-config ninja-build yasm nasm
                   elif [[ "$T" == "armv7"* ]]; then
                     sudo dpkg --add-architecture armhf
                     sudo apt-get update
                     sudo apt-get install -y --no-install-recommends aptitude cmake gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev:armhf libssl-dev:armhf pkg-config ninja-build libc6-dev-armhf-cross
-                    sudo aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' \
-                      libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf \
-                      libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf
                   else
                     # x86_64 or aarch64 native
                     sudo apt-get install -y mold clang pkg-config libssl-dev libclang-dev libopencv-dev \
@@ -72,24 +66,45 @@ jobs:
               with:
                   key: ${{ matrix.target }}
 
-            - name: Build OpenCV (i686 only)
-              if: matrix.target == 'i686-unknown-linux-gnu'
+            - name: Build Dependencies (i686/armv7 only)
+              if: matrix.target == 'i686-unknown-linux-gnu' || matrix.target == 'armv7-unknown-linux-gnueabihf'
               run: |
-                  VERSION="4.10.0"
-                  wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/${VERSION}.zip
-                  wget -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/refs/tags/${VERSION}.zip
+                  T="${{ matrix.target }}"
+                  mkdir -p $HOME/deps
+
+                  # 1. Build FFmpeg 7.1
+                  FFMPEG_VER="7.1"
+                  wget -q https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VER}.tar.bz2
+                  tar -xf ffmpeg-${FFMPEG_VER}.tar.bz2
+                  cd ffmpeg-${FFMPEG_VER}
+                  if [[ "$T" == "i686"* ]]; then
+                    ./configure --prefix=$HOME/deps/ffmpeg --extra-cflags="-m32" --extra-cxxflags="-m32" --extra-ldflags="-m32" --arch=x86 --target-os=linux --enable-pic --disable-debug --disable-doc --enable-gpl --enable-static --disable-shared
+                  else
+                    ./configure --prefix=$HOME/deps/ffmpeg --cross-prefix=arm-linux-gnueabihf- --arch=armel --target-os=linux --enable-pic --disable-debug --disable-doc --enable-gpl --enable-static --disable-shared --extra-cflags="-mfloat-abi=hard"
+                  fi
+                  make -j$(nproc) && make install
+                  cd ..
+
+                  # 2. Build OpenCV 4.10.0
+                  OPENCV_VER="4.10.0"
+                  wget -q -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/${OPENCV_VER}.zip
+                  wget -q -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/refs/tags/${OPENCV_VER}.zip
                   unzip -q opencv.zip && unzip -q opencv_contrib.zip
-                  mkdir -p build && cd build
-                  cmake -GNinja \
-                    -DCMAKE_BUILD_TYPE=Release \
-                    -DCMAKE_INSTALL_PREFIX=/opt/opencv-32bit \
-                    -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib-${VERSION}/modules \
-                    -DBUILD_SHARED_LIBS=OFF \
-                    -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
-                    -DENABLE_SSE2=ON \
-                    -DCMAKE_C_FLAGS="-m32" -DCMAKE_CXX_FLAGS="-m32" \
-                    ../opencv-${VERSION}
-                  sudo ninja install
+                  mkdir -p opencv_build && cd opencv_build
+                  if [[ "$T" == "i686"* ]]; then
+                    cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$HOME/deps/opencv \
+                      -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib-${OPENCV_VER}/modules \
+                      -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
+                      -DCMAKE_C_FLAGS="-m32" -DCMAKE_CXX_FLAGS="-m32" ../opencv-${OPENCV_VER}
+                  else
+                    cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$HOME/deps/opencv \
+                      -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib-${OPENCV_VER}/modules \
+                      -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
+                      -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++ \
+                      -DCMAKE_C_FLAGS="-mfloat-abi=hard" -DCMAKE_CXX_FLAGS="-mfloat-abi=hard" ../opencv-${OPENCV_VER}
+                  fi
+                  ninja install
+                  cd ..
 
             - name: Build release binary
               shell: bash
@@ -103,9 +118,9 @@ jobs:
                   rustflags = ["-C", "link-arg=-m32", "-C", "target-feature=+sse2"]
                   EOF
                     export PKG_CONFIG_ALLOW_CROSS=1
-                    export PKG_CONFIG_PATH="/opt/opencv-32bit/lib/pkgconfig:/usr/lib/i386-linux-gnu/pkgconfig"
-                    export PKG_CONFIG_LIBDIR="/opt/opencv-32bit/lib/pkgconfig:/usr/lib/i386-linux-gnu/pkgconfig"
-                    export OpenCV_DIR="/opt/opencv-32bit/lib/cmake/opencv4"
+                    export PKG_CONFIG_LIBDIR="$HOME/deps/opencv/lib/pkgconfig:$HOME/deps/ffmpeg/lib/pkgconfig:/usr/lib/i386-linux-gnu/pkgconfig"
+                    export OpenCV_DIR="$HOME/deps/opencv/lib/cmake/opencv4"
+                    export FFMPEG_DIR="$HOME/deps/ffmpeg"
                     export CC_i686_unknown_linux_gnu="gcc -m32"
                     export CXX_i686_unknown_linux_gnu="g++ -m32"
                     export CFLAGS_i686_unknown_linux_gnu="-m32 -msse2"
@@ -116,15 +131,14 @@ jobs:
                   linker = "arm-linux-gnueabihf-gcc"
                   EOF
                     export PKG_CONFIG_ALLOW_CROSS=1
-                    export PKG_CONFIG_PATH="/usr/lib/arm-linux-gnueabihf/pkgconfig"
-                    export PKG_CONFIG_LIBDIR="/usr/lib/arm-linux-gnueabihf/pkgconfig"
+                    export PKG_CONFIG_LIBDIR="$HOME/deps/opencv/lib/pkgconfig:$HOME/deps/ffmpeg/lib/pkgconfig:/usr/lib/arm-linux-gnueabihf/pkgconfig"
+                    export OpenCV_DIR="$HOME/deps/opencv/lib/cmake/opencv4"
+                    export FFMPEG_DIR="$HOME/deps/ffmpeg"
                     export CC_armv7_unknown_linux_gnueabihf="arm-linux-gnueabihf-gcc"
                     export CXX_armv7_unknown_linux_gnueabihf="arm-linux-gnueabihf-g++"
-                    
-                    # 针对 ffmpeg-sys-next 的全局变量注入，仅在此 armv7 Job 中生效
-                    export CFLAGS="-mfloat-abi=hard -I/usr/arm-linux-gnueabihf/include"
-                    export CXXFLAGS="-mfloat-abi=hard -I/usr/arm-linux-gnueabihf/include"
-                    export BINDGEN_EXTRA_CLANG_ARGS="-I/usr/arm-linux-gnueabihf/include"
+                    export CFLAGS_armv7_unknown_linux_gnueabihf="-mfloat-abi=hard -I/usr/arm-linux-gnueabihf/include"
+                    export CXXFLAGS_armv7_unknown_linux_gnueabihf="-mfloat-abi=hard -I/usr/arm-linux-gnueabihf/include"
+                    export BINDGEN_EXTRA_CLANG_ARGS="-I/usr/include/arm-linux-gnueabihf"
                   fi
 
                   cargo build --release --target ${{ matrix.target }} --verbose
