@@ -33,7 +33,7 @@ impl QrProcessor {
 
         let (tx, rx) = unbounded::<QrTask>();
 
-        for i in 0..worker_threads {
+        for _i in 0..worker_threads {
             let thread_rx = rx.clone();
 
             // 启动原生线程，不占 tokio 阻塞池名额
@@ -41,11 +41,11 @@ impl QrProcessor {
                 // 绑定 CPU 核心 (在 macOS 上跳过 affinity)
                 #[cfg(not(target_os = "macos"))]
                 {
-                    let core_ids = vec![i];
+                    let core_ids = vec![_i];
                     if let Err(e) = affinity::set_thread_affinity(&core_ids) {
-                        warn!(thread_index = i, error = ?e, "Failed to set thread affinity");
+                        warn!(thread_index = _i, error = ?e, "Failed to set thread affinity");
                     } else {
-                        info!(thread_index = i, core_id = i, "Thread bound to core");
+                        info!(thread_index = _i, core_id = _i, "Thread bound to core");
                     }
                 }
 
