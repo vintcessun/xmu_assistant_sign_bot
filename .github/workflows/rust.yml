@@ -8,173 +8,25 @@ on:
     workflow_dispatch:
 
 jobs:
-    # Linux cross-compilation jobs (using cross for Linux targets)
-    build-linux-cross:
-        name: Linux cross builds
-        runs-on: ubuntu-latest
+    # Linux builds using native runners where possible
+    build-linux:
+        name: Linux builds (${{ matrix.target }})
+        runs-on: ${{ matrix.os }}
         permissions:
             contents: read
             actions: write
         strategy:
             fail-fast: false
             matrix:
-                target:
-                    [
-                        i686-unknown-linux-gnu,
-                        aarch64-unknown-linux-gnu,
-                        armv7-unknown-linux-gnueabihf,
-                    ]
-        steps:
-            - name: Checkout source
-              uses: actions/checkout@v4
-
-            - name: Create Cross.toml dynamically
-              run: |
-                  cat <<'EOF' > Cross.toml
-                  [build.env]
-                  passthrough = [
-                      "BINDGEN_EXTRA_CLANG_ARGS",
-                      "PKG_CONFIG_ALLOW_CROSS",
-                      "PKG_CONFIG_PATH",
-                      "PKG_CONFIG_LIBDIR",
-                      "OpenCV_DIR",
-                      "CC",
-                      "CXX",
-                      "CFLAGS",
-                      "CXXFLAGS",
-                      "LIBRARY_PATH",
-                  ]
-
-                  [target.x86_64-unknown-linux-gnu]
-                  image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:edge"
-                  pre-build = [
-                      "apt-get update",
-                      "apt-get install -y pkg-config libssl-dev mold clang libclang-dev libopencv-dev libopencv-contrib-dev libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libavfilter-dev libswresample-dev libswscale-dev libc6-dev python3 cmake",
-                  ]
-
-                  [target.i686-unknown-linux-gnu]
-                  image = "ghcr.io/cross-rs/i686-unknown-linux-gnu:edge"
-                  pre-build = [
-                      "dpkg --add-architecture i386",
-                      "apt-get update",
-                      # 修复 libgcc 不兼容冲突: 安装 multilib 支持。
-                      "apt-get install -y --no-install-recommends aptitude cmake gcc-multilib g++-multilib",
-                      "aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' pkg-config libssl-dev:i386 libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 libavdevice-dev:i386 libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386 libc6-dev:i386 clang libclang-dev libopencv-dev libopencv-contrib-dev python3",
-                  ]
-
-                  [target.aarch64-unknown-linux-gnu]
-                  image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:edge"
-                  pre-build = [
-                      "dpkg --add-architecture arm64",
-                      "apt-get update",
-                      "apt-get install -y --no-install-recommends aptitude cmake",
-                      "aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' pkg-config libssl-dev:arm64 libavcodec-dev:arm64 libavformat-dev:arm64 libavutil-dev:arm64 libavdevice-dev:arm64 libavfilter-dev:arm64 libswresample-dev:arm64 libswscale-dev:arm64 libc6-dev:arm64 clang libclang-dev libopencv-dev:arm64 libopencv-contrib-dev:arm64 python3",
-                  ]
-
-                  [target.armv7-unknown-linux-gnueabihf]
-                  image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabihf:edge"
-                  pre-build = [
-                      "dpkg --add-architecture armhf",
-                      "apt-get update",
-                      "apt-get install -y --no-install-recommends aptitude cmake",
-                      # 修复 gnu/stubs-soft.h 缺失: 确保安装了标准的 libc6-dev:armhf (Hard-float)
-                      "aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libclang-dev libopencv-dev:armhf libopencv-contrib-dev:armhf libc6-dev:armhf gcc-arm-linux-gnueabihf python3",
-                  ]
-                  EOF
-
-            - name: Prepare LLM tool config
-              run: |
-                  cp src/api/llm/tool/config-template.rs src/api/llm/tool/config.rs
-                  cp src/api/llm/chat/config-template.rs src/api/llm/chat/config.rs
-
-            - name: Set up Rust
-              uses: dtolnay/rust-toolchain@stable
-              with:
-                  targets: ${{ matrix.target }}
-                  components: rustfmt, clippy
-
-            - name: Install cross
-              run: cargo install cross --force
-
-            - name: Configure cross environment
-              run: |
-                  T="${{ matrix.target }}"
-                  echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
-                  # 初始重置，防止架构间污染
-                  echo "CFLAGS=" >> $GITHUB_ENV
-                  echo "CXXFLAGS=" >> $GITHUB_ENV
-                  echo "LIBRARY_PATH=" >> $GITHUB_ENV
-
-                  if [[ "$T" == "x86_64"* ]]; then
-                    echo "CC=gcc" >> $GITHUB_ENV
-                    echo "CXX=g++" >> $GITHUB_ENV
-                    echo "OpenCV_DIR=/usr/lib/x86_64-linux-gnu/cmake/opencv4" >> $GITHUB_ENV
-                  elif [[ "$T" == "i686"* ]]; then
-                    echo "CC=i686-linux-gnu-gcc" >> $GITHUB_ENV
-                    echo "CXX=i686-linux-gnu-g++" >> $GITHUB_ENV
-                    echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/i686-linux-gnu/include" >> $GITHUB_ENV
-                    echo "OpenCV_DIR=/usr/lib/i386-linux-gnu/cmake/opencv4" >> $GITHUB_ENV
-                    # 关键修复：显式指定 -m32 并在 LIBRARY_PATH 包含 32 位目录，防止 ld 包含 64 位库
-                    echo "CFLAGS=-m32" >> $GITHUB_ENV
-                    echo "CXXFLAGS=-m32" >> $GITHUB_ENV
-                    echo "LIBRARY_PATH=/usr/lib/i386-linux-gnu:/usr/lib/gcc-cross/i686-linux-gnu/9" >> $GITHUB_ENV
-                    echo "PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig" >> $GITHUB_ENV
-                  elif [[ "$T" == "aarch64"* ]]; then
-                    echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-                    echo "CXX=aarch64-linux-gnu-g++" >> $GITHUB_ENV
-                    echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/aarch64-linux-gnu/include" >> $GITHUB_ENV
-                    echo "OpenCV_DIR=/usr/lib/aarch64-linux-gnu/cmake/opencv4" >> $GITHUB_ENV
-                    echo "PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig" >> $GITHUB_ENV
-                  elif [[ "$T" == "armv7"* ]]; then
-                    echo "CC=arm-linux-gnueabihf-gcc" >> $GITHUB_ENV
-                    echo "CXX=arm-linux-gnueabihf-g++" >> $GITHUB_ENV
-                    echo "CFLAGS=-mfloat-abi=hard" >> $GITHUB_ENV
-                    echo "CXXFLAGS=-mfloat-abi=hard" >> $GITHUB_ENV
-                    echo "BINDGEN_EXTRA_CLANG_ARGS=-I/usr/arm-linux-gnueabihf/include -mfloat-abi=hard" >> $GITHUB_ENV
-                    echo "OpenCV_DIR=/usr/lib/arm-linux-gnueabihf/cmake/opencv4" >> $GITHUB_ENV
-                    echo "PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig" >> $GITHUB_ENV
-                  fi
-
-            - name: Build release binary using cross
-              run: cross build --release --target ${{ matrix.target }} --verbose
-              env:
-                  # Override .cargo/config.toml to prevent host-specific flags (like target-cpu=native)
-                  # from being leaked into the cross-compilation environment.
-                  RUSTFLAGS: ""
-
-            - name: Rename artifact
-              shell: bash
-              run: |
-                  mkdir -p artifacts  # 确保 artifacts 目录存在
-                  BIN_NAME="xmu_assistant_bot-${{ matrix.target }}"
-                  if [ -f "target/${{ matrix.target }}/release/xmu_assistant_bot" ]; then
-                      cp target/${{ matrix.target }}/release/xmu_assistant_bot artifacts/${BIN_NAME}
-                  else
-                      echo "Warning: No binary found for ${{ matrix.target }} (maybe cross failed)"
-                      ls -R target/${{ matrix.target }}/release || true
-                  fi
-
-            - name: Upload artifacts
-              uses: actions/upload-artifact@v4
-              with:
-                  name: xmu_assistant_bot-${{ matrix.target }}
-                  path: artifacts/**
-                  if-no-files-found: warn
-                  compression-level: 6
-                  overwrite: false
-                  include-hidden-files: false
-              env:
-                  CARGO_HOME: /home/runner/.cargo
-                  CARGO_INCREMENTAL: 0
-                  CARGO_TERM_COLOR: always
-
-    build-linux-native:
-        name: Linux native builds
-        runs-on: ubuntu-latest
-        strategy:
-            fail-fast: false
-            matrix:
-                target: [x86_64-unknown-linux-gnu]
+                include:
+                    - target: x86_64-unknown-linux-gnu
+                      os: ubuntu-latest
+                    - target: aarch64-unknown-linux-gnu
+                      os: ubuntu-24.04-arm
+                    - target: i686-unknown-linux-gnu
+                      os: ubuntu-latest
+                    - target: armv7-unknown-linux-gnueabihf
+                      os: ubuntu-24.04-arm
         steps:
             - name: Checkout source
               uses: actions/checkout@v4
@@ -187,8 +39,31 @@ jobs:
             - name: Install Dependencies
               run: |
                   sudo apt-get update
-                  # Install dependencies for openssl, ffmpeg (via video-rs), and opencv
-                  sudo apt-get install -y mold clang pkg-config libssl-dev libclang-dev libopencv-dev libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libavfilter-dev libswresample-dev libswscale-dev
+                  T="${{ matrix.target }}"
+                  if [[ "$T" == "i686"* ]]; then
+                    sudo dpkg --add-architecture i386
+                    sudo apt-get update
+                    sudo apt-get install -y --no-install-recommends aptitude cmake gcc-multilib g++-multilib
+                    sudo aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' \
+                      pkg-config libssl-dev:i386 libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 \
+                      libavdevice-dev:i386 libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386 \
+                      libc6-dev:i386 clang libclang-dev libopencv-dev libopencv-contrib-dev python3 mold
+                  elif [[ "$T" == "armv7"* ]]; then
+                    sudo dpkg --add-architecture armhf
+                    sudo apt-get update
+                    sudo apt-get install -y --no-install-recommends aptitude cmake
+                    sudo aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' \
+                      pkg-config libssl-dev:armhf libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf \
+                      libavdevice-dev:armhf libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf \
+                      libclang-dev libopencv-dev:armhf libopencv-contrib-dev:armhf libc6-dev:armhf \
+                      gcc-arm-linux-gnueabihf python3 mold
+                  else
+                    # x86_64 or aarch64 native
+                    sudo apt-get install -y mold clang pkg-config libssl-dev libclang-dev libopencv-dev \
+                      libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libavfilter-dev \
+                      libswresample-dev libswscale-dev
+                  fi
+
             - name: Set up Rust
               uses: dtolnay/rust-toolchain@stable
               with:
@@ -197,6 +72,21 @@ jobs:
 
             - name: Rust Cache
               uses: Swatinem/rust-cache@v2
+              with:
+                  key: ${{ matrix.target }}
+
+            - name: Configure Environment
+              run: |
+                  T="${{ matrix.target }}"
+                  if [[ "$T" == "i686"* ]]; then
+                    echo "CFLAGS=-m32" >> $GITHUB_ENV
+                    echo "CXXFLAGS=-m32" >> $GITHUB_ENV
+                    echo "PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig" >> $GITHUB_ENV
+                  elif [[ "$T" == "armv7"* ]]; then
+                    echo "CFLAGS=-mfloat-abi=hard" >> $GITHUB_ENV
+                    echo "CXXFLAGS=-mfloat-abi=hard" >> $GITHUB_ENV
+                    echo "PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig" >> $GITHUB_ENV
+                  fi
 
             - name: Build release binary
               run: cargo build --release --target ${{ matrix.target }} --verbose
