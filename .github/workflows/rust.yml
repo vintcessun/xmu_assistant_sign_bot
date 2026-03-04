@@ -50,7 +50,7 @@ jobs:
                   elif [[ "$T" == "armv7"* ]]; then
                     sudo dpkg --add-architecture armhf
                     sudo apt-get update
-                    sudo apt-get install -y --no-install-recommends aptitude cmake gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev:armhf libssl-dev:armhf pkg-config ninja-build libc6-dev-armhf-cross
+                    sudo apt-get install -y --no-install-recommends aptitude cmake gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev:armhf libssl-dev:armhf pkg-config ninja-build libc6-dev-armhf-cross binutils-arm-linux-gnueabihf
                     sudo aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' \
                       libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf \
                       libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf
