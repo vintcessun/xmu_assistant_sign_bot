@@ -67,7 +67,8 @@ pub async fn get_test(ctx: Context) -> Result<()> {
     let client = get_client_or_err(&ctx).await?;
     let id_text = ctx
         .get_message_text()
-        .split_whitespace()
+        .chars()
+        .filter(|c| c.is_ascii_digit())
         .collect::<String>();
     let id = id_text.parse::<i64>().map_err(|e| {
         error!(input = id_text, error = ?e, "无效的小测 ID");
@@ -108,7 +109,8 @@ pub async fn test_ans(ctx: Context) -> Result<()> {
     let client = get_client_or_err(&ctx).await?;
     let id_text = ctx
         .get_message_text()
-        .split_whitespace()
+        .chars()
+        .filter(|c| c.is_ascii_digit())
         .collect::<String>();
     let id = id_text.parse::<i64>().map_err(|e| {
         warn!(input = id_text, error = ?e, "无效的小测 ID");
