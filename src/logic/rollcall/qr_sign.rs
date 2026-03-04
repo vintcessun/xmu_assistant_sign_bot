@@ -43,21 +43,27 @@ pub async fn qr_sign(ctx: Context) -> Result<()> {
         .await
         .into_iter()
         .filter_map(|x| x.ok())
-        .flatten();
+        .flatten()
+        .collect::<Vec<_>>();
 
     let time = start.elapsed().as_secs_f64();
 
     let mut used = false;
+    let mut msgs = Vec::with_capacity(rets.len());
     for ret in rets {
         let mut msg = MessageSend::new_message().text("二维码帮助如下:\n");
         for r in ret {
             msg = msg.text(format!("QQ: {}, 响应: {}\n", r.qq, r.response));
         }
-        ctx.send_message_async(msg.build());
+        msgs.push(msg.build());
         used = true;
     }
 
     if used {
+        for msg in msgs {
+            ctx.send_message_async(msg);
+        }
+
         ctx.send_message_async(from_str(format!(
             "二维码解析总耗时: {} s",
             start.elapsed().as_secs_f64()

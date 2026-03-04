@@ -7,11 +7,13 @@ use crate::{
             location::LOCATIONS,
         },
     },
-    logic::rollcall::data::{SIGN_LOCATION_DATA, SIGN_NUMBER_DATA},
+    logic::rollcall::{
+        auto_sign_data::AutoSignRequest,
+        data::{SIGN_LOCATION_DATA, SIGN_NUMBER_DATA},
+    },
 };
 use anyhow::{Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 use smol_str::SmolStr;
 use std::fmt::Display;
 use std::sync::Arc;
@@ -63,28 +65,11 @@ impl SignData {
             let lati = e.latitude;
             let long = e.longitude;
 
-            let res = client
-                .put_json(
-                    format!(
-                        "https://lnt.xmu.edu.cn/api/rollcall/{activity_id}/answer?api_version=1.1.2"
-                    ),
-                    &json!({
-                        "deviceId": device_id,
-                        "latitude": lati,
-                        "longitude": long,
-                        "speed": Value::Null,
-                        "accuracy": 90,
-                        "altitude": Value::Null,
-                        "altitudeAccuracy": Value::Null,
-                        "heading": Value::Null,
-                    }),
-                )
-                .await?;
-
-            let radar_data = res.json::<RadarSign>().await?;
-            if radar_data.distance < student_distance {
+            let radar_distance =
+                AutoSignRequest::radar_distance(client, device_id, activity_id, lati, long).await?;
+            if radar_distance < student_distance {
                 student_location = Some(e);
-                student_distance = radar_data.distance;
+                student_distance = radar_distance;
             }
 
             if student_distance < 100.0 {
@@ -92,13 +77,15 @@ impl SignData {
             };
         }
 
-        if let Some(loc) = student_location
-            && student_distance < 100.0
-        {
+        if let Some(loc) = student_location {
             let loc: LocationStore = loc.to_owned().into();
             let loc = Arc::new(loc);
-            Self::location_write(activity_id, loc.clone()).await;
-            return Ok(loc);
+            if student_distance < 100.0 {
+                Self::location_write(activity_id, loc.clone()).await;
+            }
+            if student_distance < 200.0 {
+                return Ok(loc);
+            }
         }
         bail!("无法获取有效的位置信息，最近的距离为 {student_distance} 米");
     }

@@ -37,8 +37,8 @@ pub mod auto_sign_response {
         pub struct Success {
             pub course_name: String,
             pub student_location: String,
-            pub latitude: f64,
-            pub longitude: f64,
+            pub latitude: f32,
+            pub longitude: f32,
             pub student_distance: f64,
         }
 
@@ -167,8 +167,8 @@ impl AutoSignResponse {
     pub fn radar_success(
         course_name: String,
         student_location: String,
-        latitude: f64,
-        longitude: f64,
+        latitude: f32,
+        longitude: f32,
         student_distance: f64,
     ) -> Self {
         Self::Radar(auto_sign_response::RadarSign::Success(
@@ -283,6 +283,7 @@ impl AutoSignRequest {
         &self,
         activity_id: i64,
         loc_src: Arc<LocationStore>,
+        random: bool,
     ) -> Result<AutoSignResponse> {
         let loc = loc_src
             .pos
@@ -291,28 +292,23 @@ impl AutoSignRequest {
         let course_info = CourseData::get(&self.session, self.course_id).await?;
         let user_info = Profile::get(&self.session).await?;
 
-        let lati = loc.latitude + uniform(-0.0003..0.0003);
-        let long = loc.longitude + uniform(-0.0003..0.0003);
-
-        let res = self
-            .client
-            .put_json(
-                format!(
-                    "https://lnt.xmu.edu.cn/api/rollcall/{activity_id}/answer?api_version=1.1.2",
-                ),
-                &json!({"deviceId": self.device_id,
-                        "latitude": lati,
-                        "longitude": long,
-                        "speed": Value::Null,
-                        "accuracy": 90,
-                        "altitude": Value::Null,
-                        "altitudeAccuracy": Value::Null,
-                        "heading": Value::Null}),
+        let (latitude, longitude) = if random {
+            (
+                loc.latitude + uniform(-0.0003..0.0003),
+                loc.longitude + uniform(-0.0003..0.0003),
             )
-            .await?;
+        } else {
+            (loc.latitude, loc.longitude)
+        };
 
-        let radar_data = res.json::<RadarSign>().await?;
-        let student_distance = radar_data.distance;
+        let student_distance = Self::radar_distance(
+            &self.client,
+            &self.device_id,
+            activity_id,
+            latitude,
+            longitude,
+        )
+        .await?;
 
         self.client
             .post_json(
@@ -363,7 +359,7 @@ impl AutoSignRequest {
                         "student_distance": student_distance,
                         "device_id": self.device_id,
                         "student_status": "on_call_fine",
-                        "location": {"lat": lati, "lon": long},}),
+                        "location": {"lat": latitude, "lon": longitude},}),
             )
             .await?;
 
@@ -384,7 +380,35 @@ impl AutoSignRequest {
 
     pub async fn radar_retry(&self, activity_id: i64) -> Result<AutoSignResponse> {
         let loc = SignData::location_retry(&self.client, activity_id, &self.device_id).await?;
-        self.radar(activity_id, loc).await
+        self.radar(activity_id, loc, true).await
+    }
+
+    pub async fn radar_distance(
+        client: &SessionClient,
+        device_id: &str,
+        activity_id: i64,
+        latitude: f32,
+        longitude: f32,
+    ) -> Result<f64> {
+        let accuracy = uniform(80.0..120.0);
+        let res = client
+            .put_json(
+                format!(
+                    "https://lnt.xmu.edu.cn/api/rollcall/{activity_id}/answer?api_version=1.76",
+                ),
+                &json!({"deviceId": device_id,
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        "speed": Value::Null,
+                        "accuracy": accuracy,
+                        "altitude": Value::Null,
+                        "altitudeAccuracy": Value::Null,
+                        "heading": Value::Null}),
+            )
+            .await?;
+
+        let radar_data = res.json::<RadarSign>().await?;
+        Ok(radar_data.distance)
     }
 
     pub async fn qr(&self, activity_id: i64, qrcode: &str) -> Result<AutoSignResponse> {
@@ -453,7 +477,7 @@ impl AutoSignRequest {
 
         let loc = loc.ok_or(anyhow!("获取时间表位置失败"))?.1.location.clone();
 
-        self.radar(activity_id, loc).await
+        self.radar(activity_id, loc, true).await
     }
 }
 
