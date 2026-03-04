@@ -79,6 +79,9 @@ jobs:
               run: |
                   T="${{ matrix.target }}"
                   echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
+                  # Reset CFLAGS/CXXFLAGS to avoid contamination between different matrix jobs
+                  echo "CFLAGS=" >> $GITHUB_ENV
+                  echo "CXXFLAGS=" >> $GITHUB_ENV
                   if [[ "$T" == "i686"* ]]; then
                     echo "CFLAGS=-m32" >> $GITHUB_ENV
                     echo "CXXFLAGS=-m32" >> $GITHUB_ENV
