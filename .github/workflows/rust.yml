@@ -133,6 +133,7 @@ jobs:
                     export CFLAGS_i686_unknown_linux_gnu="-m32 -msse2"
                     export CXXFLAGS_i686_unknown_linux_gnu="-m32 -msse2"
                     export LIBRARY_PATH="$HOME/deps/opencv/lib:$HOME/deps/ffmpeg/lib:$LIBRARY_PATH"
+                    export RUSTFLAGS="-C target-feature=+sse2"
                   elif [[ "$T" == "armv7"* ]]; then
                     cat <<EOF > .cargo/config.toml
                   [target.armv7-unknown-linux-gnueabihf]
@@ -150,11 +151,13 @@ jobs:
                     export CXXFLAGS_armv7_unknown_linux_gnueabihf="-mfloat-abi=hard -I/usr/arm-linux-gnueabihf/include"
                     export BINDGEN_EXTRA_CLANG_ARGS="-I/usr/include/arm-linux-gnueabihf"
                     export LIBRARY_PATH="$HOME/deps/opencv/lib:$HOME/deps/ffmpeg/lib:$LIBRARY_PATH"
+                    export RUSTFLAGS=""
+                  elif [[ "$T" == "x86_64"* ]]; then
+                    export RUSTFLAGS="-C link-arg=-fuse-ld=mold"
                   fi
 
                   cargo build --release --target ${{ matrix.target }} --verbose
               env:
-                  RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
                   OPENSSL_STATIC: 1
 
             - name: Rename artifact
