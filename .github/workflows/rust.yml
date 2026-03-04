@@ -83,8 +83,10 @@ jobs:
                   echo "CFLAGS=" >> $GITHUB_ENV
                   echo "CXXFLAGS=" >> $GITHUB_ENV
                   if [[ "$T" == "i686"* ]]; then
-                    echo "CFLAGS=-m32" >> $GITHUB_ENV
-                    echo "CXXFLAGS=-m32" >> $GITHUB_ENV
+                    echo "CC=gcc -m32" >> $GITHUB_ENV
+                    echo "CXX=g++ -m32" >> $GITHUB_ENV
+                    echo "CFLAGS=-m32 -msse2" >> $GITHUB_ENV
+                    echo "CXXFLAGS=-m32 -msse2" >> $GITHUB_ENV
                     echo "PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig" >> $GITHUB_ENV
                     echo "PKG_CONFIG_LIBDIR=/usr/lib/i386-linux-gnu/pkgconfig" >> $GITHUB_ENV
                   elif [[ "$T" == "armv7"* ]]; then
