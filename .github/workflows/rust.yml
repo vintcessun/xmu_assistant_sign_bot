@@ -75,32 +75,37 @@ jobs:
               with:
                   key: ${{ matrix.target }}
 
+            - name: Configure Environment
+              run: |
+                  T="${{ matrix.target }}"
+                  if [[ "$T" == "i686"* ]]; then
+                    echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
+                    echo "CC=gcc -m32" >> $GITHUB_ENV
+                    echo "CXX=g++ -m32" >> $GITHUB_ENV
+                    echo "CFLAGS=-m32 -msse2" >> $GITHUB_ENV
+                    echo "CXXFLAGS=-m32 -msse2" >> $GITHUB_ENV
+                    echo "PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig" >> $GITHUB_ENV
+                    echo "PKG_CONFIG_LIBDIR=/usr/lib/i386-linux-gnu/pkgconfig" >> $GITHUB_ENV
+                  elif [[ "$T" == "armv7"* ]]; then
+                    echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
+                    echo "CFLAGS=-mfloat-abi=hard" >> $GITHUB_ENV
+                    echo "CXXFLAGS=-mfloat-abi=hard" >> $GITHUB_ENV
+                    echo "PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig" >> $GITHUB_ENV
+                    echo "PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig" >> $GITHUB_ENV
+                  fi
+
             - name: Build release binary
               run: cargo build --release --target ${{ matrix.target }} --verbose
               env:
-                  PKG_CONFIG_ALLOW_CROSS: 1
-                  # Use per-target variables to avoid leakage
-                  CC: ${{ contains(matrix.target, 'i686') && 'gcc -m32' || 'gcc' }}
-                  CXX: ${{ contains(matrix.target, 'i686') && 'g++ -m32' || 'g++' }}
-                  CFLAGS: >-
-                      ${{ contains(matrix.target, 'i686') && '-m32 -msse2' || '' }}
-                      ${{ contains(matrix.target, 'armv7') && '-mfloat-abi=hard' || '' }}
-                  CXXFLAGS: >-
-                      ${{ contains(matrix.target, 'i686') && '-m32 -msse2' || '' }}
-                      ${{ contains(matrix.target, 'armv7') && '-mfloat-abi=hard' || '' }}
-                  PKG_CONFIG_PATH: >-
-                      ${{ contains(matrix.target, 'i686') && '/usr/lib/i386-linux-gnu/pkgconfig' || 
-                          (contains(matrix.target, 'armv7') && '/usr/lib/arm-linux-gnueabihf/pkgconfig' || '') }}
-                  PKG_CONFIG_LIBDIR: >-
-                      ${{ contains(matrix.target, 'i686') && '/usr/lib/i386-linux-gnu/pkgconfig' || 
-                          (contains(matrix.target, 'armv7') && '/usr/lib/arm-linux-gnueabihf/pkgconfig' || '') }}
-                  BINDGEN_EXTRA_CLANG_ARGS: >-
-                      ${{ contains(matrix.target, 'i686') && '-I/usr/include/i386-linux-gnu' || 
-                          (contains(matrix.target, 'armv7') && '-I/usr/include/arm-linux-gnueabihf' || '') }}
                   RUSTFLAGS: >-
                       -C link-arg=-fuse-ld=mold
                       ${{ contains(matrix.target, 'x86_64') && '-C target-cpu=x86-64-v3' || '' }}
+                      ${{ contains(matrix.target, 'i686') && '-C target-feature=+sse2' || '' }}
                   OPENSSL_STATIC: 1
+                  # Ensure bindgen can find headers for cross-arch
+                  BINDGEN_EXTRA_CLANG_ARGS: >-
+                      ${{ contains(matrix.target, 'i686') && '-I/usr/include/i386-linux-gnu' || '' }}
+                      ${{ contains(matrix.target, 'armv7') && '-I/usr/include/arm-linux-gnueabihf' || '' }}
 
             - name: Rename artifact
               shell: bash
