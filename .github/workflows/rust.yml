@@ -43,7 +43,7 @@ jobs:
                   if [[ "$T" == "i686"* ]]; then
                     sudo dpkg --add-architecture i386
                     sudo apt-get update
-                    sudo apt-get install -y --no-install-recommends aptitude cmake gcc-multilib g++-multilib libssl-dev:i386 pkg-config ninja-build yasm nasm binutils:i386
+                    sudo apt-get install -y --no-install-recommends aptitude cmake gcc-multilib g++-multilib libssl-dev:i386 pkg-config ninja-build yasm nasm
                     sudo aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' \
                       libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 libavdevice-dev:i386 \
                       libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386
