@@ -22,6 +22,7 @@ pub async fn push_sign(ctx: Context) -> Result<()> {
         .map_err(|e| anyhow!("无效的签到ID {e}"))?;
 
     let ret = push_sign_request(rollcall_id).await?;
+    ctx.send_message_async(from_str(format!("已完成对 {} 个账号的签到", ret.len())));
     for r in ret {
         ctx.send_message_async(from_str(format!(
             "QQ: {}\n{}",
