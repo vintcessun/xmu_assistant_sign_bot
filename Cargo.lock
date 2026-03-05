@@ -1523,6 +1523,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "geoutils"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "36d244a08113319b5ebcabad2b8b7925732d15eec46d7e7ac3c11734f3b7a6ad"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "get-size-derive2"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5651,6 +5660,7 @@ dependencies = [
  "futures",
  "futures-util",
  "genai",
+ "geoutils",
  "headless_chrome",
  "helper",
  "hnsw_rs",
