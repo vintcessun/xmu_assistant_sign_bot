@@ -92,6 +92,10 @@ impl LocationService {
         None
     }
 
+    pub fn get(&self, id: usize) -> Option<Arc<Location>> {
+        self.locations.get(id).cloned()
+    }
+
     /// 找到距离小于等于 distance_meter 米的位置
     pub fn find(
         &self,
