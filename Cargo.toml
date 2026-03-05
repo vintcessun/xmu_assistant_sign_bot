@@ -95,6 +95,7 @@ num-derive = "0.4.2"
 num-traits = "0.2.19"
 tokio-cron-scheduler = "0.15.1"
 volcengine-rs = "0.1.2"
+geoutils = { version = "0.5.1", features = ["serde"] }
 
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]

@@ -91,6 +91,28 @@ impl LocationService {
         }
         None
     }
+
+    /// 找到距离小于等于 distance_meter 米的位置
+    pub fn find(
+        &self,
+        latitude: f32,
+        longitude: f32,
+        distance_meter: f64,
+    ) -> Option<Arc<Location>> {
+        let local = geoutils::Location::new(latitude as f64, longitude as f64);
+        let mut ret = None;
+        let mut min_dis = f64::MAX;
+        for loc in &self.locations {
+            let check_loc = geoutils::Location::new(loc.latitude as f64, loc.longitude as f64);
+            if let Ok(dis) = local.distance_to(&check_loc)
+                && dis.meters() < min_dis
+            {
+                min_dis = dis.meters();
+                ret = Some(loc.clone());
+            }
+        }
+        if min_dis > distance_meter { None } else { ret }
+    }
 }
 
 impl IntoIterator for LocationService {

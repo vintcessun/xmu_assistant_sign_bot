@@ -84,7 +84,7 @@ jobs:
                   tar -xf ffmpeg-${FFMPEG_VER}.tar.bz2
                   cd ffmpeg-${FFMPEG_VER}
                   if [[ "$T" == "i686"* ]]; then
-                    ./configure --prefix=$HOME/deps/ffmpeg --extra-cflags="-m32" --extra-cxxflags="-m32" --extra-ldflags="-m32" --arch=i686 --target-os=linux --enable-pic --disable-debug --disable-doc --enable-gpl --enable-postproc --enable-static --disable-shared --disable-inline-asm --enable-x86asm
+                    ./configure --prefix=$HOME/deps/ffmpeg --extra-cflags="-m32 -fPIC" --extra-cxxflags="-m32 -fPIC" --extra-ldflags="-m32" --arch=i686 --target-os=linux --enable-pic --disable-debug --disable-doc --enable-gpl --enable-postproc --enable-static --disable-shared --disable-inline-asm --enable-x86asm
                   else
                     ./configure --prefix=$HOME/deps/ffmpeg --cross-prefix=arm-linux-gnueabihf- --arch=armel --target-os=linux --enable-pic --disable-debug --disable-doc --enable-gpl --enable-static --disable-shared --extra-cflags="-mfloat-abi=hard"
                   fi
@@ -121,7 +121,7 @@ jobs:
                     cat <<EOF > .cargo/config.toml
                   [target.i686-unknown-linux-gnu]
                   linker = "gcc"
-                  rustflags = ["-C", "link-arg=-m32", "-C", "target-feature=+sse2", "-L", "native=$HOME/deps/opencv/lib", "-L", "native=$HOME/deps/ffmpeg/lib", "-l", "avdevice", "-l", "avfilter", "-l", "avformat", "-l", "avcodec", "-l", "swresample", "-l", "swscale", "-l", "postproc", "-l", "avutil", "-l", "m", "-l", "pthread", "-l", "dl", "-l", "rt", "-l", "z"]
+                  rustflags = ["-C", "link-arg=-m32", "-C", "target-feature=+sse2", "-L", "native=$HOME/deps/opencv/lib", "-L", "native=$HOME/deps/ffmpeg/lib"]
                   EOF
                     export PKG_CONFIG_ALLOW_CROSS=1
                     export PKG_CONFIG_PATH="$HOME/deps/opencv/lib/pkgconfig:$HOME/deps/ffmpeg/lib/pkgconfig:/usr/lib/i386-linux-gnu/pkgconfig"
