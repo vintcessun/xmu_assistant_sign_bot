@@ -1,7 +1,9 @@
 mod api;
 mod auto_sign;
 mod auto_sign_data;
+mod auto_sign_request;
 mod data;
+mod location_utils;
 mod push_sign;
 mod qr_sign;
 mod qr_sign_parse;

@@ -1,7 +1,9 @@
 use super::data::LOGIN_DATA;
 use crate::api::network::SessionClient;
 use crate::api::xmu_service::lnt::get_session_client;
-use crate::logic::rollcall::auto_sign_data::{AutoSignRequest, AutoSignResponse};
+use crate::logic::rollcall::{
+    auto_sign_data::AutoSignResponse, auto_sign_request::AutoSignRequest,
+};
 use ahash::RandomState;
 use anyhow::{Result, anyhow};
 use dashmap::DashMap;

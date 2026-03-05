@@ -8,7 +8,7 @@ use crate::{
     },
     logic::{
         helper::get_client_or_err,
-        rollcall::auto_sign_data::{AutoSignRequest, AutoSignResponse},
+        rollcall::{auto_sign_data::AutoSignResponse, auto_sign_request::AutoSignRequest},
     },
 };
 use anyhow::{Result, anyhow};
@@ -76,17 +76,7 @@ pub async fn auto_sign_request_inner(
                 RollcallStatus::Absent => {
                     trace!(rollcall = ?rollcall, "处理当前雷达签到信息");
 
-                    match auto_sign_request
-                        .radar_timetable(rollcall.rollcall_id)
-                        .await
-                    {
-                        Ok(_) => {}
-                        Err(e) => {
-                            trace!(error = ?e, "雷达点名尝试使用课程时间表签到失败，开始尝试签到");
-                            let ret = auto_sign_request.radar_retry(rollcall.rollcall_id).await?;
-                            responses.push(ret);
-                        }
-                    }
+                    responses.push(auto_sign_request.radar(rollcall.rollcall_id).await?);
                 }
                 RollcallStatus::OnCallFine => {
                     trace!(rollcall=?rollcall,"当前雷达签到状态已签到");
