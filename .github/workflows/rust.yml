@@ -121,7 +121,7 @@ jobs:
                     cat <<EOF > .cargo/config.toml
                   [target.i686-unknown-linux-gnu]
                   linker = "gcc"
-                  rustflags = ["-C", "link-arg=-m32", "-C", "target-feature=+sse2", "-L", "native=$HOME/deps/opencv/lib", "-L", "native=$HOME/deps/ffmpeg/lib", "-l", "avdevice", "-l", "avfilter", "-l", "avformat", "-l", "avcodec", "-l", "postproc", "-l", "swresample", "-l", "swscale", "-l", "avutil", "-l", "m", "-l", "pthread", "-l", "dl", "-l", "rt", "-l", "z"]
+                  rustflags = ["-C", "link-arg=-m32", "-C", "target-feature=+sse2", "-L", "native=$HOME/deps/opencv/lib", "-L", "native=$HOME/deps/ffmpeg/lib", "-l", "avdevice", "-l", "avfilter", "-l", "avformat", "-l", "avcodec", "-l", "swresample", "-l", "swscale", "-l", "postproc", "-l", "avutil", "-l", "m", "-l", "pthread", "-l", "dl", "-l", "rt", "-l", "z"]
                   EOF
                     export PKG_CONFIG_ALLOW_CROSS=1
                     export PKG_CONFIG_PATH="$HOME/deps/opencv/lib/pkgconfig:$HOME/deps/ffmpeg/lib/pkgconfig:/usr/lib/i386-linux-gnu/pkgconfig"
