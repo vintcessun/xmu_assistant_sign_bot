@@ -8,11 +8,11 @@ pub static LOCATIONS: LazyLock<LocationService> = LazyLock::new(|| {
     LocationService::new([
         Location::new(Region::XiangAn, "学武", 118.313_79, 24.605_488),
         Location::new(Region::XiangAn, "西部片区2号", 118.299_904, 24.604_252),
+        Location::new(Region::XiangAn, "一期田径场", 118.318_87, 24.608_957),
         Location::new(Region::XiangAn, "西部片区4号", 118.300_186, 24.605_27),
         Location::new(Region::XiangAn, "文宣", 118.309_97, 24.605_28),
         Location::new(Region::XiangAn, "坤銮", 118.312_744, 24.605_589),
         Location::new(Region::XiangAn, "南存钿", 118.318_86, 24.604_958),
-        Location::new(Region::XiangAn, "一期田径场", 118.318_87, 24.608_957),
         Location::new(Region::XiangAn, "佘明培游泳馆", 118.311_92, 24.610_806),
         Location::new(Region::XiangAn, "爱秋体育馆", 118.310_51, 24.611_519),
         Location::new(Region::XiangAn, "一期篮球场", 118.317_24, 24.608_389),
