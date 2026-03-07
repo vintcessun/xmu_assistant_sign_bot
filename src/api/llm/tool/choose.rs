@@ -172,7 +172,7 @@ mod tests {
         }
         Ok(())
     }
-
+    
     #[tokio::test]
     async fn test_get_model_usage() -> Result<()> {
         let today_zero = chrono::Utc::now()

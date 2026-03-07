@@ -147,7 +147,6 @@ impl Display for AutoSignResponse {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy, Serialize, Deserialize)]
 pub enum RadarType {
-    OnceLookup,
     Retry,
     Timetable,
     Cache,
@@ -160,7 +159,6 @@ impl Display for RadarType {
             Self::Retry => write!(f, "多次尝试法"),
             Self::Timetable => write!(f, "课程表法"),
             Self::Cache => write!(f, "缓存法"),
-            Self::OnceLookup => write!(f, "单次尝试查表对比法"),
             Self::Triple => write!(f, "三点定位法"),
         }?;
         Ok(())

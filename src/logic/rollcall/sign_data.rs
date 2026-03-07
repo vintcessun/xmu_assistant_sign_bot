@@ -92,43 +92,6 @@ impl SignData {
         bail!("无法获取有效的位置信息，最近的距离为 {student_distance} 米");
     }
 
-    pub async fn location_lookup(
-        client: &SessionClient,
-        activity_id: i64,
-        device_id: &str,
-    ) -> Result<Arc<LocationStore>> {
-        let mut ret = None;
-        let mut min_dis = f64::MAX;
-        if let Some(loc) = LOCATIONS.get(0) {
-            let radar_distance = AutoSignRequest::radar_distance(
-                client,
-                device_id,
-                activity_id,
-                loc.latitude,
-                loc.longitude,
-            )
-            .await?;
-            let try_loc = geoutils::Location::new(loc.latitude as f64, loc.longitude as f64);
-            for e in &*LOCATIONS {
-                let this_loc = geoutils::Location::new(e.latitude as f64, e.longitude as f64);
-                if let Ok(dis) = try_loc.distance_to(&this_loc)
-                    && (dis.meters() - radar_distance).abs() < min_dis
-                {
-                    min_dis = dis.meters();
-                    ret = Some(e);
-                }
-            }
-        }
-        if let Some(loc) = ret
-            && min_dis < 100.0
-        {
-            let loc: LocationStore = loc.to_owned().into();
-            let loc = Arc::new(loc);
-            return Ok(loc);
-        }
-        bail!("无法获取有效的位置信息")
-    }
-
     pub async fn location_fix_triple(
         client: &SessionClient,
         activity_id: i64,
@@ -172,9 +135,19 @@ impl SignData {
         if let Some(loc) = ret
             && let Some(loc) = LOCATIONS.find(loc.lat, loc.lon, 100.0)
         {
+            let sign_dis = AutoSignRequest::radar_distance(
+                client,
+                device_id,
+                activity_id,
+                loc.latitude,
+                loc.longitude,
+            )
+            .await?;
             let loc: LocationStore = loc.to_owned().into();
             let loc = Arc::new(loc);
-            return Ok(loc);
+            if sign_dis < 100.0 {
+                return Ok(loc);
+            }
         }
         bail!("无法获取有效的位置信息");
     }

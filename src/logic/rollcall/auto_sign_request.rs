@@ -307,13 +307,6 @@ impl AutoSignRequest {
             .await
     }
 
-    async fn radar_once_lookup(&self, activity_id: i64) -> Result<AutoSignResponse> {
-        let loc = SignData::location_lookup(&self.client, activity_id, &self.device_id).await?;
-
-        self.radar_inner(activity_id, loc, true, RadarType::OnceLookup)
-            .await
-    }
-
     async fn radar_triple(&self, activity_id: i64) -> Result<AutoSignResponse> {
         let loc = SignData::location_fix_triple(&self.client, activity_id, &self.device_id).await?;
 
@@ -325,9 +318,6 @@ impl AutoSignRequest {
 impl AutoSignRequest {
     pub async fn radar(&self, activity_id: i64) -> Result<AutoSignResponse> {
         if let Ok(loc) = self.radar_timetable(activity_id).await {
-            return Ok(loc);
-        }
-        if let Ok(loc) = self.radar_once_lookup(activity_id).await {
             return Ok(loc);
         }
         if let Ok(loc) = self.radar_triple(activity_id).await {
