@@ -109,4 +109,19 @@ mod tests {
             "Decoded content should not be empty"
         );
     }
+
+    #[test]
+    fn test_complex_qrcode() {
+        let mut detector = QrCodeDetector::new().expect("Should be able to initialize detector");
+        let results = detector
+            .decode_from_file("./app_data/complex_qrcode.jpg")
+            .expect("Should be able to run decoding");
+
+        println!("Decoded results: {:?}", results);
+        assert!(!results.is_empty(), "Should detect at least one QR code");
+        assert!(
+            !results[0].is_empty(),
+            "Decoded content should not be empty"
+        );
+    }
 }

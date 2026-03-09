@@ -842,7 +842,7 @@ checksum = "4aa42bcd3d846ebf66e15bd528d1087f75d1c6c1c66ebff626178a106353c576"
 dependencies = [
  "chrono",
  "derive_builder",
- "strum",
+ "strum 0.27.2",
 ]
 
 [[package]]
@@ -1231,12 +1231,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "env_home"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7f84e12ccf0a7ddc17a6c41c93326024c42920d7ee630d04950e6926645c0fe"
-
-[[package]]
 name = "env_logger"
 version = "0.11.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1491,8 +1485,8 @@ dependencies = [
 
 [[package]]
 name = "genai"
-version = "0.6.0-beta.4-WIP"
-source = "git+https://github.com/jeremychone/rust-genai?branch=main#14d4cc8611dd21b155022a634db4ed3ab16ea14f"
+version = "0.6.0-beta.5-WIP"
+source = "git+https://github.com/jeremychone/rust-genai?branch=main#eda4289b16fad8c93101ee0ae386c7fa8ba412dc"
 dependencies = [
  "base64",
  "bytes",
@@ -1504,7 +1498,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "strum",
+ "strum 0.28.0",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -2311,9 +2305,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.182"
+version = "0.2.183"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6800badb6cb2082ffd7b6a67e6125bb39f18782f793520caee8cb8846be06112"
+checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
 
 [[package]]
 name = "libloading"
@@ -2356,7 +2350,7 @@ checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 [[package]]
 name = "llm_xml_caster"
 version = "0.1.0"
-source = "git+https://github.com/vintcessun/llm_xml_caster?branch=master#50ade72d4c516d30a1daa3a2448d58a009ed916f"
+source = "git+https://github.com/vintcessun/llm_xml_caster?branch=master#b42a26b4dc1d48ef84a4bf55fce13ab5a2922291"
 dependencies = [
  "const_format",
  "dashmap",
@@ -2373,7 +2367,7 @@ dependencies = [
 [[package]]
 name = "llm_xml_caster_helper"
 version = "0.1.0"
-source = "git+https://github.com/vintcessun/llm_xml_caster?branch=master#50ade72d4c516d30a1daa3a2448d58a009ed916f"
+source = "git+https://github.com/vintcessun/llm_xml_caster?branch=master#b42a26b4dc1d48ef84a4bf55fce13ab5a2922291"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2556,7 +2550,7 @@ dependencies = [
 [[package]]
 name = "monty"
 version = "0.0.7"
-source = "git+https://github.com/pydantic/monty?branch=main#4ee3fd7af58ab2388b805397e1d19b25f89f3a29"
+source = "git+https://github.com/pydantic/monty?branch=main#bf7c7ef4262055f2b55ab75bf1fe83d2ace674f2"
 dependencies = [
  "ahash",
  "fancy-regex",
@@ -2573,7 +2567,7 @@ dependencies = [
  "ruff_text_size",
  "serde",
  "smallvec",
- "strum",
+ "strum 0.27.2",
 ]
 
 [[package]]
@@ -3384,9 +3378,9 @@ dependencies = [
 
 [[package]]
 name = "redb"
-version = "3.1.0"
+version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae323eb086579a3769daa2c753bb96deb95993c534711e0dbe881b5192906a06"
+checksum = "ef99362319c782aa4639ad3a306b64c3bb90e12874e99b8df124cb679d988611"
 dependencies = [
  "libc",
 ]
@@ -4085,12 +4079,12 @@ dependencies = [
 
 [[package]]
 name = "socket2"
-version = "0.6.2"
+version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86f4aa3ad99f2088c990dfa82d367e19cb29268ed67c574d10d0a4bfe71f07e0"
+checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4167,7 +4161,16 @@ version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
 dependencies = [
- "strum_macros",
+ "strum_macros 0.27.2",
+]
+
+[[package]]
+name = "strum"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9628de9b8791db39ceda2b119bbe13134770b56c138ec1d3af810d045c04f9bd"
+dependencies = [
+ "strum_macros 0.28.0",
 ]
 
 [[package]]
@@ -4175,6 +4178,18 @@ name = "strum_macros"
 version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7695ce3845ea4b33927c055a39dc438a45b059f7c1b3d91d38d10355fb8cbca7"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -4780,9 +4795,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.21.0"
+version = "1.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b672338555252d43fd2240c714dc444b8c6fb0a5c5335e65a07bba7742735ddb"
+checksum = "a68d3c8f01c0cfa54a75291d83601161799e4a89a39e0929f4b0354d88757a37"
 dependencies = [
  "getrandom 0.4.2",
  "js-sys",
@@ -5060,13 +5075,11 @@ dependencies = [
 
 [[package]]
 name = "which"
-version = "8.0.0"
+version = "8.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3fabb953106c3c8eea8306e4393700d7657561cb43122571b172bbfb7c7ba1d"
+checksum = "81995fafaaaf6ae47a7d0cc83c67caf92aeb7e5331650ae6ff856f7c0c60c459"
 dependencies = [
- "env_home",
- "rustix",
- "winsafe",
+ "libc",
 ]
 
 [[package]]
@@ -5533,12 +5546,6 @@ dependencies = [
  "cfg-if",
  "windows-sys 0.59.0",
 ]
-
-[[package]]
-name = "winsafe"
-version = "0.0.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d135d17ab770252ad95e9a872d365cf3090e3be864a34ab46f48555993efc904"
 
 [[package]]
 name = "wit-bindgen"
