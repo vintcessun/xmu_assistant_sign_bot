@@ -47,7 +47,9 @@ pub async fn sign_request(qq: i64) -> Result<Vec<SignResponse>> {
 pub async fn sign_request_inner(qq: i64, client: Arc<SessionClient>) -> Result<Vec<SignResponse>> {
     let session_cookie = &LOGIN_DATA.get(&qq).ok_or(anyhow!("没找到登录信息"))?.lnt;
 
-    let all_courses = Rollcalls::get_from_client(&client).await?;
+    let all_courses = Rollcalls::get_from_client(&client)
+        .await
+        .map_err(|e| anyhow!("错误: {e} 登录状态可能失效"))?;
 
     let mut ret = Vec::with_capacity(all_courses.rollcalls.len());
 

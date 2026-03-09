@@ -1,4 +1,5 @@
 use super::data::LOGIN_DATA;
+use super::qr_sign_parse::QR_CLIENT_TASK;
 use crate::{
     api::{
         network::SessionClient,
@@ -118,6 +119,14 @@ impl AutoSignRequest {
             .await?;
 
         let sign_result = res.text().await?.replace(['\n', ' '], "");
+
+        if sign_result.len() > 100 && sign_result.contains("签到") {
+            match QR_CLIENT_TASK.force_update().await {
+                Ok(_) => {}
+                Err(e) => return Err(anyhow!("更新二维码签到任务失败: {}", e)),
+            }
+            return Err(anyhow!("登录状态失效"));
+        }
 
         Ok(AutoSignResponse::qr_success(
             course_info.name.clone(),

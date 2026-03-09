@@ -56,7 +56,9 @@ pub async fn spec_sign_request_inner(
     client: Arc<SessionClient>,
     rollcall_id: i64,
 ) -> Result<Vec<AutoSignResponse>> {
-    let rollcall_data = Rollcalls::get_from_client(&client).await?;
+    let rollcall_data = Rollcalls::get_from_client(&client)
+        .await
+        .map_err(|e| anyhow!("错误: {e} 登录状态可能失效"))?;
     let mut responses = Vec::with_capacity(rollcall_data.rollcalls.len());
     for rollcall in rollcall_data.rollcalls {
         if rollcall.rollcall_id != rollcall_id {

@@ -1,14 +1,18 @@
 use super::data::LOGIN_DATA;
 use crate::api::network::SessionClient;
+use crate::api::scheduler::{TaskRunner, TimeTask};
 use crate::api::xmu_service::lnt::get_session_client;
+use crate::api::xmu_service::lnt::profile::ProfileWithoutCache;
 use crate::logic::rollcall::{
     auto_sign_data::AutoSignResponse, auto_sign_request::AutoSignRequest,
 };
 use ahash::RandomState;
 use anyhow::{Result, anyhow};
+use async_trait::async_trait;
 use dashmap::DashMap;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
+use std::time::Duration;
 use tokio::task::block_in_place;
 use tracing::trace;
 use url::Url;
@@ -24,19 +28,48 @@ impl QrSignRequest {
     pub async fn get(qq: i64) -> Result<Arc<Self>> {
         if let Some(req) = QR_SIGN_CACHE.get(&qq) {
             trace!("从缓存中获取二维码签到请求");
-            Ok(req.clone())
-        } else {
-            trace!("缓存中未找到二维码签到请求，尝试创建新的请求");
-            let login_data = LOGIN_DATA
-                .get(&qq)
-                .ok_or(anyhow!("未找到登录数据，请先登录"))?;
-            let client = Arc::new(get_session_client(&login_data.lnt));
-            let req = Arc::new(QrSignRequest { qq, client });
-            QR_SIGN_CACHE.insert(qq, req.clone());
-            Ok(req)
+            return Ok(req.clone());
         }
+
+        trace!("缓存中未找到二维码签到请求，尝试创建新的请求");
+        let login_data = LOGIN_DATA
+            .get(&qq)
+            .ok_or(anyhow!("未找到登录数据，请先登录"))?;
+        let client = Arc::new(get_session_client(&login_data.lnt));
+        let req = Arc::new(QrSignRequest { qq, client });
+        QR_SIGN_CACHE.insert(qq, req.clone());
+        Ok(req)
     }
 }
+
+pub struct QrClientTask;
+
+#[async_trait]
+impl TimeTask for QrClientTask {
+    type Output = ();
+
+    fn interval(&self) -> Duration {
+        Duration::from_secs(10 * 60)
+    }
+
+    fn name(&self) -> &'static str {
+        "QrClientTask"
+    }
+
+    async fn run(&self) -> Result<Self::Output> {
+        for entry in QR_SIGN_CACHE.iter() {
+            let req = entry.value().clone();
+            if let Err(e) = ProfileWithoutCache::get_from_client(&req.client).await {
+                trace!("二维码签到请求的登录状态失效，移除缓存: {}", e);
+                QR_SIGN_CACHE.remove(&req.qq);
+            }
+        }
+        Ok(())
+    }
+}
+
+pub static QR_CLIENT_TASK: LazyLock<Arc<TaskRunner<QrClientTask>>> =
+    LazyLock::new(|| TaskRunner::new(QrClientTask));
 
 const TAG_LIST: [&str; 11] = [
     "courseId",
