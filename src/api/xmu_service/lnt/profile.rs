@@ -1,9 +1,10 @@
-use crate::{abi::utils::SmartJsonExt, api::xmu_service::lnt::get_session_client};
+use crate::abi::utils::SmartJsonExt;
 use ahash::RandomState;
 use anyhow::Result;
 use dashmap::DashMap;
 use serde::Deserialize;
 //use serde::de::IgnoredAny;
+use helper::lnt_get_api;
 use std::sync::{Arc, LazyLock};
 
 #[derive(Deserialize, Debug)]
@@ -61,6 +62,9 @@ pub struct ProfileResponse {
     //pub webex_auth: IgnoredAny,
 }
 
+#[lnt_get_api(ProfileResponse, "https://lnt.xmu.edu.cn/api/profile")]
+pub struct ProfileWithoutCache;
+
 static PROFILE: LazyLock<ProfileStruct> = LazyLock::new(ProfileStruct::new);
 
 pub struct ProfileStruct {
@@ -85,10 +89,7 @@ impl ProfileStruct {
             return Ok((*entry.value()).clone());
         }
 
-        let client = get_session_client(session);
-
-        let res = client.get("https://lnt.xmu.edu.cn/api/profile").await?;
-        let user_info = res.json_smart::<ProfileResponse>().await?;
+        let user_info = ProfileWithoutCache::get(session).await?;
         let user_info = Arc::new(user_info);
 
         self.profile_data
@@ -135,6 +136,15 @@ mod tests {
         println!("Profile: {:?}", profile);
         let check_result = Profile::check(&session).await;
         println!("Check Result: {}", check_result);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_no_cache() -> Result<()> {
+        let castgc = "TGT-3154081-z-6MPScC0VhX-By3-gpG2wXuI4ix7KILP96lGe7Jb9GUDDoEz9g-0IEsfTrDtAU9rBInull_main";
+        let session = castgc_get_session(castgc).await?;
+        let profile = ProfileWithoutCache::get(&session).await?;
+        println!("Profile: {:?}", profile);
         Ok(())
     }
 }
