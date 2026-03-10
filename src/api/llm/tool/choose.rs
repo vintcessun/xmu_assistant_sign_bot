@@ -30,7 +30,7 @@ impl TimeTask for UsageTask {
     }
 }
 
-const ALL_MODEL: [&str; 16] = [
+const ALL_MODEL: [&str; 20] = [
     "ep-20260225003643-2w6k5",
     "ep-20260225232137-4rlsz",
     "ep-20260227171140-2c4bc",
@@ -47,6 +47,10 @@ const ALL_MODEL: [&str; 16] = [
     "ep-20260227180130-l9bs6",
     "ep-20260227180228-4m625",
     "ep-20260227181008-5kd4s",
+    "ep-20260310195544-5c4d6",
+    "ep-20260310195826-75hfq",
+    "ep-20260310195926-b54k5",
+    "ep-20260310200006-x4mdw",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,7 +139,7 @@ pub async fn get_top_k_model() -> Result<Vec<ModelInfo>> {
     debug!(models = ?ret, "所有模型使用量");
     let ret = ret
         .into_iter()
-        .filter(|x| x.usage < 2_000_000)
+        .filter(|x| x.usage < 1_800_000)
         .collect::<Vec<_>>();
     Ok(ret)
 }
