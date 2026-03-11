@@ -17,7 +17,7 @@ impl TimeTask for UsageTask {
     type Output = Vec<&'static str>;
 
     fn interval(&self) -> Duration {
-        Duration::from_secs(120)
+        Duration::from_secs(20)
     }
 
     fn name(&self) -> &'static str {
