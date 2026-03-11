@@ -30,11 +30,15 @@ pub async fn spec_sign(ctx: Context) -> Result<()> {
 
     let rollcall_id = ctx
         .get_message_text()
-        .trim()
+        .chars()
+        .filter(|c| c.is_ascii_digit())
+        .collect::<String>()
         .parse::<i64>()
         .map_err(|e| anyhow!("无效的签到ID {e}"))?;
 
     let ret = spec_sign_request_inner(qq, client, rollcall_id).await?;
+
+    ctx.send_message_async(from_str(format!("签到完成，{} 门课程", ret.len())));
 
     for e in ret {
         ctx.send_message_async(from_str(format!("{}", e)));
