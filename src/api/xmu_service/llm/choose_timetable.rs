@@ -1,7 +1,10 @@
 use crate::api::{
     llm::tool::ask_as,
     network::SessionClient,
-    xmu_service::jw::{Schedule, ScheduleList},
+    xmu_service::{
+        jw::{Schedule, ScheduleList},
+        time::get_today,
+    },
 };
 use anyhow::Result;
 use genai::chat::{ChatMessage, MessageContent};
@@ -14,14 +17,11 @@ use serde::{Deserialize, Serialize};
 pub struct TimetableChoiceResponseLlm {
     #[prompt("应该返回选择学期的学年学期代码在提供的数据中")]
     pub semester: String,
-    #[prompt("选择周数，从 1 开始计数")]
-    pub week: u64,
 }
 
 const TIMETABLE_CHOICE_RESPONSE_VALID_EXAMPLE: &str = r#"
 <TimetableChoiceResponseLlm>
     <semester>2023-2024-1</semester>
-    <week>9</week>
 </TimetableChoiceResponseLlm>"#;
 
 #[cfg(test)]
@@ -33,7 +33,6 @@ fn test_timetable_choice_response_valid_example() {
         parsed,
         TimetableChoiceResponseLlm {
             semester: "2023-2024-1".to_string(),
-            week: 9
         }
     );
 }
@@ -58,6 +57,7 @@ impl ChooseTimetable {
         prompt: P,
     ) -> Result<(Schedule, u64)> {
         let schedule_list = ScheduleList::get_from_client(client).await?;
+        let (week, _) = get_today();
 
         let messages = [vec![
             ChatMessage::system(
@@ -82,9 +82,10 @@ impl ChooseTimetable {
 
         let schedule = Schedule::get_by_code_from_client(client, &semester_code).await?;
 
-        Ok((schedule, response.week))
+        Ok((schedule, week as u64))
     }
 }
+
 #[cfg(test)]
 mod tests {
     use crate::api::xmu_service::jw::get_castgc_client;
