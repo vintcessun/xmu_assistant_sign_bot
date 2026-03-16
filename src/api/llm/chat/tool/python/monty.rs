@@ -27,17 +27,14 @@ pub async fn run_python_code(request: PythonExecRequest) -> Result<String> {
         #[cfg(test)]
         println!("运行代码: \n{}", code_clean);
         let runner = MontyRun::new(code_clean.to_string(), script_name_clean, input_names)?;
-        let mut collect = PrintWriter::Collect(String::with_capacity(128));
+        let mut collect_str = String::with_capacity(128);
+        let collect = PrintWriter::Collect(&mut collect_str);
         let result = runner.run(
             input_values,
             LimitedTracker::new(ResourceLimits::new().max_duration(Duration::from_mins(20))),
-            &mut collect,
+            collect,
         )?;
-        Ok(format!(
-            "stdout:\n{}\n返回值:\n{}",
-            collect.collected_output().unwrap_or_default(),
-            result
-        ))
+        Ok(format!("stdout:\n{}\n返回值:\n{}", collect_str, result))
     })
 }
 
@@ -62,7 +59,7 @@ fib(x)
             .run(
                 vec![MontyObject::Int(10)],
                 NoLimitTracker,
-                &mut PrintWriter::Stdout,
+                PrintWriter::Stdout,
             )
             .unwrap();
         println!("捕获到的结果: {}", result);
@@ -81,7 +78,7 @@ fib(x)
             .run(
                 vec![MontyObject::Int(41)],
                 NoLimitTracker,
-                &mut PrintWriter::Stdout,
+                PrintWriter::Stdout,
             )
             .unwrap();
         println!("捕获到的结果: {:?}", result);
@@ -106,7 +103,7 @@ add(x, y)
             .run(
                 vec![MontyObject::Int(10), MontyObject::Int(20)],
                 NoLimitTracker,
-                &mut PrintWriter::Stdout,
+                PrintWriter::Stdout,
             )
             .unwrap();
         println!("捕获到的结果: {:?}", result);
@@ -119,7 +116,7 @@ add(x, y)
                     MontyObject::String("world!".to_owned()),
                 ],
                 NoLimitTracker,
-                &mut PrintWriter::Stdout,
+                PrintWriter::Stdout,
             )
             .unwrap();
         println!("捕获到的结果: {:?}", result);
@@ -143,7 +140,7 @@ div(x, y)
         let result = runner.run(
             vec![MontyObject::Int(10), MontyObject::Int(0)],
             NoLimitTracker,
-            &mut PrintWriter::Stdout,
+            PrintWriter::Stdout,
         );
         println!("捕获到的结果: {:?}", result);
         assert!(result.is_err());
@@ -151,7 +148,7 @@ div(x, y)
 
     #[test]
     fn test_json_parse() {
-        // 到2026.2.10为止 monty 仍然没有支持 json 的功能
+        // 到2026.3.16为止 monty 仍然没有支持 json 的功能
         let code = r#"
 import json
 def parse_json(s):
@@ -165,7 +162,7 @@ parse_json(x)
                 r#"{"key": "value", "num": 42}"#.to_owned(),
             )],
             NoLimitTracker,
-            &mut PrintWriter::Stdout,
+            PrintWriter::Stdout,
         );
         println!("捕获到的结果: {:?}", result);
         assert!(result.is_err());
@@ -173,7 +170,8 @@ parse_json(x)
 
     #[test]
     fn test_stdout() {
-        let mut collect = PrintWriter::Collect(String::new());
+        let mut collect_str = String::new();
+        let collect = PrintWriter::Collect(&mut collect_str);
         let code = r#"
 def fib(n):
     if n <= 1:
@@ -185,17 +183,11 @@ print("Fibonacci result is:", result)
 "#;
         let runner = MontyRun::new(code.to_owned(), "fib.py", vec!["x".to_owned()]).unwrap();
         let result = runner
-            .run(vec![MontyObject::Int(10)], NoLimitTracker, &mut collect)
+            .run(vec![MontyObject::Int(10)], NoLimitTracker, collect)
             .unwrap();
         println!("捕获到的结果: {}", result);
-        println!(
-            "捕获到的输出: {}",
-            collect.collected_output().unwrap_or_default()
-        );
+        println!("捕获到的输出: {}", collect_str);
         assert_eq!(result, MontyObject::None);
-        assert_eq!(
-            collect.collected_output().unwrap_or_default().trim(),
-            "Fibonacci result is: 55"
-        );
+        assert_eq!(collect_str.trim(), "Fibonacci result is: 55");
     }
 }
