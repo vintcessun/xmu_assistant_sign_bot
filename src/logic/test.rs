@@ -107,15 +107,7 @@ help_msg=r#"用法:/testans <ID>
 功能: 查询小测的答案，如果老师有公布的话"#)]
 pub async fn test_ans(ctx: Context) -> Result<()> {
     let client = get_client_or_err(&ctx).await?;
-    let id_text = ctx
-        .get_message_text()
-        .chars()
-        .filter(|c| c.is_ascii_digit())
-        .collect::<String>();
-    let id = id_text.parse::<i64>().map_err(|e| {
-        warn!(input = id_text, error = ?e, "无效的小测 ID");
-        anyhow!("不是有效的ID: {}\n可以通过/test 获取ID", e)
-    })?;
+    let id = ctx.get_message_number::<i64>()?;
     debug!(quiz_id = id, "成功解析小测 ID");
 
     debug!(quiz_id = id, "开始获取小测答案 Submissions 数据");

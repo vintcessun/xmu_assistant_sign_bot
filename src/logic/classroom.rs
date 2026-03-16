@@ -11,7 +11,7 @@ use crate::{
     web::md::task::MdTask,
 };
 use anyhow::anyhow;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, trace, warn};
 
 #[handler(msg_type=Message,command="class",echo_cmd=true,
 help_msg=r#"用法:/class <描述>
@@ -63,14 +63,7 @@ help_msg=r#"用法:/getclass <ID>
 功能: 查询指定课堂互动小测的内容"#)]
 pub async fn get_class(ctx: Context) -> Result<()> {
     let client = get_client_or_err(&ctx).await?;
-    let id_text = ctx
-        .get_message_text()
-        .split_whitespace()
-        .collect::<String>();
-    let id = id_text.parse::<i64>().map_err(|e| {
-        error!(input = id_text, error = ?e, "无效的课堂互动 ID");
-        anyhow!("不是有效的ID: {}\n可以通过/class 获取ID", e)
-    })?;
+    let id = ctx.get_message_number::<i64>()?;
     debug!(class_id = id, "成功解析课堂互动 ID");
 
     debug!(class_id = id, "开始获取课堂互动内容 ClassroomSubject 数据");

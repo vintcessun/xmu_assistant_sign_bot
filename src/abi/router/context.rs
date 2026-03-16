@@ -9,6 +9,7 @@ use crate::abi::network::BotClient;
 use crate::abi::websocket::BotHandler;
 use anyhow::Result;
 use std::fmt;
+use std::str::FromStr;
 use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
 
@@ -161,6 +162,15 @@ impl<
 
     pub fn get_message_text(&self) -> &str {
         &self.message_text
+    }
+
+    pub fn get_message_number<N: FromStr>(&self) -> Result<N> {
+        self.message_text
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .collect::<String>()
+            .parse()
+            .map_err(|_| anyhow::anyhow!("无法解析消息中的数字"))
     }
 
     pub fn get_target(&self) -> Target {
