@@ -39,6 +39,8 @@ pub async fn sign_time(ctx: Context) -> Result<()> {
         course_time.times.len()
     )));
 
+    ctx.send_message_async(from_str("定时签到已开启"));
+
     Ok(())
 }
 

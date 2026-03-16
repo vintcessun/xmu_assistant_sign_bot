@@ -28,13 +28,7 @@ pub async fn spec_sign(ctx: Context) -> Result<()> {
         .user_id
         .ok_or(anyhow!("获取用户ID失败"))?;
 
-    let rollcall_id = ctx
-        .get_message_text()
-        .chars()
-        .filter(|c| c.is_ascii_digit())
-        .collect::<String>()
-        .parse::<i64>()
-        .map_err(|e| anyhow!("无效的签到ID {e}"))?;
+    let rollcall_id = ctx.get_message_number::<i64>()?;
 
     let ret = spec_sign_request_inner(qq, client, rollcall_id).await?;
 

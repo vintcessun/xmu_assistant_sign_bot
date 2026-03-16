@@ -4,7 +4,7 @@ use crate::{
     abi::{logic_import::*, message::from_str},
     logic::rollcall::{auto_sign_data::AutoSignResponse, spec_sign_request},
 };
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 #[handler(msg_type=Message,command="pushsign",echo_cmd=true,
@@ -13,13 +13,7 @@ help_msg=r#"用法:/pushsign <ID>
 注: 签到功能和/autosign相同
 功能:自动对所有已登录用户指定课程签到数字和雷达"#)]
 pub async fn push_sign(ctx: Context) -> Result<()> {
-    let rollcall_id = ctx
-        .get_message_text()
-        .chars()
-        .filter(|c| c.is_ascii_digit())
-        .collect::<String>()
-        .parse::<i64>()
-        .map_err(|e| anyhow!("无效的签到ID {e}"))?;
+    let rollcall_id = ctx.get_message_number::<i64>()?;
 
     let ret = push_sign_request(rollcall_id).await?;
     ctx.send_message_async(from_str(format!("已完成对 {} 个账号的签到", ret.len())));
