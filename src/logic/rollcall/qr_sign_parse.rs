@@ -1,18 +1,14 @@
 use super::data::LOGIN_DATA;
 use crate::api::network::SessionClient;
-use crate::api::scheduler::{TaskRunner, TimeTask};
 use crate::api::xmu_service::lnt::get_session_client;
-use crate::api::xmu_service::lnt::profile::ProfileWithoutCache;
 use crate::logic::rollcall::{
     auto_sign_data::AutoSignResponse, auto_sign_request::AutoSignRequest,
 };
 use ahash::RandomState;
 use anyhow::{Result, anyhow};
-use async_trait::async_trait;
 use dashmap::DashMap;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
-use std::time::Duration;
 use tokio::task::block_in_place;
 use tracing::trace;
 use url::Url;
@@ -40,36 +36,11 @@ impl QrSignRequest {
         QR_SIGN_CACHE.insert(qq, req.clone());
         Ok(req)
     }
-}
 
-pub struct QrClientTask;
-
-#[async_trait]
-impl TimeTask for QrClientTask {
-    type Output = ();
-
-    fn interval(&self) -> Duration {
-        Duration::from_secs(10 * 60)
-    }
-
-    fn name(&self) -> &'static str {
-        "QrClientTask"
-    }
-
-    async fn run(&self) -> Result<Self::Output> {
-        for entry in QR_SIGN_CACHE.iter() {
-            let req = entry.value().clone();
-            if let Err(e) = ProfileWithoutCache::get_from_client(&req.client).await {
-                trace!("二维码签到请求的登录状态失效，移除缓存: {}", e);
-                QR_SIGN_CACHE.remove(&req.qq);
-            }
-        }
-        Ok(())
+    pub fn remove(qq: i64) {
+        QR_SIGN_CACHE.remove(&qq);
     }
 }
-
-pub static QR_CLIENT_TASK: LazyLock<Arc<TaskRunner<QrClientTask>>> =
-    LazyLock::new(|| TaskRunner::new(QrClientTask));
 
 const TAG_LIST: [&str; 11] = [
     "courseId",

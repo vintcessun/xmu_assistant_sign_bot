@@ -17,7 +17,7 @@ use crate::{
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 #[handler(msg_type=Message)]
 pub async fn qr_sign(ctx: Context) -> Result<()> {
@@ -99,9 +99,24 @@ pub async fn qr_sign_request(data: &str) -> Result<Vec<QrSignResponse>> {
         let parsed_ref = &parsed;
         let qq = *val.key();
         task.push(async move {
-            let req = QrSignRequest::get(qq).await?;
-            let res = req.request(parsed_ref).await?;
-            Ok::<QrSignResponse, anyhow::Error>(QrSignResponse { qq, response: res })
+            let mut err = Err(anyhow::anyhow!("未知错误"));
+            for _ in 0..3 {
+                match async move {
+                    let req = QrSignRequest::get(qq).await?;
+                    let res = req.request(parsed_ref).await?;
+                    Ok::<QrSignResponse, anyhow::Error>(QrSignResponse { qq, response: res })
+                }
+                .await
+                {
+                    Ok(r) => return Ok(r),
+                    Err(e) => {
+                        QrSignRequest::remove(qq);
+                        debug!(qq, error = ?e, "二维码签到请求失败");
+                        err = Err(e);
+                    }
+                }
+            }
+            err
         });
     }
     let ret = futures::future::join_all(task).await;

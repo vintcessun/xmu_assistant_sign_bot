@@ -1,6 +1,6 @@
 use super::data::LOGIN_DATA;
-use super::qr_sign_parse::QR_CLIENT_TASK;
 use crate::{
+    abi::utils::SmartJsonExt,
     api::{
         network::SessionClient,
         xmu_service::{
@@ -9,7 +9,9 @@ use crate::{
         },
     },
     logic::rollcall::{
-        auto_sign_data::{AutoSignResponse, RadarType},
+        auto_sign_data::{
+            AutoSignResponse, RadarType, auto_sign_response::qr::QRSignSuccessResult,
+        },
         data::TIMETABLE_DATA,
         sign_data::{RadarSign, SignData},
         utils::{generate_uuid, get_ts, string_similarity, uniform},
@@ -118,15 +120,7 @@ impl AutoSignRequest {
             )
             .await?;
 
-        let sign_result = res.text().await?.replace(['\n', ' '], "");
-
-        if sign_result.len() > 100 && sign_result.contains("签到") {
-            match QR_CLIENT_TASK.force_update().await {
-                Ok(_) => {}
-                Err(e) => return Err(anyhow!("更新二维码签到任务失败: {}", e)),
-            }
-            return Err(anyhow!("登录状态失效"));
-        }
+        let sign_result = res.json_smart::<QRSignSuccessResult>().await?;
 
         Ok(AutoSignResponse::qr_success(
             course_info.name.clone(),

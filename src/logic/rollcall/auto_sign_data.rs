@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
+use crate::logic::rollcall::auto_sign_data::auto_sign_response::qr::QRSignSuccessResult;
+
 pub mod auto_sign_response {
     use super::*;
 
@@ -65,7 +67,68 @@ pub mod auto_sign_response {
         #[derive(Serialize, Deserialize, Debug, Clone)]
         pub struct Success {
             pub course_name: String,
-            pub sign_result: String,
+            pub sign_result: QRSignSuccessResult,
+        }
+
+        impl Display for QRSignSuccessResult {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    QRSignSuccessResult::Success(data) => match &data.status {
+                        QRSignOkStatus::OnCall => {
+                            write!(f, "签到成功，签到id为: {}", data.id)
+                        }
+                    },
+                    QRSignSuccessResult::Failed(data) => match &data.error_code {
+                        QRSignErrCode::RollcallAlreadyClosed => {
+                            write!(f, "签到已结束")
+                        }
+                        QRSignErrCode::QRCodeExpired => {
+                            write!(f, "二维码已过期")
+                        }
+                    },
+                }
+            }
+        }
+
+        #[derive(Serialize, Deserialize, Debug, Clone)]
+        #[serde(untagged)]
+        pub enum QRSignSuccessResult {
+            Success(QRSignOk),
+            Failed(QRSignErr),
+        }
+
+        #[derive(Serialize, Deserialize, Debug, Clone)]
+        pub struct QRSignOk {
+            pub id: i64,
+            pub status: QRSignOkStatus,
+        }
+
+        #[derive(Serialize, Deserialize, Debug, Clone)]
+        #[serde(rename_all = "snake_case")]
+        pub enum QRSignOkStatus {
+            OnCall,
+        }
+
+        #[derive(Serialize, Deserialize, Debug, Clone)]
+        pub struct QRSignErr {
+            pub error_code: QRSignErrCode,
+            pub message: QRSignErrMsg,
+        }
+
+        #[derive(Serialize, Deserialize, Debug, Clone)]
+        pub enum QRSignErrCode {
+            #[serde(rename = "rollcall_already_closed")]
+            RollcallAlreadyClosed,
+            #[serde(rename = "qr_code_expired")]
+            QRCodeExpired,
+        }
+
+        #[derive(Serialize, Deserialize, Debug, Clone)]
+        pub enum QRSignErrMsg {
+            #[serde(rename = "rollcall_already_closed")]
+            RollcallAlreadyClosed,
+            #[serde(rename = "QR_code_expired")]
+            QRCodeExpired,
         }
 
         #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -207,7 +270,7 @@ impl AutoSignResponse {
         ))
     }
 
-    pub fn qr_success(course_name: String, sign_result: String) -> Self {
+    pub fn qr_success(course_name: String, sign_result: QRSignSuccessResult) -> Self {
         Self::Qr(auto_sign_response::QRSign::Success(
             auto_sign_response::qr::Success {
                 course_name,
