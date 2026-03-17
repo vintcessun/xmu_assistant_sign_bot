@@ -90,6 +90,31 @@ pub mod auto_sign_response {
             }
         }
 
+        #[cfg(test)]
+        mod tests {
+            #[test]
+            pub fn parse_ok() {
+                let json = r#"{"id":16686807,"status":"on_call"}"#;
+                let res: super::QRSignSuccessResult = serde_json::from_str(json).unwrap();
+                println!("解析结果: {:?}", res);
+            }
+
+            #[test]
+            pub fn parse_err_expired() {
+                let json = r#"{"error_code":"qr_code_expired","message":"QR_code_expired"}"#;
+                let res: super::QRSignSuccessResult = serde_json::from_str(json).unwrap();
+                println!("解析结果: {:?}", res);
+            }
+
+            #[test]
+            pub fn parse_err_closed() {
+                let json =
+                    r#"{"error_code":"rollcall_already_closed","message":"rollcall_closed"}"#;
+                let res: super::QRSignSuccessResult = serde_json::from_str(json).unwrap();
+                println!("解析结果: {:?}", res);
+            }
+        }
+
         #[derive(Serialize, Deserialize, Debug, Clone)]
         #[serde(untagged)]
         pub enum QRSignSuccessResult {
@@ -125,7 +150,7 @@ pub mod auto_sign_response {
 
         #[derive(Serialize, Deserialize, Debug, Clone)]
         pub enum QRSignErrMsg {
-            #[serde(rename = "rollcall_already_closed")]
+            #[serde(rename = "rollcall_closed")]
             RollcallAlreadyClosed,
             #[serde(rename = "QR_code_expired")]
             QRCodeExpired,
