@@ -139,7 +139,7 @@ pub async fn get_top_k_model() -> Result<Vec<ModelInfo>> {
     debug!(models = ?ret, "所有模型使用量");
     let ret = ret
         .into_iter()
-        .filter(|x| x.usage < 1500000)
+        .filter(|x| x.usage < 1000000)
         .collect::<Vec<_>>();
     Ok(ret)
 }
