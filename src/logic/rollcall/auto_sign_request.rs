@@ -22,6 +22,7 @@ use dashmap::DashMap;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::sync::LazyLock;
+use tracing::trace;
 
 pub struct AutoSignRequest {
     pub device_id: String,
@@ -213,6 +214,11 @@ impl AutoSignRequest {
             longitude,
         )
         .await?;
+
+        if student_distance > 300.0 {
+            trace!(distance = student_distance, "签到距离较远，可能签到失败");
+            bail!("签到失败，距离过远，距离: {student_distance} 米");
+        }
 
         self.client
             .post_json(

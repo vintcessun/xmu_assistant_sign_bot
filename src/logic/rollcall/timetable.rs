@@ -53,6 +53,7 @@ pub async fn del_sign_time(ctx: Context) -> Result<()> {
 
     TIMETABLE_GROUP.remove(&id)?;
     TIME_SIGN_TASK.force_update().await?;
+    DATA.remove(&id)?;
 
     ctx.send_message_async(from_str("课程时间表已删除"));
 
