@@ -3,7 +3,7 @@ use crate::abi::message::MessageSend;
 use crate::api::xmu_service::jw::{UserInfo, Zzy, ZzyProfile};
 use crate::api::xmu_service::lnt::Profile;
 use crate::api::xmu_service::login::{
-    LoginData, LoginRequest, get_qrcode_id, request_qrcode, request_qrcode_castgc, wait_qrcode,
+    LoginData, LoginRequest, get_qrcode_id, request_qrcode, wait_qrcode,
 };
 use crate::{abi::logic_import::*, api::network::SessionClient};
 use anyhow::Result;
@@ -163,9 +163,10 @@ pub async fn process_login_castgc<T: BotClient + BotHandler + fmt::Debug>(
     }
 
     let client = SessionClient::new();
-    let login_data = send_msg_and_wait(ctx, &client, id).await?;
 
-    request_qrcode_castgc(&client, login_data).await?;
+    let data = send_msg_and_wait(ctx, &client, id).await?;
+
+    update_and_login(&client, data, id).await?;
 
     Ok(client)
 }
