@@ -4,6 +4,8 @@ use crate::abi::logic_import::*;
 use crate::abi::message::MessageSend;
 use crate::abi::message::api::SendGroupMessageParams;
 use crate::abi::network::BotClient;
+use crate::api::xmu_service::lnt::Profile;
+use crate::logic::login::DATA as LOGIN_DATA;
 use crate::logic::rollcall::auto_sign_data::AutoSignResponse;
 use crate::logic::rollcall::auto_sign_data::auto_sign_response::{NumberSign, QRSign, RadarSign};
 use crate::logic::rollcall::data::TIMETABLE_GROUP;
@@ -42,10 +44,16 @@ impl TimeTask for TimeSignTask {
     }
 }
 
-pub struct TimeSignUpdateResponse {
-    pub qq: i64,
-    pub group_id: i64,
-    pub response: Vec<AutoSignResponse>,
+pub enum TimeSignUpdateResponse {
+    Success {
+        qq: i64,
+        group_id: i64,
+        response: Vec<AutoSignResponse>,
+    },
+    NotLogin {
+        qq: i64,
+        group_id: i64,
+    },
 }
 
 async fn time_sign_task() -> Result<()> {
@@ -59,6 +67,23 @@ async fn time_sign_task() -> Result<()> {
             let time_val = entry.value();
             if time_val.is_active(ClockTime::now()) {
                 tasks.push(async move {
+                    match LOGIN_DATA.get(&qq) {
+                        Some(e) => {
+                            if !Profile::check(&e.lnt).await {
+                                return Ok(TimeSignUpdateResponse::NotLogin {
+                                    qq,
+                                    group_id: *group_id,
+                                });
+                            }
+                        }
+
+                        None => {
+                            return Ok(TimeSignUpdateResponse::NotLogin {
+                                qq,
+                                group_id: *group_id,
+                            });
+                        }
+                    }
                     let mut ret = vec![];
                     let sign_data = sign_request(qq).await?;
                     for data in &sign_data {
@@ -81,7 +106,7 @@ async fn time_sign_task() -> Result<()> {
                             }
                         })
                         .collect::<Vec<_>>();
-                    Ok::<TimeSignUpdateResponse, anyhow::Error>(TimeSignUpdateResponse {
+                    Ok::<TimeSignUpdateResponse, anyhow::Error>(TimeSignUpdateResponse::Success {
                         qq,
                         group_id: *group_id,
                         response,
@@ -100,27 +125,52 @@ async fn time_sign_task() -> Result<()> {
     let mut tasks = Vec::with_capacity(ret.len());
 
     for r in ret {
-        if r.response.is_empty() {
-            continue;
-        }
+        let (qq, group_id, params) = match r {
+            TimeSignUpdateResponse::Success {
+                qq,
+                group_id,
+                response,
+            } => {
+                if response.is_empty() {
+                    continue;
+                }
 
-        let params = SendGroupMessageParams {
-            group_id: r.group_id,
-            message: Arc::new(
-                MessageSend::new_message()
-                    .at(r.qq.to_string())
-                    .text(format!(
-                        "定时签到结果:\n{}",
-                        r.response
-                            .iter()
-                            .map(|r| format!("{}\n", r))
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    ))
-                    .build(),
+                (
+                    qq,
+                    group_id,
+                    SendGroupMessageParams {
+                        group_id,
+                        message: Arc::new(
+                            MessageSend::new_message()
+                                .at(qq.to_string())
+                                .text(format!(
+                                    "定时签到结果:\n{}",
+                                    response
+                                        .iter()
+                                        .map(|r| format!("{}\n", r))
+                                        .collect::<Vec<_>>()
+                                        .join("\n")
+                                ))
+                                .build(),
+                        ),
+                    },
+                )
+            }
+            TimeSignUpdateResponse::NotLogin { qq, group_id } => (
+                qq,
+                group_id,
+                SendGroupMessageParams {
+                    group_id,
+                    message: Arc::new(
+                        MessageSend::new_message()
+                            .at(qq.to_string())
+                            .text("定时签到失败，未找到登录信息，请先登录")
+                            .build(),
+                    ),
+                },
             ),
         };
-        trace!(qq=r.qq,group_id=r.group_id, params=?params, "准备发送定时签到消息");
+        trace!(qq=qq, group_id=group_id, params=?params, "准备发送定时签到消息");
         tasks.push(async move {
             let echo = client.call_api(&params, Echo::new()).await?;
             let res = echo.wait_echo().await;
