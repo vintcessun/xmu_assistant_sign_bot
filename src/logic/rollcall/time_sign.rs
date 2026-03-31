@@ -63,7 +63,7 @@ async fn time_sign_task() -> Result<()> {
                     let sign_data = sign_request(qq).await?;
                     for data in &sign_data {
                         trace!(qq=qq, sign_data=?data, "准备进行定时签到");
-                        if data.builder.sign_num >= data.builder.student_num / 10 {
+                        if data.builder.sign_num >= (data.builder.student_num * 15 / 100) {
                             trace!(qq=qq, sign_data=?data, "签到人数足够，开始定时签到");
                             let response = spec_sign_request(qq, data.builder.activity_id).await?;
                             ret.extend(response)
