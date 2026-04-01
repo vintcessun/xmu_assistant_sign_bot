@@ -198,7 +198,7 @@ pub async fn process_login_castgc<T: BotClient + BotHandler + fmt::Debug>(
 
     let client = SessionClient::new();
 
-    if let Ok(_) = try_pwd_login(&client, id).await {
+    if try_pwd_login(&client, id).await.is_ok() {
         info!(user_id = id, "账号密码登录成功，直接使用现有登录数据");
         ctx.send_message_async(message::from_str("使用账号密码登录成功"));
         return Ok(client);
