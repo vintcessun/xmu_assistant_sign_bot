@@ -4,6 +4,7 @@ use crate::abi::logic_import::*;
 use crate::abi::message::MessageSend;
 use crate::abi::message::api::SendGroupMessageParams;
 use crate::abi::network::BotClient;
+use crate::api::network::SessionClient;
 use crate::api::xmu_service::lnt::Profile;
 use crate::logic::login::process::try_pwd_login;
 use crate::logic::rollcall::auto_sign_data::AutoSignResponse;
