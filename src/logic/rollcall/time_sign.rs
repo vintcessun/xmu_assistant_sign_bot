@@ -5,6 +5,7 @@ use crate::abi::message::MessageSend;
 use crate::abi::message::api::SendGroupMessageParams;
 use crate::abi::network::BotClient;
 use crate::api::xmu_service::lnt::Profile;
+use crate::logic::login::process::try_pwd_login;
 use crate::logic::rollcall::auto_sign_data::AutoSignResponse;
 use crate::logic::rollcall::auto_sign_data::auto_sign_response::{NumberSign, QRSign, RadarSign};
 use crate::logic::rollcall::data::LOGIN_DATA;
@@ -70,6 +71,17 @@ async fn time_sign_task() -> Result<()> {
                 tasks.push(async move {
                     match LOGIN_DATA.get(&qq) {
                         Some(e) => {
+                            if !Profile::check(&e.lnt).await {
+                                let session = SessionClient::new();
+                                match try_pwd_login(&session, qq).await {
+                                    Ok(_) => {
+                                        info!("账号密码登录成功，继续进行定时签到");
+                                    }
+                                    Err(e) => {
+                                        error!("账号密码({})登录失败: {:?}", qq, e);
+                                    }
+                                };
+                            }
                             if !Profile::check(&e.lnt).await {
                                 remove_sign_time(qq).await?;
                                 return Ok(TimeSignUpdateResponse::NotLogin {
