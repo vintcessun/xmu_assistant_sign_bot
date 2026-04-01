@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>自动签到课表查询</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-gray-100 min-h-screen">
+        <div class="max-w-3xl mx-auto px-4 py-10">
+            <div
+                class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6"
+            >
+                <h1 class="text-2xl font-bold text-gray-800">
+                    自动签到课表查询
+                </h1>
+                <p class="text-sm text-gray-500 mt-1">
+                    输入 QQ 号查看当前自动签到课表状态。
+                </p>
+
+                <div class="mt-5 flex gap-3">
+                    <input
+                        id="qq"
+                        placeholder="请输入 QQ 号"
+                        class="flex-1 border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-200"
+                    />
+                    <button
+                        onclick="query()"
+                        class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+                    >
+                        查询
+                    </button>
+                </div>
+
+                <div id="result" class="mt-6 hidden"></div>
+            </div>
+        </div>
+
+        <script>
+            function dayToChinese(day) {
+                const map = {
+                    Monday: "周一",
+                    Tuesday: "周二",
+                    Wednesday: "周三",
+                    Thursday: "周四",
+                    Friday: "周五",
+                    Saturday: "周六",
+                    Sunday: "周日",
+                };
+                return map[day] || day;
+            }
+
+            function formatTime(m) {
+                const h = String(Math.floor(m / 60)).padStart(2, "0");
+                const mm = String(m % 60).padStart(2, "0");
+                return `${h}:${mm}`;
+            }
+
+            function formatWeeks(mask) {
+                const arr = [];
+                for (let i = 0; i < 20; i++) {
+                    if (mask & (1 << i)) arr.push(i + 1);
+                }
+                return arr.length ? arr.join(",") : "无";
+            }
+
+            async function query() {
+                const qq = document.getElementById("qq").value.trim();
+                const wrap = document.getElementById("result");
+                if (!qq) {
+                    wrap.className = "mt-6";
+                    wrap.innerHTML =
+                        '<p class="text-red-500 text-sm">请输入 QQ 号</p>';
+                    return;
+                }
+                wrap.className = "mt-6 text-sm text-gray-500";
+                wrap.innerHTML = "查询中...";
+
+                try {
+                    const res = await fetch(
+                        `/timetable/api/query/${encodeURIComponent(qq)}`,
+                    );
+                    if (!res.ok) throw new Error("请求失败");
+                    const data = await res.json();
+
+                    const head = `
+                        <div class="grid sm:grid-cols-2 gap-3 mb-4">
+                            <div class="bg-gray-50 rounded-lg p-3"><span class="text-gray-400">QQ</span><div class="font-mono mt-1">${data.qq}</div></div>
+                            <div class="bg-gray-50 rounded-lg p-3"><span class="text-gray-400">自动签到状态</span><div class="mt-1 ${data.enabled ? "text-emerald-600" : "text-gray-500"}">${data.enabled ? "已启用" : "未启用"}</div></div>
+                            <div class="bg-gray-50 rounded-lg p-3"><span class="text-gray-400">群号</span><div class="font-mono mt-1">${data.group_id === null || data.group_id === undefined ? "-" : data.group_id}</div></div>
+                            <div class="bg-gray-50 rounded-lg p-3"><span class="text-gray-400">当前时间命中</span><div class="mt-1 ${data.is_active_now ? "text-emerald-600" : "text-gray-500"}">${data.is_active_now ? "是" : "否"}</div></div>
+                        </div>
+                    `;
+
+                    const courses = (data.courses || [])
+                        .map(
+                            (c) => `
+                        <div class="border border-gray-200 rounded-lg p-3">
+                            <div class="font-semibold text-gray-800">${c.name}</div>
+                            <div class="text-gray-600 mt-1">${dayToChinese(c.day)} ${formatTime(c.start)} - ${formatTime(c.end)}</div>
+                            <div class="text-gray-500 mt-1">地点: ${c.location || "未设置"}</div>
+                            <div class="text-gray-500 mt-1">周次: ${formatWeeks(c.week_mask)}</div>
+                        </div>
+                    `,
+                        )
+                        .join("");
+
+                    wrap.className = "mt-6";
+                    wrap.innerHTML = `
+                        ${head}
+                        <h2 class="font-semibold text-gray-700 mb-2">课程列表 (${data.course_count})</h2>
+                        <div class="space-y-2">${courses || '<p class="text-gray-400">无课程</p>'}</div>
+                    `;
+                } catch (_e) {
+                    wrap.className = "mt-6";
+                    wrap.innerHTML =
+                        '<p class="text-red-500 text-sm">查询失败，请稍后重试</p>';
+                }
+            }
+        </script>
+    </body>
+</html>

@@ -11,7 +11,7 @@ pub static TIMETABLE_DATA: LazyLock<HotTable<i64, ScheduleCourseTime>> =
 pub static TIMETABLE_GROUP: LazyLock<HotTable<i64, i64>> =
     LazyLock::new(|| HotTable::new("logic_command_sign_time_group_v3"));
 
-pub use super::super::login::DATA as LOGIN_DATA;
+pub use super::super::login::LOGIN_DATA;
 
 pub static SIGN_NUMBER_DATA: LazyLock<HotTable<i64, SmolStr>> =
     LazyLock::new(|| HotTable::new("logic_command_sign_number"));

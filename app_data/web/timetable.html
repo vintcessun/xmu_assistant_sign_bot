@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>课表编辑</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-slate-100 min-h-screen">
+        <div class="max-w-4xl mx-auto px-4 py-8">
+            <div
+                class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-4"
+            >
+                <h1 class="text-2xl font-bold text-slate-800">
+                    一次性课表编辑
+                </h1>
+                <p class="text-sm text-slate-500 mt-1">
+                    来自 /signtime
+                    的临时编辑任务。点击“保存并生效”后，该链接立即失效。
+                </p>
+                <div class="mt-4 grid sm:grid-cols-3 gap-3 text-sm">
+                    <div class="bg-slate-50 rounded-lg p-3">
+                        <div class="text-slate-400">QQ</div>
+                        <div id="meta-qq" class="font-mono text-slate-700 mt-1">
+                            -
+                        </div>
+                    </div>
+                    <div class="bg-slate-50 rounded-lg p-3">
+                        <div class="text-slate-400">剩余时间</div>
+                        <div id="meta-left" class="text-slate-700 mt-1">-</div>
+                    </div>
+                    <div class="bg-slate-50 rounded-lg p-3">
+                        <div class="text-slate-400">课程数</div>
+                        <div id="meta-count" class="text-slate-700 mt-1">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="loading" class="bg-white rounded-xl p-6 text-slate-500">
+                加载中...
+            </div>
+
+            <div id="content" class="hidden">
+                <div id="courses" class="space-y-3"></div>
+
+                <div class="mt-5 flex items-center gap-3">
+                    <button
+                        id="save-btn"
+                        onclick="saveAll()"
+                        class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
+                    >
+                        保存并生效
+                    </button>
+                    <button
+                        onclick="addCourse()"
+                        class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg"
+                    >
+                        添加空白课程
+                    </button>
+                    <span id="save-msg" class="text-sm text-slate-500"></span>
+                </div>
+            </div>
+
+            <div
+                id="expired"
+                class="hidden bg-amber-50 border border-amber-200 rounded-xl p-6 text-amber-800"
+            >
+                该编辑链接已过期或已提交。系统已默认使用 /signtime
+                时保存的课表。
+            </div>
+        </div>
+
+        <script>
+            const taskId = location.pathname.split("/").pop();
+            let courses = [];
+            let remainSeconds = 0;
+            let timer = null;
+
+            function pad2(n) {
+                return String(n).padStart(2, "0");
+            }
+
+            function formatMinutesToHm(m) {
+                const h = Math.floor(m / 60);
+                const mm = m % 60;
+                return `${pad2(h)}:${pad2(mm)}`;
+            }
+
+            function parseHmToMinutes(v) {
+                const parts = String(v || "").split(":");
+                if (parts.length !== 2) return null;
+                const h = Number(parts[0]);
+                const m = Number(parts[1]);
+                if (!Number.isInteger(h) || !Number.isInteger(m)) return null;
+                if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+                return h * 60 + m;
+            }
+
+            function dayOptions(selected) {
+                const vals = [
+                    ["Monday", "周一"],
+                    ["Tuesday", "周二"],
+                    ["Wednesday", "周三"],
+                    ["Thursday", "周四"],
+                    ["Friday", "周五"],
+                    ["Saturday", "周六"],
+                    ["Sunday", "周日"],
+                ];
+                return vals
+                    .map(
+                        ([v, label]) =>
+                            `<option value="${v}" ${selected === v ? "selected" : ""}>${label}</option>`,
+                    )
+                    .join("");
+            }
+
+            function weekText(mask) {
+                const arr = [];
+                for (let i = 0; i < 20; i++) {
+                    if (mask & (1 << i)) arr.push(i + 1);
+                }
+                return arr.join(",");
+            }
+
+            function parseWeekText(text) {
+                const nums = String(text)
+                    .split(",")
+                    .map((s) => Number(s.trim()))
+                    .filter((n) => Number.isInteger(n) && n >= 1 && n <= 32);
+                let mask = 0;
+                nums.forEach((n) => {
+                    mask |= 1 << (n - 1);
+                });
+                return mask >>> 0;
+            }
+
+            function render() {
+                document.getElementById("meta-count").textContent =
+                    `${courses.length} 门`;
+                const wrap = document.getElementById("courses");
+                wrap.innerHTML = courses
+                    .map(
+                        (c, i) => `
+                    <div class="bg-white rounded-xl border border-slate-200 p-4">
+                        <div class="flex justify-between items-center mb-3">
+                            <div class="text-slate-700 font-semibold">课程 #${i + 1}</div>
+                            <button onclick="removeCourse(${i})" class="text-sm text-red-600 hover:text-red-700">删除</button>
+                        </div>
+                        <div class="grid sm:grid-cols-2 gap-3 text-sm">
+                            <label class="block">
+                                <div class="text-slate-500 mb-1">课程名</div>
+                                <input value="${escapeHtml(c.name || "")}" data-k="name" data-i="${i}" class="w-full border rounded-lg px-3 py-2" />
+                            </label>
+                            <label class="block">
+                                <div class="text-slate-500 mb-1">地点</div>
+                                <input value="${escapeHtml(c.location || "")}" data-k="location" data-i="${i}" class="w-full border rounded-lg px-3 py-2" />
+                            </label>
+                            <label class="block">
+                                <div class="text-slate-500 mb-1">开始时间</div>
+                                <input value="${formatMinutesToHm(c.start)}" data-k="start" data-i="${i}" placeholder="08:00" class="w-full border rounded-lg px-3 py-2" />
+                            </label>
+                            <label class="block">
+                                <div class="text-slate-500 mb-1">结束时间</div>
+                                <input value="${formatMinutesToHm(c.end)}" data-k="end" data-i="${i}" placeholder="09:40" class="w-full border rounded-lg px-3 py-2" />
+                            </label>
+                            <label class="block">
+                                <div class="text-slate-500 mb-1">星期</div>
+                                <select data-k="day" data-i="${i}" class="w-full border rounded-lg px-3 py-2">${dayOptions(c.day)}</select>
+                            </label>
+                            <label class="block">
+                                <div class="text-slate-500 mb-1">周次（逗号分隔）</div>
+                                <input value="${weekText(c.week_mask)}" data-k="week_mask" data-i="${i}" placeholder="1,2,3,5" class="w-full border rounded-lg px-3 py-2" />
+                            </label>
+                        </div>
+                    </div>
+                `,
+                    )
+                    .join("");
+
+                wrap.querySelectorAll("input,select").forEach((el) => {
+                    el.addEventListener("input", onFieldChange);
+                    el.addEventListener("change", onFieldChange);
+                });
+            }
+
+            function onFieldChange(e) {
+                const idx = Number(e.target.dataset.i);
+                const key = e.target.dataset.k;
+                if (!Number.isInteger(idx) || !courses[idx]) return;
+                if (key === "start" || key === "end") {
+                    const m = parseHmToMinutes(e.target.value);
+                    if (m !== null) courses[idx][key] = m;
+                    return;
+                }
+                if (key === "week_mask") {
+                    courses[idx].week_mask = parseWeekText(e.target.value);
+                    return;
+                }
+                if (key === "location") {
+                    const v = String(e.target.value || "").trim();
+                    courses[idx].location = v ? v : null;
+                    return;
+                }
+                courses[idx][key] = e.target.value;
+            }
+
+            function removeCourse(i) {
+                courses.splice(i, 1);
+                render();
+            }
+
+            function addCourse() {
+                courses.push({
+                    name: "",
+                    location: null,
+                    start: 8 * 60,
+                    end: 9 * 60,
+                    day: "Monday",
+                    week_mask: 1,
+                });
+                render();
+            }
+
+            function escapeHtml(str) {
+                return String(str)
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#39;");
+            }
+
+            function startCountdown() {
+                const el = document.getElementById("meta-left");
+                if (timer) clearInterval(timer);
+                timer = setInterval(() => {
+                    remainSeconds = Math.max(0, remainSeconds - 1);
+                    const m = Math.floor(remainSeconds / 60);
+                    const s = remainSeconds % 60;
+                    el.textContent = `${m} 分 ${s} 秒`;
+                    if (remainSeconds <= 0) {
+                        clearInterval(timer);
+                        document
+                            .getElementById("content")
+                            .classList.add("hidden");
+                        document
+                            .getElementById("expired")
+                            .classList.remove("hidden");
+                    }
+                }, 1000);
+            }
+
+            async function loadTask() {
+                try {
+                    const res = await fetch(`/timetable/api/task/${taskId}`);
+                    if (res.status === 410 || !res.ok) {
+                        document
+                            .getElementById("loading")
+                            .classList.add("hidden");
+                        document
+                            .getElementById("expired")
+                            .classList.remove("hidden");
+                        return;
+                    }
+                    const data = await res.json();
+                    courses = data.courses || [];
+                    remainSeconds = Number(data.seconds_left || 0);
+                    document.getElementById("meta-qq").textContent = data.qq;
+                    document.getElementById("loading").classList.add("hidden");
+                    document
+                        .getElementById("content")
+                        .classList.remove("hidden");
+                    render();
+                    startCountdown();
+                } catch (_e) {
+                    document.getElementById("loading").textContent =
+                        "加载失败，请稍后重试";
+                }
+            }
+
+            async function saveAll() {
+                const btn = document.getElementById("save-btn");
+                const msg = document.getElementById("save-msg");
+                btn.disabled = true;
+                btn.classList.add("opacity-60", "cursor-not-allowed");
+                msg.textContent = "正在保存...";
+                try {
+                    const res = await fetch(
+                        `/timetable/api/task/${taskId}/save`,
+                        {
+                            method: "POST",
+                            headers: { "content-type": "application/json" },
+                            body: JSON.stringify({ courses }),
+                        },
+                    );
+                    if (res.ok || res.status === 204) {
+                        msg.textContent = "保存成功，任务已失效";
+                        document
+                            .getElementById("content")
+                            .classList.add("hidden");
+                        document
+                            .getElementById("expired")
+                            .classList.remove("hidden");
+                        if (timer) clearInterval(timer);
+                        return;
+                    }
+                    const data = await res.json().catch(() => ({}));
+                    msg.textContent = data.detail || "保存失败";
+                } catch (_e) {
+                    msg.textContent = "保存失败，请检查网络";
+                } finally {
+                    btn.disabled = false;
+                    btn.classList.remove("opacity-60", "cursor-not-allowed");
+                }
+            }
+
+            loadTask();
+        </script>
+    </body>
+</html>

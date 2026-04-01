@@ -30,3 +30,4 @@ pub use push_sign::push_sign_request;
 pub use qr_sign::qr_sign_request;
 pub use sign::sign_request;
 pub use spec_sign::spec_sign_request;
+pub use timetable::{is_sign_time_active_now, query_sign_group, query_sign_time, update_sign_time};
