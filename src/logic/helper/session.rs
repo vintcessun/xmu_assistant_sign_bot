@@ -3,7 +3,7 @@ use anyhow::{Result, anyhow};
 use crate::{
     abi::{Context, message::MessageType, network::BotClient, websocket::BotHandler},
     api::{network::SessionClient, xmu_service::lnt::get_session_client},
-    logic::login::DATA,
+    logic::login::LOGIN_DATA,
 };
 use std::fmt;
 
@@ -14,7 +14,7 @@ where
 {
     let sender = ctx.message.get_sender();
     let id = sender.user_id.ok_or(anyhow!("获取用户ID失败"))?;
-    let session = DATA
+    let session = LOGIN_DATA
         .get(&id)
         .ok_or(anyhow!("未登录，请使用“/login”登录后使用"))?;
 

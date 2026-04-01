@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>XMU Assistant 登录</title>
+        <style>
+            :root {
+                color-scheme: light;
+                --bg: #f2efe8;
+                --panel: rgba(255, 250, 242, 0.88);
+                --panel-border: rgba(65, 38, 24, 0.12);
+                --ink: #2d2118;
+                --muted: #7a6558;
+                --accent: #c55c32;
+                --accent-strong: #9f3c12;
+                --accent-soft: #f7d7bf;
+                --field: rgba(255, 255, 255, 0.82);
+                --success: #20603d;
+                --danger: #9f2d2d;
+                --shadow: 0 24px 60px rgba(88, 53, 34, 0.18);
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            body {
+                margin: 0;
+                min-height: 100vh;
+                font-family:
+                    "Noto Serif SC", "Source Han Serif SC", "Microsoft YaHei",
+                    serif;
+                color: var(--ink);
+                background:
+                    radial-gradient(
+                        circle at top left,
+                        rgba(255, 213, 179, 0.95),
+                        transparent 34%
+                    ),
+                    radial-gradient(
+                        circle at bottom right,
+                        rgba(202, 101, 43, 0.2),
+                        transparent 26%
+                    ),
+                    linear-gradient(
+                        135deg,
+                        #efe6d8 0%,
+                        #f7f1e7 48%,
+                        #eee4d5 100%
+                    );
+                display: grid;
+                place-items: center;
+                padding: 24px;
+            }
+
+            .shell {
+                width: min(960px, 100%);
+                display: grid;
+                grid-template-columns: 1.1fr 0.9fr;
+                overflow: hidden;
+                border: 1px solid var(--panel-border);
+                border-radius: 28px;
+                background: var(--panel);
+                box-shadow: var(--shadow);
+                backdrop-filter: blur(14px);
+            }
+
+            .hero {
+                padding: 48px;
+                background:
+                    linear-gradient(
+                        180deg,
+                        rgba(255, 255, 255, 0.35),
+                        rgba(255, 255, 255, 0)
+                    ),
+                    linear-gradient(
+                        160deg,
+                        rgba(197, 92, 50, 0.18),
+                        rgba(255, 240, 224, 0.4)
+                    );
+                position: relative;
+            }
+
+            .hero::after {
+                content: "";
+                position: absolute;
+                inset: auto 32px 32px auto;
+                width: 120px;
+                height: 120px;
+                border-radius: 999px;
+                background: radial-gradient(
+                    circle,
+                    rgba(197, 92, 50, 0.22),
+                    transparent 70%
+                );
+                filter: blur(8px);
+            }
+
+            .eyebrow {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                padding: 8px 12px;
+                border-radius: 999px;
+                background: rgba(255, 255, 255, 0.6);
+                color: var(--accent-strong);
+                font-size: 13px;
+                letter-spacing: 0.08em;
+            }
+
+            h1 {
+                margin: 20px 0 16px;
+                font-size: clamp(34px, 6vw, 54px);
+                line-height: 1.04;
+                letter-spacing: -0.03em;
+            }
+
+            .lead {
+                margin: 0;
+                max-width: 28ch;
+                color: var(--muted);
+                font-size: 16px;
+                line-height: 1.8;
+            }
+
+            .meta {
+                margin-top: 36px;
+                display: grid;
+                gap: 14px;
+            }
+
+            .meta-card {
+                padding: 16px 18px;
+                border-radius: 18px;
+                background: rgba(255, 252, 247, 0.72);
+                border: 1px solid rgba(65, 38, 24, 0.08);
+            }
+
+            .meta-card strong {
+                display: block;
+                margin-bottom: 6px;
+                font-size: 13px;
+                color: var(--muted);
+            }
+
+            .meta-card span {
+                font-size: 15px;
+                word-break: break-all;
+            }
+
+            .panel {
+                padding: 40px 32px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: rgba(255, 255, 255, 0.52);
+            }
+
+            form {
+                width: min(420px, 100%);
+            }
+
+            .panel h2 {
+                margin: 0 0 8px;
+                font-size: 28px;
+            }
+
+            .panel p {
+                margin: 0 0 24px;
+                color: var(--muted);
+                line-height: 1.7;
+            }
+
+            label {
+                display: block;
+                margin-bottom: 18px;
+                font-size: 14px;
+                color: var(--muted);
+            }
+
+            input {
+                width: 100%;
+                margin-top: 8px;
+                border: 1px solid rgba(65, 38, 24, 0.12);
+                border-radius: 16px;
+                padding: 14px 16px;
+                font-size: 16px;
+                color: var(--ink);
+                background: var(--field);
+                transition:
+                    border-color 160ms ease,
+                    transform 160ms ease,
+                    box-shadow 160ms ease;
+            }
+
+            input:focus {
+                outline: none;
+                border-color: rgba(197, 92, 50, 0.5);
+                box-shadow: 0 0 0 4px rgba(197, 92, 50, 0.12);
+                transform: translateY(-1px);
+            }
+
+            button {
+                width: 100%;
+                margin-top: 8px;
+                border: 0;
+                border-radius: 16px;
+                padding: 15px 18px;
+                font-size: 16px;
+                font-weight: 700;
+                letter-spacing: 0.01em;
+                color: #fffaf4;
+                background: linear-gradient(
+                    135deg,
+                    var(--accent) 0%,
+                    var(--accent-strong) 100%
+                );
+                cursor: pointer;
+                transition:
+                    transform 160ms ease,
+                    box-shadow 160ms ease,
+                    opacity 160ms ease;
+                box-shadow: 0 16px 32px rgba(159, 60, 18, 0.22);
+            }
+
+            button:hover {
+                transform: translateY(-1px);
+            }
+
+            button:disabled {
+                cursor: wait;
+                opacity: 0.72;
+                transform: none;
+            }
+
+            .tips {
+                margin-top: 18px;
+                padding: 14px 16px;
+                border-radius: 16px;
+                background: rgba(255, 247, 239, 0.9);
+                color: var(--muted);
+                font-size: 13px;
+                line-height: 1.7;
+            }
+
+            .status {
+                min-height: 24px;
+                margin-top: 14px;
+                font-size: 14px;
+            }
+
+            .status[data-tone="success"] {
+                color: var(--success);
+            }
+            .status[data-tone="danger"] {
+                color: var(--danger);
+            }
+            .status[data-tone="muted"] {
+                color: var(--muted);
+            }
+
+            @media (max-width: 840px) {
+                .shell {
+                    grid-template-columns: 1fr;
+                }
+
+                .hero,
+                .panel {
+                    padding: 28px;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <main class="shell">
+            <section class="hero">
+                <div class="eyebrow">XMU ASSISTANT BOT</div>
+                <h1>安全输入你的校园账号与密码</h1>
+                <p class="lead">
+                    这个页面会在浏览器端使用服务端下发的 ECC
+                    公钥加密账号密码，服务端仅接收密文，再用临时私钥解密并校验
+                    UUID。
+                </p>
+                <div class="meta">
+                    <div class="meta-card">
+                        <strong>当前 QQ</strong>
+                        <span>__QQ_ID__</span>
+                    </div>
+                    <div class="meta-card">
+                        <strong>临时任务 UUID</strong>
+                        <span>__UUID__</span>
+                    </div>
+                    <div class="meta-card">
+                        <strong>服务端 ECC 公钥</strong>
+                        <span>__SERVER_PUBLIC_KEY__</span>
+                    </div>
+                </div>
+            </section>
+            <section class="panel">
+                <form id="login-form">
+                    <h2>登录信息录入</h2>
+                    <p>
+                        点击提交后，页面会先生成一次性 ECDH 密钥对，派生 AES-GCM
+                        会话密钥，再把包含 UUID 的账号密码密文发到
+                        /login/submit。
+                    </p>
+                    <label>
+                        用户名
+                        <input
+                            id="username"
+                            name="username"
+                            type="text"
+                            autocomplete="username"
+                            placeholder="请输入学号或统一身份账号"
+                            required
+                        />
+                    </label>
+                    <label>
+                        密码
+                        <input
+                            id="password"
+                            name="password"
+                            type="password"
+                            autocomplete="current-password"
+                            placeholder="请输入密码"
+                            required
+                        />
+                    </label>
+                    <button id="submit-button" type="submit">
+                        提交登录信息
+                    </button>
+                    <div class="status" id="status" data-tone="muted"></div>
+                    <div class="tips">
+                        页面不会直接上传原始用户名和密码。表单内容会和 UUID
+                        一起加密，服务端使用本次链接对应的临时私钥完成解密。
+                    </div>
+                </form>
+            </section>
+        </main>
+
+        <script>
+            const textEncoder = new TextEncoder();
+            const bootstrap = Object.freeze({
+                uuid: __UUID_JS__,
+                serverPublicKey: __SERVER_PUBLIC_KEY_JS__,
+                submitUrl: "/login/submit",
+            });
+
+            const form = document.getElementById("login-form");
+            const submitButton = document.getElementById("submit-button");
+            const statusNode = document.getElementById("status");
+
+            if (
+                !window.isSecureContext ||
+                !window.crypto ||
+                !window.crypto.subtle
+            ) {
+                submitButton.disabled = true;
+                setStatus(
+                    "当前环境不支持 Web Crypto，请使用 HTTPS 页面打开该链接。",
+                    "danger",
+                );
+            }
+
+            function setStatus(message, tone) {
+                statusNode.textContent = message;
+                statusNode.dataset.tone = tone;
+            }
+
+            function exitPageAfterSubmit() {
+                // Some browsers only allow closing a tab opened by script.
+                // Try close first, then fall back to a local blank page.
+                window.open("", "_self");
+                window.close();
+
+                setTimeout(() => {
+                    if (!document.hidden) {
+                        location.replace("about:blank");
+                    }
+                }, 120);
+            }
+
+            function bytesToBase64(bytes) {
+                let binary = "";
+                const chunkSize = 0x8000;
+                for (let index = 0; index < bytes.length; index += chunkSize) {
+                    const chunk = bytes.subarray(index, index + chunkSize);
+                    binary += String.fromCharCode(...chunk);
+                }
+                return btoa(binary);
+            }
+
+            function base64ToBytes(value) {
+                const binary = atob(value);
+                const bytes = new Uint8Array(binary.length);
+                for (let index = 0; index < binary.length; index += 1) {
+                    bytes[index] = binary.charCodeAt(index);
+                }
+                return bytes;
+            }
+
+            async function encryptPayload(username, password) {
+                const serverPublicKey = await crypto.subtle.importKey(
+                    "raw",
+                    base64ToBytes(bootstrap.serverPublicKey),
+                    { name: "ECDH", namedCurve: "P-256" },
+                    false,
+                    [],
+                );
+
+                const clientKeyPair = await crypto.subtle.generateKey(
+                    { name: "ECDH", namedCurve: "P-256" },
+                    true,
+                    ["deriveBits"],
+                );
+                const sharedBits = await crypto.subtle.deriveBits(
+                    { name: "ECDH", public: serverPublicKey },
+                    clientKeyPair.privateKey,
+                    256,
+                );
+                const hkdfKey = await crypto.subtle.importKey(
+                    "raw",
+                    sharedBits,
+                    "HKDF",
+                    false,
+                    ["deriveKey"],
+                );
+                const salt = crypto.getRandomValues(new Uint8Array(16));
+                const iv = crypto.getRandomValues(new Uint8Array(12));
+                const aesKey = await crypto.subtle.deriveKey(
+                    {
+                        name: "HKDF",
+                        hash: "SHA-256",
+                        salt,
+                        info: textEncoder.encode(`login:${bootstrap.uuid}`),
+                    },
+                    hkdfKey,
+                    { name: "AES-GCM", length: 256 },
+                    false,
+                    ["encrypt"],
+                );
+                const plaintext = textEncoder.encode(
+                    JSON.stringify({
+                        uuid: bootstrap.uuid,
+                        username,
+                        password,
+                    }),
+                );
+                const ciphertext = await crypto.subtle.encrypt(
+                    {
+                        name: "AES-GCM",
+                        iv,
+                        additionalData: textEncoder.encode(bootstrap.uuid),
+                    },
+                    aesKey,
+                    plaintext,
+                );
+                const clientPublicKey = await crypto.subtle.exportKey(
+                    "raw",
+                    clientKeyPair.publicKey,
+                );
+
+                return {
+                    uuid: bootstrap.uuid,
+                    client_public_key: bytesToBase64(
+                        new Uint8Array(clientPublicKey),
+                    ),
+                    salt: bytesToBase64(salt),
+                    iv: bytesToBase64(iv),
+                    ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
+                };
+            }
+
+            form.addEventListener("submit", async (event) => {
+                event.preventDefault();
+
+                const username = document
+                    .getElementById("username")
+                    .value.trim();
+                const password = document.getElementById("password").value;
+
+                if (!username || !password) {
+                    setStatus("请先填写用户名和密码。", "danger");
+                    return;
+                }
+
+                submitButton.disabled = true;
+                setStatus("正在提交，请稍候...", "muted");
+
+                try {
+                    const encrypted = await encryptPayload(username, password);
+                    const response = await fetch(bootstrap.submitUrl, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify(encrypted),
+                    });
+
+                    const data = await response.json();
+                    if (!response.ok || !data.ok) {
+                        throw new Error(data.message || "提交失败，请稍后重试");
+                    }
+
+                    form.reset();
+                    setStatus(
+                        data.message || "提交成功，正在关闭页面...",
+                        "success",
+                    );
+                    setTimeout(exitPageAfterSubmit, 250);
+                } catch (error) {
+                    const message =
+                        error instanceof Error
+                            ? error.message
+                            : "提交失败，请稍后重试";
+                    setStatus(message, "danger");
+                } finally {
+                    submitButton.disabled = false;
+                }
+            });
+        </script>
+    </body>
+</html>

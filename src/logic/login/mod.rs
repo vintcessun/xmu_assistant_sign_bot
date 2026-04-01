@@ -1,4 +1,6 @@
-mod main;
 pub mod process;
+mod pwd;
+mod qr;
 
-pub use main::*;
+pub use pwd::*;
+pub use qr::*;
