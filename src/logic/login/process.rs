@@ -1,12 +1,14 @@
-use super::main::DATA;
+use super::qr::LOGIN_DATA;
 use crate::abi::message::MessageSend;
 use crate::api::xmu_service::jw::{UserInfo, Zzy, ZzyProfile};
 use crate::api::xmu_service::lnt::Profile;
 use crate::api::xmu_service::login::{
-    LoginData, LoginRequest, get_qrcode_id, request_qrcode, wait_qrcode,
+    LoginData, LoginRequest, get_qrcode_id, login_password, login_request, wait_qrcode,
 };
+use crate::logic::login::PWD_DATA;
 use crate::{abi::logic_import::*, api::network::SessionClient};
 use anyhow::Result;
+use anyhow::anyhow;
 use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
 
@@ -15,13 +17,13 @@ pub async fn update_and_login(
     data: LoginRequest,
     id: i64,
 ) -> Result<Arc<LoginData>> {
-    debug!(user_id = id, "开始请求二维码登录凭证");
-    let login_data = Arc::new(request_qrcode(session, data).await?);
-    info!(user_id = id, "成功获取二维码登录凭证");
+    debug!(user_id = id, "开始请求登录凭证");
+    let login_data = Arc::new(login_request(session, data).await?);
+    info!(user_id = id, "成功获取登录凭证");
 
     let login_data_insert = login_data.clone();
 
-    DATA.insert(id, login_data_insert).map_err(|e| {
+    LOGIN_DATA.insert(id, login_data_insert).map_err(|e| {
         error!(user_id = id, error = ?e, "存储用户登录数据失败");
         e
     })?;
@@ -56,7 +58,7 @@ pub async fn login_base(login_data: Arc<LoginData>) -> Result<ZzyProfile> {
 }
 
 #[inline(never)]
-pub async fn send_msg_and_wait<T: BotClient + BotHandler + fmt::Debug>(
+pub async fn send_qr_msg_and_wait<T: BotClient + BotHandler + fmt::Debug>(
     ctx: &mut Context<T, Message>,
     session: &SessionClient,
     id: i64,
@@ -97,23 +99,13 @@ pub async fn send_msg_and_wait<T: BotClient + BotHandler + fmt::Debug>(
     Ok(data)
 }
 
-pub async fn process_login<T: BotClient + BotHandler + fmt::Debug>(
+#[inline(never)]
+pub async fn login_base_data<T: BotClient + BotHandler + fmt::Debug>(
     ctx: &mut Context<T, Message>,
     id: i64,
-) -> Result<Arc<LoginData>> {
-    info!(user_id = id, "开始执行登录流程");
-    let session = SessionClient::new();
-    debug!(user_id = id, "创建新的 SessionClient");
-
-    let data = send_msg_and_wait(ctx, &session, id).await?;
-
-    ctx.send_message_async(message::from_str("登录成功！"));
-
-    let login_data = update_and_login(&session, data, id).await?;
-
-    info!(user_id = id, "开始获取并处理用户身份信息");
-
-    match login_base(login_data.clone()).await {
+    login_data: Arc<LoginData>,
+) -> Result<()> {
+    match login_base(login_data).await {
         Ok(zzy_profile) => {
             info!(
                 user_id = id,
@@ -142,6 +134,48 @@ pub async fn process_login<T: BotClient + BotHandler + fmt::Debug>(
         }
     };
 
+    Ok(())
+}
+
+pub async fn try_pwd_login(session: &SessionClient, id: i64) -> Result<Arc<LoginData>> {
+    match PWD_DATA.get(&id) {
+        Some(data) => {
+            let login_data = login_password(session, data.username.clone(), &data.password).await?;
+            let login_data = Arc::new(login_data);
+            LOGIN_DATA.insert(id, login_data.clone()).map_err(|e| {
+                error!(user_id = id, error = ?e, "存储用户登录数据失败");
+                e
+            })?;
+            Ok(login_data)
+        }
+        None => Err(anyhow!("账号密码登录数据不存在")),
+    }
+}
+
+pub async fn process_login<T: BotClient + BotHandler + fmt::Debug>(
+    ctx: &mut Context<T, Message>,
+    id: i64,
+) -> Result<Arc<LoginData>> {
+    info!(user_id = id, "开始执行登录流程");
+    let session = SessionClient::new();
+    debug!(user_id = id, "创建新的 SessionClient");
+
+    if let Ok(login_data) = try_pwd_login(&session, id).await {
+        info!(user_id = id, "账号密码登录成功，直接使用现有登录数据");
+        ctx.send_message_async(message::from_str("使用账号密码登录成功"));
+        return Ok(login_data);
+    }
+
+    let data = send_qr_msg_and_wait(ctx, &session, id).await?;
+
+    ctx.send_message_async(message::from_str("登录成功！"));
+
+    let login_data = update_and_login(&session, data, id).await?;
+
+    info!(user_id = id, "开始获取并处理用户身份信息");
+
+    login_base_data(ctx, id, login_data.clone()).await?;
+
     Ok(login_data)
 }
 
@@ -149,7 +183,7 @@ pub async fn process_login_castgc<T: BotClient + BotHandler + fmt::Debug>(
     ctx: &mut Context<T, Message>,
     id: i64,
 ) -> Result<SessionClient> {
-    if let Some(data) = DATA.get(&id)
+    if let Some(data) = LOGIN_DATA.get(&id)
         && UserInfo::get(&data.castgc).await.is_ok()
     {
         info!(user_id = id, "用户已登录，直接使用现有登录数据");
@@ -164,7 +198,13 @@ pub async fn process_login_castgc<T: BotClient + BotHandler + fmt::Debug>(
 
     let client = SessionClient::new();
 
-    let data = send_msg_and_wait(ctx, &client, id).await?;
+    if let Ok(_) = try_pwd_login(&client, id).await {
+        info!(user_id = id, "账号密码登录成功，直接使用现有登录数据");
+        ctx.send_message_async(message::from_str("使用账号密码登录成功"));
+        return Ok(client);
+    }
+
+    let data = send_qr_msg_and_wait(ctx, &client, id).await?;
 
     update_and_login(&client, data, id).await?;
 

@@ -1,12 +1,16 @@
 mod password;
 mod qrcode;
-
-use std::sync::LazyLock;
-
 pub use password::*;
 pub use qrcode::*;
 
+use crate::api::{
+    network::SessionClient,
+    xmu_service::{IDS_URL, lnt::LNT_URL},
+};
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
+use tracing::{debug, error, info};
 use url::Url;
 use url_macro::url;
 
@@ -156,6 +160,64 @@ mod session_test {
         println!("LNT Session: {}", session);
         Ok(())
     }
+}
+
+pub async fn login_request(session: &SessionClient, data: LoginRequest) -> Result<LoginData> {
+    info!(url = data.url, "发送登录请求");
+    session
+        .post(&data.url, &data.body)
+        .await?
+        .error_for_status_ref()
+        .map_err(|e| {
+            error!(url = data.url, error = ?e, "登录请求返回非成功状态码");
+            e
+        })?;
+
+    let castgc = session.get_cookie("CASTGC", &IDS_URL).ok_or_else(|| {
+        error!("登录失败，未获取到 CASTGC Cookie");
+        anyhow!("登录失败，未获取到CASTGC Cookie")
+    })?;
+    debug!("成功获取 CASTGC Cookie");
+
+    // 访问 LNT URL 获取 session cookie
+    let lnt_url = LNT_URL.clone();
+    let lnt_resp = session.get(lnt_url).await?;
+    lnt_resp.error_for_status().map_err(|e| {
+        error!(url = ?LNT_URL, error = ?e, "访问 LNT URL 返回非成功状态码");
+        e
+    })?;
+
+    let lnt = session.get_cookie("session", &LNT_URL).ok_or_else(|| {
+        error!("登录失败，未获取到 LNT session Cookie");
+        anyhow!("登录失败，未获取到session")
+    })?;
+    debug!("成功获取 LNT session Cookie");
+
+    info!("二维码登录流程完成，成功获取登录数据");
+    Ok(LoginData {
+        castgc: castgc.to_string(),
+        lnt: lnt.to_string(),
+    })
+}
+
+pub async fn login_request_castgc(session: &SessionClient, data: LoginRequest) -> Result<String> {
+    info!(url = data.url, "发送登录请求以获取 CASTGC");
+    session
+        .post(&data.url, &data.body)
+        .await?
+        .error_for_status_ref()
+        .map_err(|e| {
+            error!(url = data.url, error = ?e, "二维码登录请求返回非成功状态码");
+            e
+        })?;
+
+    let castgc = session.get_cookie("CASTGC", &IDS_URL).ok_or_else(|| {
+        error!("登录失败，未获取到 CASTGC Cookie");
+        anyhow!("登录失败，未获取到CASTGC Cookie")
+    })?;
+
+    info!("成功通过登录流程获取 CASTGC");
+    Ok(castgc.to_string())
 }
 
 #[cfg(test)]

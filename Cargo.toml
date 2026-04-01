@@ -73,6 +73,10 @@ arc-swap = { version = "1.8.0", features = ["serde"] }
 scraper = "0.25.0"
 ego-tree = "0.10.0"
 base64 = "0.22.1"
+aes-gcm = "0.10.3"
+hkdf = "0.12.4"
+p256 = { version = "0.13.2", features = ["ecdh"] }
+zeroize = "1.8.2"
 pulldown-cmark = "0.11.0"
 headless_chrome = "1.0.20"
 urlencoding = "2.1.3"
