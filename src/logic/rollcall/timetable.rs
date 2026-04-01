@@ -7,7 +7,7 @@ use crate::{
     abi::{logic_import::*, message::from_str},
     api::xmu_service::{jw::ScheduleCourseTime, llm::choose_timetable::ChooseTimetable},
 };
-use anyhow::anyhow;
+use anyhow::{Result, anyhow};
 use std::sync::Arc;
 
 #[handler(msg_type=Message,command="signtime",echo_cmd=true,
@@ -51,11 +51,16 @@ pub async fn del_sign_time(ctx: Context) -> Result<()> {
     let sender = ctx.message.get_sender();
     let id = sender.user_id.ok_or(anyhow!("获取用户ID失败"))?;
 
-    TIMETABLE_GROUP.remove(&id)?;
-    TIME_SIGN_TASK.force_update().await?;
-    DATA.remove(&id)?;
+    remove_sign_time(id).await?;
 
     ctx.send_message_async(from_str("课程时间表已删除"));
 
+    Ok(())
+}
+
+pub async fn remove_sign_time(qq: i64) -> Result<()> {
+    TIMETABLE_GROUP.remove(&qq)?;
+    TIME_SIGN_TASK.force_update().await?;
+    DATA.remove(&qq)?;
     Ok(())
 }

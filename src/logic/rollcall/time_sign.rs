@@ -9,6 +9,7 @@ use crate::logic::login::DATA as LOGIN_DATA;
 use crate::logic::rollcall::auto_sign_data::AutoSignResponse;
 use crate::logic::rollcall::auto_sign_data::auto_sign_response::{NumberSign, QRSign, RadarSign};
 use crate::logic::rollcall::data::TIMETABLE_GROUP;
+use crate::logic::rollcall::timetable::remove_sign_time;
 use crate::logic::rollcall::{sign_request, spec_sign_request};
 use crate::{
     api::{
@@ -70,6 +71,7 @@ async fn time_sign_task() -> Result<()> {
                     match LOGIN_DATA.get(&qq) {
                         Some(e) => {
                             if !Profile::check(&e.lnt).await {
+                                remove_sign_time(qq).await?;
                                 return Ok(TimeSignUpdateResponse::NotLogin {
                                     qq,
                                     group_id: *group_id,
@@ -78,6 +80,7 @@ async fn time_sign_task() -> Result<()> {
                         }
 
                         None => {
+                            remove_sign_time(qq).await?;
                             return Ok(TimeSignUpdateResponse::NotLogin {
                                 qq,
                                 group_id: *group_id,
