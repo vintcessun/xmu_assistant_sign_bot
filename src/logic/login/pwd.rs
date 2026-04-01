@@ -1,4 +1,5 @@
 use super::super::BuildHelp;
+use crate::abi::message::MessageSend;
 use crate::api::network::SessionClient;
 use crate::api::storage::HotTable;
 use crate::logic::login::LOGIN_DATA;
@@ -34,10 +35,12 @@ pub async fn login_pwd(ctx: Context) -> Result<()> {
         None => {
             let task = LoginTask::new(id);
             let client = SessionClient::new();
-            ctx.send_message(message::from_str(format!(
-                "请点击为{id}用户登录:{}",
-                task.get_url()
-            )))
+            ctx.send_message(
+                MessageSend::new_message()
+                    .at(id.to_string())
+                    .text(format!("请点击为{id}用户登录:{}", task.get_url()))
+                    .build(),
+            )
             .await?;
             let (usr, pwd) = task.wait_result().await?;
             let login_data = login_password(&client, usr.clone(), &pwd).await?;
@@ -62,6 +65,8 @@ pub async fn login_pwd(ctx: Context) -> Result<()> {
                 error!(user_id = id, error = ?e, "存储用户登录数据失败");
                 e
             })?;
+
+            ctx.send_message_async(message::from_str("账密保存成功"));
         }
     }
 
