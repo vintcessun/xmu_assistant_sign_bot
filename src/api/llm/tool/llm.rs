@@ -11,7 +11,7 @@ use serde::de::DeserializeOwned;
 use std::sync::LazyLock;
 use tracing::{debug, error, info, trace, warn};
 
-const LOW_MODEL: &str = "qwen3.5:4b";
+const LOW_MODEL: &str = "gemma4:e2b";
 const HIGH_MODEL: &str = "gemini-flash-lite-latest";
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
@@ -102,9 +102,16 @@ where
     let mut i = 1;
     loop {
         let model_name = if i <= all_num() * 2
-            && let Some(model) = router(i).await
+            && let Some(_model) = router(i).await
         {
-            model
+            #[cfg(not(test))]
+            {
+                _model
+            }
+            #[cfg(test)]
+            {
+                LOW_MODEL
+            }
         } else {
             LOW_MODEL
         };
