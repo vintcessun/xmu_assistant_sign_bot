@@ -44,7 +44,7 @@ tracing-subscriber = { version = "0.3.22", default-features = false, features = 
 ] }
 helper = { path = "./helper" }
 const_format = "0.2.35"
-redb = "3.1.0"
+redb = "4.0.0"
 bytes = "1.11.0"
 bincode = { version = "2.0.1", features = ["serde"] }
 reqwest = { version = "0.12.28", features = ["cookies", "json", "stream"] }

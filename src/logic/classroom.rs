@@ -18,7 +18,7 @@ help_msg=r#"用法:/class <描述>
 <描述>:描述课程，后端使用LLM进行智能识别查询指定的课程的课堂互动信息
 功能: 查询指定课程的课堂互动信息"#)]
 pub async fn class(ctx: Context) -> Result<()> {
-    let client = get_client_or_err(&ctx).await?;
+    let client = get_client_or_err(&mut ctx).await?;
     let msg_text = ctx.get_message_text();
     let course_id = {
         let course = ChooseCourse::get_from_client(&client, msg_text).await?;
@@ -62,7 +62,7 @@ help_msg=r#"用法:/getclass <ID>
 <ID>: 查询小测的ID，通过 /class 命令获取
 功能: 查询指定课堂互动小测的内容"#)]
 pub async fn get_class(ctx: Context) -> Result<()> {
-    let client = get_client_or_err(&ctx).await?;
+    let client = get_client_or_err(&mut ctx).await?;
     let id = ctx.get_message_number::<i64>()?;
     debug!(class_id = id, "成功解析课堂互动 ID");
 
