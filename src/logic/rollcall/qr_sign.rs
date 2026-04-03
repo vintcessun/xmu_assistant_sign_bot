@@ -12,12 +12,15 @@ use crate::{
         qrcode::QrCode,
         storage::FileStorage,
     },
-    logic::rollcall::{auto_sign_data::AutoSignResponse, qr_sign_parse::QrSignRequest},
+    logic::{
+        login::process::try_pwd_login,
+        rollcall::{auto_sign_data::AutoSignResponse, qr_sign_parse::QrSignRequest},
+    },
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 #[handler(msg_type=Message)]
 pub async fn qr_sign(ctx: Context) -> Result<()> {
@@ -111,6 +114,14 @@ pub async fn qr_sign_request(data: &str) -> Result<Vec<QrSignResponse>> {
                     Ok(r) => return Ok(r),
                     Err(e) => {
                         QrSignRequest::remove(qq);
+                        match try_pwd_login(&SessionClient::new(), qq).await {
+                            Ok(_) => {
+                                info!("账号密码登录成功，继续进行扫码推送签到");
+                            }
+                            Err(e) => {
+                                error!("账号密码({})登录失败: {:?}", qq, e);
+                            }
+                        };
                         debug!(qq, error = ?e, "二维码签到请求失败");
                         err = Err(e);
                     }

@@ -22,7 +22,7 @@ help_msg=r#"用法:/autosign
 注:对于雷达签到，会先查询用户的课程时间表，如果没有课程时间表就会查询签到缓存，如果都失败就会逐个尝试
 功能:自动签到数字和雷达"#)]
 pub async fn auto_sign(ctx: Context) -> Result<()> {
-    let client = Arc::new(get_client_or_err(&ctx).await?);
+    let client = Arc::new(get_client_or_err(&mut ctx).await?);
     let qq = ctx
         .message
         .get_sender()

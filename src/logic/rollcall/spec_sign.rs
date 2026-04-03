@@ -21,7 +21,7 @@ help_msg=r#"用法:/specsign <ID>
 注: 签到功能和/autosign相同
 功能:自动对指定课程签到数字和雷达"#)]
 pub async fn spec_sign(ctx: Context) -> Result<()> {
-    let client = Arc::new(get_client_or_err(&ctx).await?);
+    let client = Arc::new(get_client_or_err(&mut ctx).await?);
     let qq = ctx
         .message
         .get_sender()

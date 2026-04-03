@@ -18,7 +18,7 @@ use std::sync::Arc;
 help_msg=r#"用法:/sign
 功能:查询签到"#)]
 pub async fn sign(ctx: Context) -> Result<()> {
-    let client = Arc::new(get_client_or_err(&ctx).await?);
+    let client = Arc::new(get_client_or_err(&mut ctx).await?);
     let qq = ctx
         .message
         .get_sender()
