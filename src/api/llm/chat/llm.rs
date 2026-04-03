@@ -15,7 +15,7 @@ use genai::{
 use llm_xml_caster::llm_prompt;
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, trace};
 
 // 定义常量
 const CHAT_MODEL: &str = "gemini-flash-lite-latest";
@@ -54,7 +54,7 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
     // 2. 统一路由解析器：根据模型名从 MODEL_MAP 映射 Base URL
     let target_resolver = ServiceTargetResolver::from_resolver_fn(|mut target: ServiceTarget| {
         if let Some(cfg) = MODEL_MAP.get(&*target.model.model_name) {
-            info!(
+            trace!(
                 model_name = %target.model.model_name,
                 base_url = %cfg.base_url,
                 "LLM 服务目标已路由到配置的 Base URL 并修正适配器类型"

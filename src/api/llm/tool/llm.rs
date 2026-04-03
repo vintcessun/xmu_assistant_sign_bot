@@ -127,7 +127,7 @@ where
                 }
                 #[cfg(test)]
                 println!("LLM 结构化调用失败错误信息: {:?} 第 {} 次", e, i);
-                warn!(model_name = model_name, error = ?e, "LLM 结构化调用失败 第 {} 次", i);
+                debug!(model_name = model_name, error = ?e, "LLM 结构化调用失败 第 {} 次", i);
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             }
         }

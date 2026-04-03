@@ -18,7 +18,7 @@ help_msg=r#"用法:/test <描述>
 <描述>:描述课程，后端使用LLM进行智能识别查询指定的课程的测试信息
 功能: 查询指定课程的测试信息"#)]
 pub async fn test(ctx: Context) -> Result<()> {
-    let client = get_client_or_err(&ctx).await?;
+    let client = get_client_or_err(&mut ctx).await?;
     let msg_text = ctx.get_message_text();
     debug!(input = msg_text, "使用 LLM 识别课程");
 
@@ -64,7 +64,7 @@ help_msg=r#"用法:/gettest <ID>
 <ID>: 查询小测的ID，通过 /test 命令获取
 功能: 查询指定小测的内容"#)]
 pub async fn get_test(ctx: Context) -> Result<()> {
-    let client = get_client_or_err(&ctx).await?;
+    let client = get_client_or_err(&mut ctx).await?;
     let id_text = ctx
         .get_message_text()
         .chars()
@@ -106,7 +106,7 @@ help_msg=r#"用法:/testans <ID>
 <ID>: 查询小测的ID，通过 /test 命令获取
 功能: 查询小测的答案，如果老师有公布的话"#)]
 pub async fn test_ans(ctx: Context) -> Result<()> {
-    let client = get_client_or_err(&ctx).await?;
+    let client = get_client_or_err(&mut ctx).await?;
     let id = ctx.get_message_number::<i64>()?;
     debug!(quiz_id = id, "成功解析小测 ID");
 

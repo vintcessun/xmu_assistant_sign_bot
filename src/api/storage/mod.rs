@@ -3,6 +3,8 @@ mod file;
 mod hot;
 mod image;
 mod temp;
+#[cfg(test)]
+mod test;
 mod vector;
 
 use crate::config::DATA_DIR as BASE_DATA_DIR;
