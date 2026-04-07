@@ -1,4 +1,5 @@
 use super::data::LOGIN_DATA;
+use super::qr_sign_parse::QR_SIGN_TASK_RUNNER;
 use crate::{
     abi::{
         logic_import::*,
@@ -24,6 +25,7 @@ use tracing::{debug, error, info};
 
 #[handler(msg_type=Message)]
 pub async fn qr_sign(ctx: Context) -> Result<()> {
+    QR_SIGN_TASK_RUNNER.get_latest().await?;
     let start = tokio::time::Instant::now();
     let msg = ctx.get_message();
     let msg_receive = match &*msg {

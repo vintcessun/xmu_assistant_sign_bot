@@ -16,7 +16,7 @@ impl TimeTask for TimeSignUpdateTask {
     type Output = DashMap<i64, TimeBitMap, RandomState>;
 
     fn name(&self) -> &'static str {
-        "time_sign_update"
+        "TimeSignUpdateTask"
     }
 
     fn interval(&self) -> Duration {

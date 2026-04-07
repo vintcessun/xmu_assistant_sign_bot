@@ -1,14 +1,17 @@
 use super::data::LOGIN_DATA;
 use crate::api::network::SessionClient;
-use crate::api::xmu_service::lnt::get_session_client;
+use crate::api::scheduler::{TaskRunner, TimeTask};
+use crate::api::xmu_service::lnt::{ProfileWithoutCache, get_session_client};
 use crate::logic::rollcall::{
     auto_sign_data::AutoSignResponse, auto_sign_request::AutoSignRequest,
 };
 use ahash::RandomState;
 use anyhow::{Result, anyhow};
+use async_trait::async_trait;
 use dashmap::DashMap;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
+use std::time::Duration;
 use tokio::task::block_in_place;
 use tracing::trace;
 use url::Url;
@@ -139,3 +142,59 @@ impl QrSignRequest {
         })
     }
 }
+
+pub struct QrSignTask;
+
+#[async_trait]
+impl TimeTask for QrSignTask {
+    type Output = ();
+
+    fn interval(&self) -> Duration {
+        Duration::from_secs(60)
+    }
+
+    fn name(&self) -> &'static str {
+        "QrSignTask"
+    }
+
+    async fn run(&self) -> Result<Self::Output> {
+        qr_sign_task().await?;
+        Ok(())
+    }
+}
+
+async fn qr_sign_task() -> Result<()> {
+    let mut tasks = vec![];
+
+    for data in &*LOGIN_DATA {
+        let qq = *data.key();
+        tasks.push(async move {
+            match async {
+                let req = QrSignRequest::get(qq).await?;
+                ProfileWithoutCache::get_from_client(&req.client).await?;
+                Ok::<(), anyhow::Error>(())
+            }
+            .await
+            {
+                Ok(_) => {
+                    trace!("账号 {} 的二维码签到请求准备就绪", qq);
+                }
+                Err(e) => {
+                    trace!("账号 {} 的二维码签到请求准备失败: {:?}", qq, e);
+                    QrSignRequest::remove(qq);
+                    let req = QrSignRequest::get(qq).await?;
+                    ProfileWithoutCache::get_from_client(&req.client).await?;
+                    trace!("账号 {} 的二维码签到请求重新准备就绪", qq);
+                }
+            }
+            Ok::<(), anyhow::Error>(())
+        });
+    }
+
+    let _ = futures::future::join_all(tasks).await;
+
+    Ok(())
+}
+
+pub static QR_SIGN_TASK_RUNNER: LazyLock<Arc<TaskRunner<QrSignTask>>> =
+    LazyLock::new(|| TaskRunner::new(QrSignTask));
