@@ -150,7 +150,7 @@ impl TimeTask for QrSignTask {
     type Output = ();
 
     fn interval(&self) -> Duration {
-        Duration::from_secs(60)
+        Duration::from_secs(600)
     }
 
     fn name(&self) -> &'static str {
