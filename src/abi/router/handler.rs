@@ -21,7 +21,7 @@ where
     M: MessageType + fmt::Debug + Send + Sync + 'static,
 {
     const FILTER_TYPE: Option<Type>;
-    const FILTER_CMD: Option<&'static str>;
+    const FILTER_CMDS: &'static [&'static str];
 
     fn handle(&self, context: &Context<T, M>) -> Result<()>;
 }

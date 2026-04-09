@@ -108,6 +108,7 @@ pub fn define_default_type(input: TokenStream) -> TokenStream {
 struct HandlerArgs {
     msg_type: Option<Ident>,
     command: Option<LitStr>,
+    aliases: Vec<LitStr>,
     echo_cmd: bool,
     help_msg: Option<String>,
 }
@@ -116,6 +117,7 @@ impl Parse for HandlerArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut msg_type = None;
         let mut command = None;
+        let mut aliases = Vec::new();
         let mut echo_cmd = false;
         let mut help_msg = None;
 
@@ -131,6 +133,17 @@ impl Parse for HandlerArgs {
                 if let Meta::NameValue(nv) = meta {
                     let expr = nv.value;
                     command = Some(syn::parse2::<LitStr>(quote!(#expr))?);
+                }
+            } else if path.is_ident("alias") {
+                if let Meta::NameValue(nv) = meta {
+                    let expr = nv.value;
+                    let arr = syn::parse2::<syn::ExprArray>(quote!(#expr))?;
+                    let mut parsed_aliases = Vec::with_capacity(arr.elems.len());
+                    for elem in arr.elems {
+                        let lit = syn::parse2::<LitStr>(quote!(#elem))?;
+                        parsed_aliases.push(lit);
+                    }
+                    aliases = parsed_aliases;
                 }
             } else if path.is_ident("echo_cmd") {
                 if let Meta::NameValue(nv) = meta {
@@ -148,9 +161,16 @@ impl Parse for HandlerArgs {
             } else {
                 return Err(syn::Error::new_spanned(
                     path,
-                    "Unknown attribute key, expected 'msg_type', 'command', 'echo_cmd', 'help_msg'",
+                    "Unknown attribute key, expected 'msg_type', 'command', 'alias', 'echo_cmd', 'help_msg'",
                 ));
             }
+        }
+
+        if !aliases.is_empty() && command.is_none() {
+            return Err(syn::Error::new(
+                input.span(),
+                "The 'alias' attribute requires 'command' to be present.",
+            ));
         }
 
         if echo_cmd && !msg_type.as_ref().map(|t| *t == "Message").unwrap_or(false) {
@@ -176,9 +196,19 @@ impl Parse for HandlerArgs {
             ));
         }
 
+        for alias in &aliases {
+            if alias.value().len() < 2 {
+                return Err(syn::Error::new_spanned(
+                    alias,
+                    "Each alias in 'alias' must be at least 2 characters long.",
+                ));
+            }
+        }
+
         Ok(HandlerArgs {
             msg_type,
             command,
+            aliases,
             echo_cmd,
             help_msg,
         })
@@ -210,7 +240,7 @@ pub fn handler(attr: TokenStream, item: TokenStream) -> TokenStream {
         quote! { None }
     };
 
-    let cmd_const = if let Some(ref cmd) = args.command {
+    let cmds_const = if let Some(ref cmd) = args.command {
         let clean_cmd = cmd.value().replace('_', "");
         let clean_fn = fn_name.to_string().replace('_', "");
         if clean_cmd != clean_fn {
@@ -221,9 +251,11 @@ pub fn handler(attr: TokenStream, item: TokenStream) -> TokenStream {
             .to_compile_error()
             .into();
         }
-        quote! { Some(#cmd) }
+
+        let aliases = &args.aliases;
+        quote! { &[#cmd, #(#aliases),*] }
     } else {
-        quote! { None }
+        quote! { &[] }
     };
 
     let echo_logic = if args.echo_cmd {
@@ -287,7 +319,7 @@ pub fn handler(attr: TokenStream, item: TokenStream) -> TokenStream {
             M: MessageType + std::fmt::Debug + Send + Sync + 'static,
         {
             const FILTER_TYPE: Option<Type> = #type_const;
-            const FILTER_CMD: Option<&'static str> = #cmd_const;
+            const FILTER_CMDS: &'static [&'static str] = #cmds_const;
 
             #[inline(always)] //因为后面设计复杂的匹配逻辑并且强依赖死代码消除(DCE)所以这里强制内联
             fn handle(&self, ctx: &Context<T, M>) -> anyhow::Result<()> {
@@ -391,7 +423,7 @@ pub fn register_handler_with_help(input: TokenStream) -> TokenStream {
                             let cmd_part = &text[prefix_len..];
 
                             #(
-                                if cmd_part.starts_with(<#all_cmds as Handler<T, M>>::FILTER_CMD.unwrap()) {
+                                if <#all_cmds as Handler<T, M>>::FILTER_CMDS.iter().any(|cmd| cmd_part.starts_with(cmd)) {
                                     let _ = <#all_cmds as Handler<T, M>>::handle(&#all_cmds, &context);
                                     break 'matching_cmd;
                                 }
