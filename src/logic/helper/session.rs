@@ -24,6 +24,10 @@ use tracing::info;
 
 static CLIENT_CACHE: LazyLock<DashMap<i64, SessionClient>> = LazyLock::new(DashMap::new);
 
+pub fn get_client_from_cache(id: i64) -> Option<SessionClient> {
+    CLIENT_CACHE.get(&id).map(|entry| entry.value().clone())
+}
+
 pub async fn get_client_or_err_for_id(id: i64) -> Result<SessionClient> {
     if let Some(client) = CLIENT_CACHE.get(&id) {
         let client = client.value().clone();
