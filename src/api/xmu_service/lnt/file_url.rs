@@ -27,7 +27,7 @@ pub struct FileUrl;
 impl FileUrl {
     #[session_client_helper]
     pub async fn get_from_client(
-        client: Arc<SessionClient>,
+        client: SessionClient,
         id: i64,
         filename: &str,
     ) -> Result<Arc<File>> {

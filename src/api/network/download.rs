@@ -5,17 +5,13 @@ use crate::api::{
 use anyhow::{Result, bail};
 use futures::{FutureExt, future::BoxFuture};
 use futures_util::StreamExt;
-use std::{path::PathBuf, sync::Arc};
+use std::path::PathBuf;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use tracing::{debug, error, trace, warn};
 
 const OPTIMAL_CHUNKS: u64 = 1; //为了稳定性，先固定为1，后续可以根据实际情况调整
 
-pub async fn download_to_file(
-    client: Arc<SessionClient>,
-    url: &str,
-    filename: &str,
-) -> Result<File> {
+pub async fn download_to_file(client: SessionClient, url: &str, filename: &str) -> Result<File> {
     download_to_backend::<File>(client, url, filename).await
 }
 
@@ -24,12 +20,12 @@ pub struct FutureFile {
     pub future: BoxFuture<'static, Result<()>>,
 }
 
-pub fn download_to_file_sync(client: Arc<SessionClient>, url: &str, filename: &str) -> FutureFile {
+pub fn download_to_file_sync(client: SessionClient, url: &str, filename: &str) -> FutureFile {
     download_to_backend_sync::<File>(client, url, filename)
 }
 
 pub fn download_to_backend_sync<T: FileBackend>(
-    client: Arc<SessionClient>,
+    client: SessionClient,
     url: &str,
     filename: &str,
 ) -> FutureFile {
@@ -73,7 +69,7 @@ pub fn download_to_backend_sync<T: FileBackend>(
 }
 
 pub async fn download_to_backend<T: FileBackend>(
-    client: Arc<SessionClient>,
+    client: SessionClient,
     url: &str,
     filename: &str,
 ) -> Result<T> {
@@ -117,7 +113,7 @@ pub async fn download_to_backend<T: FileBackend>(
 }
 
 async fn download_parallel_benchmarked(
-    client: Arc<SessionClient>,
+    client: SessionClient,
     url: &str,
     path: &std::path::Path,
     total_size: u64,
@@ -249,7 +245,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download() -> Result<()> {
-        let client = Arc::new(SessionClient::new());
+        let client = SessionClient::new();
         let url = "https://download.samplelib.com/png/sample-boat-400x300.png";
         let filename = "sample-boat-400x300.png";
         let file = download_to_file(client, url, filename).await?;

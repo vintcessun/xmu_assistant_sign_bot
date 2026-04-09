@@ -249,8 +249,8 @@ pub fn handler(attr: TokenStream, item: TokenStream) -> TokenStream {
         )
     };
 
-    let help_trait = if args.command.is_some() {
-        let cmd_val = args.command.as_ref().unwrap().value();
+    let help_trait = if let Some(cmd) = &args.command {
+        let cmd_val = cmd.value();
         let help_val = args.help_msg.as_ref().unwrap();
         let help_msg = format!("指令: {}\n{}\n\n", cmd_val, help_val);
 
@@ -887,30 +887,14 @@ pub fn session_client_helper(_args: TokenStream, input: TokenStream) -> TokenStr
                     });
                 }
             }
-            // 匹配 Arc<SessionClient> (路径类型)
+            // 匹配 SessionClient (路径类型)
             syn::Type::Path(ty_path) => {
                 let last_seg = ty_path.path.segments.last().unwrap();
-                if last_seg.ident == "Arc" {
-                    // 进一步校验泛型参数是否为 SessionClient
-                    let mut valid_inner = false;
-                    if let syn::PathArguments::AngleBracketed(args) = &last_seg.arguments
-                        && let Some(syn::GenericArgument::Type(syn::Type::Path(inner_tp))) =
-                            args.args.first()
-                        && inner_tp.path.segments.last().map(|s| &s.ident)
-                            == Some(&format_ident!("SessionClient"))
-                    {
-                        valid_inner = true;
-                    }
-                    if valid_inner {
-                        true
-                    } else {
-                        return TokenStream::from(quote_spanned! {
-                            pat_type.ty.span() => compile_error!("the type inside 'Arc' must be 'SessionClient'");
-                        });
-                    }
+                if last_seg.ident == "SessionClient" {
+                    true
                 } else {
                     return TokenStream::from(quote_spanned! {
-                        pat_type.ty.span() => compile_error!("the first argument must be 'Arc<SessionClient>' or '&SessionClient'");
+                        pat_type.ty.span() => compile_error!("the first argument must be 'SessionClient' or '&SessionClient'");
                     });
                 }
             }
@@ -948,7 +932,7 @@ pub fn session_client_helper(_args: TokenStream, input: TokenStream) -> TokenStr
     let client_invocation = if is_arc {
         // 如果原函数要 Arc，我们把 get_session_client 返回的引用包装成新的 Arc
         // 假设 get_session_client 返回的是 SessionClient 实例
-        quote! { Arc::new(client) }
+        quote! { client }
     } else {
         // 如果原函数只要引用，维持原状
         quote! { &client }
@@ -1115,7 +1099,7 @@ pub fn castgc_client_helper(_args: TokenStream, input: TokenStream) -> TokenStre
     let where_clause = &generics.where_clause;
     let return_type = &sig.output;
 
-    // 5. 处理参数：校验第一个参数是否为 &SessionClient 或 Arc<SessionClient>
+    // 5. 处理参数：校验第一个参数是否为 &SessionClient 或 SessionClient
     let mut inputs_iter = sig.inputs.iter();
     let first_arg = inputs_iter.next();
 
@@ -1138,34 +1122,14 @@ pub fn castgc_client_helper(_args: TokenStream, input: TokenStream) -> TokenStre
                     });
                 }
             }
-            // 匹配 Arc<SessionClient>
+            // 匹配 SessionClient
             syn::Type::Path(ty_path) => {
                 let last_seg = ty_path.path.segments.last().unwrap();
-                if last_seg.ident == "Arc" {
-                    let mut valid_inner = false;
-                    if let syn::PathArguments::AngleBracketed(args) = &last_seg.arguments {
-                        // 进一步校验泛型参数是否为 SessionClient
-                        if let Some(syn::GenericArgument::Type(syn::Type::Path(inner_tp))) =
-                            args.args.first()
-                        {
-                            // 检查内部类型是否为 SessionClient
-                            if inner_tp.path.segments.last().map(|s| &s.ident)
-                                == Some(&format_ident!("SessionClient"))
-                            {
-                                valid_inner = true;
-                            }
-                        }
-                    }
-                    if valid_inner {
-                        true
-                    } else {
-                        return TokenStream::from(quote_spanned! {
-                            pat_type.ty.span() => compile_error!("Arc must contain 'SessionClient'");
-                        });
-                    }
+                if last_seg.ident == "SessionClient" {
+                    true
                 } else {
                     return TokenStream::from(quote_spanned! {
-                        pat_type.ty.span() => compile_error!("First arg must be 'Arc<SessionClient>' or '&SessionClient'");
+                        pat_type.ty.span() => compile_error!("First arg must be 'SessionClient' or '&SessionClient'");
                     });
                 }
             }
@@ -1201,7 +1165,7 @@ pub fn castgc_client_helper(_args: TokenStream, input: TokenStream) -> TokenStre
 
     // 6. 生成新函数逻辑
     let client_invocation = if is_arc {
-        quote! { std::sync::Arc::new(client) }
+        quote! { client }
     } else {
         quote! { &client }
     };

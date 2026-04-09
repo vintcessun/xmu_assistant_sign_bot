@@ -110,9 +110,9 @@ checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
 name = "anndists"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8238f99889a837cd6641360f9f3ead18f70b07bf6ce1f04a319bc6bd8a2f48f1"
+checksum = "9a8396b473aa0bceed68fb32462505387ea39fa47c7029417e0a49f10592b036"
 dependencies = [
  "anyhow",
  "cfg-if",
@@ -183,9 +183,9 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "arc-swap"
-version = "1.9.0"
+version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a07d1f37ff60921c83bdfc7407723bdefe89b44b98a9b772f225c8f9d67141a6"
+checksum = "6a3a1fd6f75306b68087b831f025c712524bcb19aad54e557b1129cfa0a2b207"
 dependencies = [
  "rustversion",
  "serde",
@@ -542,9 +542,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.58"
+version = "1.2.59"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1e928d4b69e3077709075a938a05ffbedfa53a84c8f766efbf8220bb1ff60e1"
+checksum = "b7a4d3ec6524d28a329fc53654bbadc9bdd7b0431f5d65f1a56ffb28a1ee5283"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1451,9 +1451,9 @@ dependencies = [
 
 [[package]]
 name = "fastrand"
-version = "2.3.0"
+version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
+checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
 
 [[package]]
 name = "ff"
@@ -1660,8 +1660,8 @@ dependencies = [
 
 [[package]]
 name = "genai"
-version = "0.6.0-beta.14-WIP"
-source = "git+https://github.com/jeremychone/rust-genai?branch=main#d40abb2583f2aacdda0a51b79b164965ebda03a9"
+version = "0.6.0-beta.16-WIP"
+source = "git+https://github.com/jeremychone/rust-genai?branch=main#4d1ac1da659cd6b9a64692b3df7b17c898e4d8b6"
 dependencies = [
  "base64",
  "bytes",
@@ -2610,7 +2610,7 @@ checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 [[package]]
 name = "llm_xml_caster"
 version = "0.1.0"
-source = "git+https://github.com/vintcessun/llm_xml_caster?branch=master#706ce8a2e6da26531a775bcc1c7b430e34fa4632"
+source = "git+https://github.com/vintcessun/llm_xml_caster?branch=master#64ee77c498a6900b383b9cc0758f3776916dc22c"
 dependencies = [
  "const_format",
  "dashmap",
@@ -2627,7 +2627,7 @@ dependencies = [
 [[package]]
 name = "llm_xml_caster_helper"
 version = "0.1.0"
-source = "git+https://github.com/vintcessun/llm_xml_caster?branch=master#706ce8a2e6da26531a775bcc1c7b430e34fa4632"
+source = "git+https://github.com/vintcessun/llm_xml_caster?branch=master#64ee77c498a6900b383b9cc0758f3776916dc22c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2810,7 +2810,7 @@ dependencies = [
 [[package]]
 name = "monty"
 version = "0.0.9"
-source = "git+https://github.com/pydantic/monty?branch=main#35aae2c56989de6944c08de907604849b9ef7a50"
+source = "git+https://github.com/pydantic/monty?branch=main#d27e6f4e31eec94491095cca84091825f454f949"
 dependencies = [
  "ahash",
  "bytemuck",
@@ -4270,9 +4270,9 @@ dependencies = [
 
 [[package]]
 name = "semver"
-version = "1.0.27"
+version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d767eb0aabc880b29956c35734170f26ed551a859dbd361d140cdbeca61ab1e2"
+checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
 name = "serde"
@@ -4851,9 +4851,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.51.0"
+version = "1.51.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bd1c4c0fc4a7ab90fc15ef6daaa3ec3b893f004f915f2392557ed23237820cd"
+checksum = "f66bf9585cda4b724d3e78ab34b73fb2bbaba9011b9bfdf69dc836382ea13b8c"
 dependencies = [
  "bytes",
  "libc",

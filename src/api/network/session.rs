@@ -116,6 +116,7 @@ impl SessionCookieStore {
     }
 }
 
+#[derive(Clone)]
 pub struct SessionClient {
     cookie_store: Arc<SessionCookieStore>,
     ua: HeaderValue,
@@ -390,8 +391,8 @@ impl SessionClient {
 mod tests {
     use super::*;
     use futures_util::StreamExt;
+    use std::time::Duration;
     use std::time::Instant;
-    use std::{sync::Arc, time::Duration};
     use tokio::io::{AsyncSeekExt, AsyncWriteExt};
     use tokio::time::sleep;
 
@@ -399,8 +400,8 @@ mod tests {
     //const TEST_URL: &str = "https://c-media.xmu.edu.cn:443/download/file/0423f4696d8880f17688a04d228d3912fa957bf2?timestamp=1767970800&token=0dd1a323d17aea01b4d8d09a34cbce96&name=1.0%20%E6%95%B0%E7%90%86%E9%80%BB%E8%BE%91%E5%BC%95%E8%A8%80.mp4";
     const TEST_URL: &str = "https://c-media.xmu.edu.cn:443/download/file/3f5dee7e7348f2f24c3fef1e8758d0517acc3944?timestamp=1767938400&token=ceb41a79d0b5b8eee2bc3fbd377a17ea&name=1.1%20%E5%91%BD%E9%A2%98%E7%AC%A6%E5%8F%B7%E5%8C%96%E5%8F%8A%E8%81%94%E7%BB%93%E8%AF%8D.ppt";
 
-    async fn get_client() -> Result<Arc<SessionClient>> {
-        let client = Arc::new(SessionClient::new());
+    async fn get_client() -> Result<SessionClient> {
+        let client = SessionClient::new();
 
         // 1. 获取文件总大小 (复用 request_internal)
         let head_resp = client.get(TEST_URL).await?;
@@ -425,7 +426,7 @@ mod tests {
         Ok(client)
     }
 
-    async fn test_n_download(chunks: u64, client: Arc<SessionClient>) -> Result<Duration> {
+    async fn test_n_download(chunks: u64, client: SessionClient) -> Result<Duration> {
         let start_multi = Instant::now();
 
         let head_resp = client.get(TEST_URL).await?;

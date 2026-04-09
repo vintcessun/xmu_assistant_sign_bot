@@ -7,11 +7,46 @@ use crate::{
         network::BotClient,
         websocket::BotHandler,
     },
-    api::{network::SessionClient, xmu_service::lnt::get_session_client},
-    logic::login::{LOGIN_DATA, process::process_login},
+    api::{
+        network::SessionClient,
+        xmu_service::{
+            lnt::{ProfileWithoutCache, get_session_client},
+            login::login_password,
+        },
+    },
+    logic::login::{LOGIN_DATA, PWD_DATA, process::process_login},
 };
+use dashmap::DashMap;
 use std::fmt;
+use std::sync::Arc;
+use std::sync::LazyLock;
 use tracing::info;
+
+static CLIENT_CACHE: LazyLock<DashMap<i64, SessionClient>> = LazyLock::new(DashMap::new);
+
+pub async fn get_client_or_err_for_id(id: i64) -> Result<SessionClient> {
+    if let Some(client) = CLIENT_CACHE.get(&id) {
+        let client = client.value().clone();
+        if ProfileWithoutCache::get_from_client(&client).await.is_ok() {
+            return Ok(client.clone());
+        }
+    }
+    if let Some(e) = LOGIN_DATA.get(&id) {
+        let client = get_session_client(&e.lnt);
+        if ProfileWithoutCache::get_from_client(&client).await.is_ok() {
+            CLIENT_CACHE.insert(id, client.clone());
+            return Ok(client);
+        }
+    }
+    if let Some(e) = PWD_DATA.get(&id) {
+        let client = SessionClient::new();
+        let login_data = login_password(&client, e.username.clone(), &e.password).await?;
+        LOGIN_DATA.insert(id, Arc::new(login_data))?;
+        CLIENT_CACHE.insert(id, client.clone());
+        return Ok(client);
+    }
+    Err(anyhow!("未登录"))
+}
 
 pub async fn get_client_or_err<T>(ctx: &mut Context<T, Message>) -> Result<SessionClient>
 where
@@ -19,20 +54,12 @@ where
 {
     let sender = ctx.message.get_sender();
     let id = sender.user_id.ok_or(anyhow!("获取用户ID失败"))?;
-    match async move {
-        let session = LOGIN_DATA
-            .get(&id)
-            .ok_or(anyhow!("未登录，请使用“/login”登录后使用"))?;
-
-        Ok::<SessionClient, anyhow::Error>(get_session_client(&session.lnt))
+    if let Ok(client) = get_client_or_err_for_id(id).await {
+        return Ok(client);
     }
-    .await
-    {
-        Ok(e) => Ok(e),
-        Err(e) => {
-            info!("未登录({e})发起登录");
-            let login_data = process_login(ctx, id).await?;
-            Ok(get_session_client(&login_data.lnt))
-        }
-    }
+    info!("未登录发起登录");
+    let login_data = process_login(ctx, id).await?;
+    let client = get_session_client(&login_data.lnt);
+    CLIENT_CACHE.insert(id, client.clone());
+    Ok(client)
 }

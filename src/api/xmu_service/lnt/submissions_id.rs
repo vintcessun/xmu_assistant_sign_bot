@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::{
     abi::utils::SmartJsonExt,
     api::{
@@ -86,7 +84,7 @@ pub struct SubmissionResponse {
 
 async fn get_problem_message_content_plain(
     subject: &Subject,
-    client: Arc<SessionClient>,
+    client: SessionClient,
 ) -> Result<HtmlParseResult> {
     let message_type = format!("{}", subject.r#type);
     let sort = subject.sort + 1;
@@ -125,7 +123,7 @@ async fn get_problem_message_content_plain(
 
 pub fn get_problem_message_content(
     subject: &Subject,
-    client: Arc<SessionClient>,
+    client: SessionClient,
 ) -> BoxFuture<'_, Result<HtmlParseResult>> {
     async move {
         if subject.sub_subjects.is_empty() {
@@ -159,7 +157,7 @@ pub fn get_problem_message_content(
 }
 
 impl SubmissionResponse {
-    pub async fn parse(&self, client: Arc<SessionClient>) -> Result<HtmlParseResult> {
+    pub async fn parse(&self, client: SessionClient) -> Result<HtmlParseResult> {
         let mut ret = HtmlParseResult::new();
 
         for subject in &self.subjects_data.subjects {
@@ -198,7 +196,7 @@ mod tests {
     #[tokio::test]
     pub async fn test_parse() -> Result<()> {
         let parsed: SubmissionResponse = serde_json::from_str(DATA)?;
-        let client = Arc::new(SessionClient::new());
+        let client = SessionClient::new();
         let parsed = parsed.parse(client).await?;
         println!("Parsed: {:?}", parsed);
         Ok(())
