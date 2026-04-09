@@ -7,7 +7,7 @@ use crate::{
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-#[handler(msg_type=Message,command="pushsign",echo_cmd=true,
+#[handler(msg_type=Message,command="pushsign",alias=["push"],echo_cmd=true,
 help_msg=r#"用法:/pushsign <ID>
 <ID>: 签到ID，可以通过/sign命令查看
 注: 签到功能和/autosign相同
