@@ -8,7 +8,6 @@ use ego_tree::NodeRef;
 use futures::future::join_all;
 use scraper::{Html, Node};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use tokio::task::block_in_place;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -90,7 +89,7 @@ impl HtmlParseResultInner {
     }
 }
 
-fn get_image(url: &str, client: Arc<SessionClient>) -> FutureFile {
+fn get_image(url: &str, client: SessionClient) -> FutureFile {
     let filename = format!("{}", uuid::Uuid::new_v4());
     download_to_file_sync(client, url, &filename)
 }
@@ -140,11 +139,11 @@ fn map_chars(text: &str, map_type: &str) -> String {
 
 #[derive(Clone)]
 struct HtmlParser {
-    client: Arc<SessionClient>,
+    client: SessionClient,
 }
 
 impl HtmlParser {
-    fn new(client: Arc<SessionClient>) -> Self {
+    fn new(client: SessionClient) -> Self {
         Self { client }
     }
 
@@ -340,7 +339,7 @@ impl HtmlParser {
 // 对外暴露的便捷函数
 pub async fn html_to_message_and_markdown(
     html: &str,
-    client: Arc<SessionClient>,
+    client: SessionClient,
 ) -> Result<HtmlParseResult> {
     let parser = HtmlParser::new(client);
     parser.parse(html).await
@@ -356,7 +355,7 @@ mod tests {
     async fn test() -> Result<()> {
         let res = serde_json::from_str::<DistributeResponse>(SRC_JSON)?;
         println!("{:?}", res);
-        let client = Arc::new(SessionClient::new());
+        let client = SessionClient::new();
         let msg = res.parse(client).await?;
         println!("{:?}", msg);
         Ok(())

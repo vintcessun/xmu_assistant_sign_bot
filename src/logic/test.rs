@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use super::BuildHelp;
 use crate::{
     abi::{logic_import::*, message::from_str},
@@ -79,8 +77,6 @@ pub async fn get_test(ctx: Context) -> Result<()> {
     debug!(quiz_id = id, "开始获取小测内容 Distribute 数据");
     let distribute = Distribute::get_from_client(&client, id).await?;
 
-    let client = Arc::new(client);
-
     debug!(quiz_id = id, "开始解析小测内容");
     let result = distribute.parse(client).await?;
 
@@ -129,8 +125,6 @@ pub async fn test_ans(ctx: Context) -> Result<()> {
 
     debug!(submission_id = submission_id, "开始获取具体答案内容");
     let submission = SubmissionsId::get_from_client(&client, id, submission_id).await?;
-
-    let client = Arc::new(client);
 
     debug!(submission_id = submission_id, "开始解析答案内容");
     let result = submission.parse(client).await?;

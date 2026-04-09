@@ -12,7 +12,6 @@ use crate::{
     web::file::task::ExposeFileTask,
 };
 use anyhow::{anyhow, bail};
-use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
 
 #[handler(msg_type=Message,command="download",echo_cmd=true,
@@ -50,8 +49,6 @@ pub async fn download(ctx: Context) -> Result<()> {
     );
 
     let mut tasks = Vec::with_capacity(files.len());
-
-    let client = Arc::new(client);
 
     for file in files {
         let c = client.clone();

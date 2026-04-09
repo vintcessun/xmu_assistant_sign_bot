@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::{
     abi::utils::SmartJsonExt,
     api::{
@@ -26,7 +24,7 @@ pub struct ClassroomSubjectResponse {
 pub struct ClassroomSubject;
 
 impl ClassroomSubjectResponse {
-    pub async fn parse(&self, client: Arc<SessionClient>) -> Result<HtmlParseResult> {
+    pub async fn parse(&self, client: SessionClient) -> Result<HtmlParseResult> {
         let mut ret = HtmlParseResult::new();
 
         for subject in &self.subjects {
@@ -51,7 +49,7 @@ mod tests {
         let session = castgc_get_session(castgc).await?;
         let data = ClassroomSubject::get(&session, 2776).await?;
         println!("ClassroomList: {:?}", data);
-        let parsed = data.parse(Arc::new(SessionClient::new())).await?;
+        let parsed = data.parse(SessionClient::new()).await?;
         println!("Parsed: {:?}", parsed);
         Ok(())
     }

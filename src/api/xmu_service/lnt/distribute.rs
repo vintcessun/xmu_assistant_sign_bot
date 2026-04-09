@@ -1,4 +1,4 @@
-use std::{fmt::Display, sync::Arc};
+use std::fmt::Display;
 
 use crate::{
     abi::utils::SmartJsonExt,
@@ -81,7 +81,7 @@ pub struct DistributeResponse {
 
 async fn get_problem_message_content_plain(
     subject: &Subject,
-    client: Arc<SessionClient>,
+    client: SessionClient,
 ) -> Result<HtmlParseResult> {
     let message_type = format!("{}", subject.r#type);
     let sort = subject.sort + 1;
@@ -112,7 +112,7 @@ async fn get_problem_message_content_plain(
 
 fn get_problem_message_content(
     subject: &Subject,
-    client: Arc<SessionClient>,
+    client: SessionClient,
 ) -> BoxFuture<'_, Result<HtmlParseResult>> {
     async move {
         if subject.sub_subjects.is_empty() {
@@ -146,7 +146,7 @@ fn get_problem_message_content(
 }
 
 impl DistributeResponse {
-    pub async fn parse(&self, client: Arc<SessionClient>) -> Result<HtmlParseResult> {
+    pub async fn parse(&self, client: SessionClient) -> Result<HtmlParseResult> {
         let mut ret = HtmlParseResult::new();
 
         for subject in &self.subjects {

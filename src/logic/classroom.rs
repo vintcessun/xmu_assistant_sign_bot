@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use super::BuildHelp;
 use crate::{
     abi::{logic_import::*, message::from_str},
@@ -68,8 +66,6 @@ pub async fn get_class(ctx: Context) -> Result<()> {
 
     debug!(class_id = id, "开始获取课堂互动内容 ClassroomSubject 数据");
     let distribute = ClassroomSubject::get_from_client(&client, id).await?;
-
-    let client = Arc::new(client);
 
     debug!(class_id = id, "开始解析课堂互动内容");
     let result = distribute.parse(client).await?;

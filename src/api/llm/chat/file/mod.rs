@@ -144,7 +144,7 @@ impl LlmFile {
         debug!(url = %url, "文件在过滤数据库中不存在或查找失败，开始下载");
 
         let file = {
-            let file = download_to_file(Arc::new(SessionClient::new()), url, &alias)
+            let file = download_to_file(SessionClient::new(), url, &alias)
                 .await
                 .map_err(|e| {
                     error!(url = %url, error = ?e, "下载文件失败");
