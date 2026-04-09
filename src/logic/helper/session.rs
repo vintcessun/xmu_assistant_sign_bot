@@ -29,22 +29,26 @@ pub fn get_client_from_cache(id: i64) -> Option<SessionClient> {
 }
 
 pub async fn get_client_or_err_for_id(id: i64) -> Result<SessionClient> {
-    if let Some(client) = CLIENT_CACHE.get(&id) {
-        let client = client.value().clone();
-        if ProfileWithoutCache::get_from_client(&client).await.is_ok() {
-            return Ok(client.clone());
-        }
+    let cached_client = CLIENT_CACHE.get(&id).map(|entry| entry.value().clone());
+    if let Some(client) = cached_client
+        && ProfileWithoutCache::get_from_client(&client).await.is_ok()
+    {
+        return Ok(client);
     }
-    if let Some(e) = LOGIN_DATA.get(&id) {
-        let client = get_session_client(&e.lnt);
+    let login_lnt = LOGIN_DATA.get(&id).map(|entry| entry.lnt.clone());
+    if let Some(lnt) = login_lnt {
+        let client = get_session_client(&lnt);
         if ProfileWithoutCache::get_from_client(&client).await.is_ok() {
             CLIENT_CACHE.insert(id, client.clone());
             return Ok(client);
         }
     }
-    if let Some(e) = PWD_DATA.get(&id) {
+    let login_credential = PWD_DATA
+        .get(&id)
+        .map(|entry| (entry.username.clone(), entry.password.clone()));
+    if let Some((username, password)) = login_credential {
         let client = SessionClient::new();
-        let login_data = login_password(&client, e.username.clone(), &e.password).await?;
+        let login_data = login_password(&client, username, &password).await?;
         LOGIN_DATA.insert(id, Arc::new(login_data))?;
         CLIENT_CACHE.insert(id, client.clone());
         return Ok(client);
