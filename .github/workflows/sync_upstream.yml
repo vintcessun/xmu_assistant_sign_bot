@@ -51,13 +51,4 @@ jobs:
                     fi
                   fi
 
-                  echo "Merge successful, cleaning up upstream workflows and pushing to private..."
-                  # 再次确保除了当前同步脚本外，不保留其他上游带过来的工作流（如果有的话）
-                  find .github/workflows/ -maxdepth 1 -type f -name "*.yml" -not -name "sync_upstream.yml" -print0 | xargs -0 -r git rm -f --ignore-unmatch || true
-
-                  # 如果有删除操作，需要 commit
-                  if ! git diff --staged --quiet; then
-                    git commit -m "chore: cleanup workflows [skip ci]" || true
-                  fi
-
                   git push origin main
