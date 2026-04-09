@@ -77,6 +77,7 @@ where
             Notify::Honor(e) => e.time,
             Notify::Title(e) => e.time,
         },
+        Notice::GroupCard(e) => e.time,
     };
 
     let notice_content = llm_msg_from_notice(&notice).await;
