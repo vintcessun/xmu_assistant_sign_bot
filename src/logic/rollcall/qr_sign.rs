@@ -1,5 +1,4 @@
 use super::data::LOGIN_DATA;
-use super::qr_sign_parse::QR_SIGN_TASK_RUNNER;
 use crate::{
     abi::{
         logic_import::*,
@@ -13,19 +12,13 @@ use crate::{
         qrcode::QrCode,
         storage::FileStorage,
     },
-    logic::{
-        login::process::try_pwd_login,
-        rollcall::{auto_sign_data::AutoSignResponse, qr_sign_parse::QrSignRequest},
-    },
+    logic::rollcall::qr_sign_parse::{QrSignRequest, QrSignResponse},
 };
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::info;
 
 #[handler(msg_type=Message)]
 pub async fn qr_sign(ctx: Context) -> Result<()> {
-    QR_SIGN_TASK_RUNNER.get_latest().await?;
     let start = tokio::time::Instant::now();
     let msg = ctx.get_message();
     let msg_receive = match &*msg {
@@ -80,7 +73,7 @@ pub async fn qr_sign(ctx: Context) -> Result<()> {
 }
 
 async fn qr_sign_cmd_process_file(img: &image::DataReceive) -> Result<Vec<Vec<QrSignResponse>>> {
-    let file = download_to_file(Arc::new(SessionClient::new()), &img.url, &img.file).await?;
+    let file = download_to_file(SessionClient::new(), &img.url, &img.file).await?;
     let data = QrCode::from_file(file.get_path()).await?;
     let mut tasks = Vec::with_capacity(data.len());
     for d in &data {
@@ -91,46 +84,12 @@ async fn qr_sign_cmd_process_file(img: &image::DataReceive) -> Result<Vec<Vec<Qr
     Ok(ret)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QrSignResponse {
-    pub qq: i64,
-    pub response: AutoSignResponse,
-}
-
 pub async fn qr_sign_request(data: &str) -> Result<Vec<QrSignResponse>> {
     let parsed = QrSignRequest::parse(data).await?;
     let mut task = Vec::new();
     for val in &*LOGIN_DATA {
-        let parsed_ref = &parsed;
         let qq = *val.key();
-        task.push(async move {
-            let mut err = Err(anyhow::anyhow!("未知错误"));
-            for _ in 0..3 {
-                match async move {
-                    let req = QrSignRequest::get(qq).await?;
-                    let res = req.request(parsed_ref).await?;
-                    Ok::<QrSignResponse, anyhow::Error>(QrSignResponse { qq, response: res })
-                }
-                .await
-                {
-                    Ok(r) => return Ok(r),
-                    Err(e) => {
-                        QrSignRequest::remove(qq);
-                        match try_pwd_login(&SessionClient::new(), qq).await {
-                            Ok(_) => {
-                                info!("账号密码登录成功，继续进行扫码推送签到");
-                            }
-                            Err(e) => {
-                                error!("账号密码({})登录失败: {:?}", qq, e);
-                            }
-                        };
-                        debug!(qq, error = ?e, "二维码签到请求失败");
-                        err = Err(e);
-                    }
-                }
-            }
-            err
-        });
+        task.push(QrSignRequest::push(qq, &parsed));
     }
     let ret = futures::future::join_all(task).await;
     let ret = ret.into_iter().filter_map(|x| x.ok()).collect();

@@ -1,49 +1,20 @@
-use super::data::LOGIN_DATA;
 use crate::api::network::SessionClient;
-use crate::api::scheduler::{TaskRunner, TimeTask};
-use crate::api::xmu_service::lnt::{ProfileWithoutCache, get_session_client};
+use crate::api::xmu_service::lnt::ProfileWithoutCache;
+use crate::logic::helper::{get_client_from_cache, get_client_or_err_for_id};
+use crate::logic::rollcall::sign::sign_request_inner;
 use crate::logic::rollcall::{
     auto_sign_data::AutoSignResponse, auto_sign_request::AutoSignRequest,
 };
 use ahash::RandomState;
 use anyhow::{Result, anyhow};
-use async_trait::async_trait;
-use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock};
-use std::time::Duration;
+use std::sync::Arc;
 use tokio::task::block_in_place;
-use tracing::trace;
+use tracing::{debug, trace};
 use url::Url;
 
-pub struct QrSignRequest {
-    pub qq: i64,
-    pub client: Arc<SessionClient>,
-}
-
-static QR_SIGN_CACHE: LazyLock<DashMap<i64, Arc<QrSignRequest>>> = LazyLock::new(DashMap::new);
-
-impl QrSignRequest {
-    pub async fn get(qq: i64) -> Result<Arc<Self>> {
-        if let Some(req) = QR_SIGN_CACHE.get(&qq) {
-            trace!("从缓存中获取二维码签到请求");
-            return Ok(req.clone());
-        }
-
-        trace!("缓存中未找到二维码签到请求，尝试创建新的请求");
-        let login_data = LOGIN_DATA
-            .get(&qq)
-            .ok_or(anyhow!("未找到登录数据，请先登录"))?;
-        let client = Arc::new(get_session_client(&login_data.lnt));
-        let req = Arc::new(QrSignRequest { qq, client });
-        QR_SIGN_CACHE.insert(qq, req.clone());
-        Ok(req)
-    }
-
-    pub fn remove(qq: i64) {
-        QR_SIGN_CACHE.remove(&qq);
-    }
-}
+pub struct QrSignRequest;
 
 const TAG_LIST: [&str; 11] = [
     "courseId",
@@ -129,72 +100,62 @@ fn extract_url_tail(input: &str) -> String {
     input.to_string()
 }
 
-impl QrSignRequest {
-    pub async fn request(&self, data: &QrSignParsed) -> Result<AutoSignResponse> {
-        let request = AutoSignRequest::get(data.course_id, self.qq, self.client.clone()).await?;
-        request.qr(data.rollcall_id, &data.data).await
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QrSignResponse {
+    pub qq: i64,
+    pub response: AutoSignResponse,
+}
 
+impl QrSignRequest {
     pub async fn parse(data: &str) -> Result<QrSignParsed> {
         block_in_place(|| {
             let tail = extract_url_tail(data);
             parse_data(&tail)
         })
     }
-}
 
-pub struct QrSignTask;
-
-#[async_trait]
-impl TimeTask for QrSignTask {
-    type Output = ();
-
-    fn interval(&self) -> Duration {
-        Duration::from_secs(600)
+    async fn make_request(
+        qq: i64,
+        data: &QrSignParsed,
+        client: SessionClient,
+    ) -> Result<QrSignResponse> {
+        let request: Arc<AutoSignRequest> =
+            AutoSignRequest::get(data.course_id, qq, client).await?;
+        let res = request.qr(data.rollcall_id, &data.data).await?;
+        Ok(QrSignResponse { qq, response: res })
     }
 
-    fn name(&self) -> &'static str {
-        "QrSignTask"
-    }
-
-    async fn run(&self) -> Result<Self::Output> {
-        qr_sign_task().await?;
-        Ok(())
-    }
-}
-
-async fn qr_sign_task() -> Result<()> {
-    let mut tasks = vec![];
-
-    for data in &*LOGIN_DATA {
-        let qq = *data.key();
-        tasks.push(async move {
-            match async {
-                let req = QrSignRequest::get(qq).await?;
-                ProfileWithoutCache::get_from_client(&req.client).await?;
-                Ok::<(), anyhow::Error>(())
-            }
-            .await
-            {
-                Ok(_) => {
-                    trace!("账号 {} 的二维码签到请求准备就绪", qq);
-                }
+    pub async fn push(qq: i64, data: &QrSignParsed) -> Result<QrSignResponse> {
+        let mut err = Err(anyhow::anyhow!("未知错误"));
+        let mut client = get_client_from_cache(qq).ok_or(anyhow!("未找到登录数据，请先登录"))?;
+        'retry: for _ in 0..3 {
+            match Self::make_request(qq, data, client.clone()).await {
+                Ok(r) => return Ok(r),
                 Err(e) => {
-                    trace!("账号 {} 的二维码签到请求准备失败: {:?}", qq, e);
-                    QrSignRequest::remove(qq);
-                    let req = QrSignRequest::get(qq).await?;
-                    ProfileWithoutCache::get_from_client(&req.client).await?;
-                    trace!("账号 {} 的二维码签到请求重新准备就绪", qq);
+                    trace!("二维码签到请求失败: {:?}", e);
+                    match ProfileWithoutCache::get_from_client(&client).await {
+                        Ok(_) => {
+                            let sign_data = sign_request_inner(qq, &client).await?;
+                            for s in sign_data {
+                                if s.builder.activity_id == data.rollcall_id {
+                                    trace!("重试二维码签到");
+                                    continue 'retry;
+                                }
+                            }
+                            debug!(
+                                "签到数据刷新后未发现对应的签到活动，可能是不属于的签到，停止重试"
+                            );
+                            break 'retry;
+                        }
+                        Err(e) => {
+                            client = get_client_or_err_for_id(qq).await?;
+                            debug!(qq, error = ?e, "二维码签到请求失败");
+                            err = Err(e);
+                        }
+                    }
                 }
             }
-            Ok::<(), anyhow::Error>(())
-        });
+        }
+        err
     }
-
-    let _ = futures::future::join_all(tasks).await;
-
-    Ok(())
 }
-
-pub static QR_SIGN_TASK_RUNNER: LazyLock<Arc<TaskRunner<QrSignTask>>> =
-    LazyLock::new(|| TaskRunner::new(QrSignTask));

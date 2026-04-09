@@ -1,18 +1,16 @@
 use super::super::BuildHelp;
-use super::data::LOGIN_DATA;
 use crate::{
     abi::{logic_import::*, message::from_str},
     api::{
         network::SessionClient,
-        xmu_service::lnt::{Rollcalls, get_session_client, rollcalls::RollcallStatus},
+        xmu_service::lnt::{Rollcalls, rollcalls::RollcallStatus},
     },
     logic::{
-        helper::get_client_or_err,
+        helper::{get_client_or_err, get_client_or_err_for_id},
         rollcall::{auto_sign_data::AutoSignResponse, auto_sign_request::AutoSignRequest},
     },
 };
 use anyhow::{Result, anyhow};
-use std::sync::Arc;
 use tracing::trace;
 
 #[handler(msg_type=Message,command="autosign",echo_cmd=true,
@@ -22,7 +20,7 @@ help_msg=r#"用法:/autosign
 注:对于雷达签到，会先查询用户的课程时间表，如果没有课程时间表就会查询签到缓存，如果都失败就会逐个尝试
 功能:自动签到数字和雷达"#)]
 pub async fn auto_sign(ctx: Context) -> Result<()> {
-    let client = Arc::new(get_client_or_err(&mut ctx).await?);
+    let client = get_client_or_err(&mut ctx).await?;
     let qq = ctx
         .message
         .get_sender()
@@ -41,16 +39,13 @@ pub async fn auto_sign(ctx: Context) -> Result<()> {
 }
 
 pub async fn auto_sign_request(qq: i64) -> Result<Vec<AutoSignResponse>> {
-    let login_data = LOGIN_DATA
-        .get(&qq)
-        .ok_or(anyhow!("未找到登录数据，请先登录"))?;
-    let client = Arc::new(get_session_client(&login_data.lnt));
+    let client = get_client_or_err_for_id(qq).await?;
     auto_sign_request_inner(qq, client).await
 }
 
 pub async fn auto_sign_request_inner(
     qq: i64,
-    client: Arc<SessionClient>,
+    client: SessionClient,
 ) -> Result<Vec<AutoSignResponse>> {
     let rollcall_data = Rollcalls::get_from_client(&client)
         .await

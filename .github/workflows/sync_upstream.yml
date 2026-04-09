@@ -31,15 +31,18 @@ jobs:
                   # 使用 --allow-unrelated-histories 解决首次同步问题
                   # 使用 -m 确保 Commit Message 包含 [skip ci]，防止挤占 Action 额度
                   if ! git merge upstream/master --allow-unrelated-histories --no-edit -m "chore: sync upstream [skip ci]"; then
-                    echo "Conflict detected, attempting to ignore .github/workflows changes..."
+                    echo "Conflict detected, attempting to ignore .github/workflows and README.md changes..."
                     
                     # 强制忽略 .github/workflows 目录下的所有冲突，保留本地状态
                     # 如果本地删除了，则继续保持删除；如果本地修改了，则保留本地修改
                     git checkout --ours .github/workflows/ || true
+                    git checkout --ours README.md || true
+
                     
                     # 针对那些在 HEAD 中被删除但在 upstream 中被修改的文件，checkout --ours 可能无法直接处理
                     # 我们需要将这些处于冲突状态的 .github/workflows 文件从暂存区移除（或标记为已解决）
                     git add .github/workflows/ || true
+                    git add README.md || true
                     
                     # 尝试继续提交合并结果
                     if ! git commit -m "chore: sync upstream and ignore workflow conflicts [skip ci]"; then

@@ -27,7 +27,7 @@ use tracing::trace;
 pub struct AutoSignRequest {
     pub device_id: String,
     pub session: String,
-    pub client: Arc<SessionClient>,
+    pub client: SessionClient,
     pub course_id: i64,
     pub qq: i64,
     pub ua: &'static str,
@@ -134,7 +134,7 @@ static AUTO_SIGN_CACHE: LazyLock<DashMap<(i64, i64), Arc<AutoSignRequest>>> =
     LazyLock::new(DashMap::new);
 
 impl AutoSignRequest {
-    pub async fn get(course_id: i64, qq: i64, client: Arc<SessionClient>) -> Result<Arc<Self>> {
+    pub async fn get(course_id: i64, qq: i64, client: SessionClient) -> Result<Arc<Self>> {
         if let Some(entry) = AUTO_SIGN_CACHE.get(&(qq, course_id)) {
             Ok(entry.value().clone())
         } else {
