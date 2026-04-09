@@ -163,21 +163,21 @@ jobs:
               shell: bash
               run: |
                   mkdir -p artifacts
-                  BIN_NAME="xmu_assistant_sign_bot-${{ matrix.target }}"
-                  if [ -f "target/${{ matrix.target }}/release/xmu_assistant_sign_bot" ]; then
-                      cp "target/${{ matrix.target }}/release/xmu_assistant_sign_bot" "artifacts/${BIN_NAME}"
-                  elif [ -f "target/release/xmu_assistant_sign_bot" ]; then
-                      cp "target/release/xmu_assistant_sign_bot" "artifacts/${BIN_NAME}"
+                  BIN_NAME="xmu_assistant_bot-${{ matrix.target }}"
+                  if [ -f "target/${{ matrix.target }}/release/xmu_assistant_bot" ]; then
+                      cp "target/${{ matrix.target }}/release/xmu_assistant_bot" "artifacts/${BIN_NAME}"
+                  elif [ -f "target/release/xmu_assistant_bot" ]; then
+                      cp "target/release/xmu_assistant_bot" "artifacts/${BIN_NAME}"
                   else
                       echo "Error: Binary not found!"
-                      find target -name "xmu_assistant_sign_bot"
+                      find target -name "xmu_assistant_bot"
                       exit 1
                   fi
 
             - name: Upload artifacts
               uses: actions/upload-artifact@v4
               with:
-                  name: xmu_assistant_sign_bot-${{ matrix.target }}
+                  name: xmu_assistant_bot-${{ matrix.target }}
                   path: artifacts/**
                   if-no-files-found: warn
                   compression-level: 6
@@ -426,7 +426,7 @@ jobs:
               shell: powershell
               run: |
                   New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-                  $BIN_NAME = "xmu_assistant_sign_bot-${{ matrix.target }}"
+                  $BIN_NAME = "xmu_assistant_bot-${{ matrix.target }}"
                   if (Test-Path "target/${{ matrix.target }}/release/*.exe") {
                       Copy-Item "target/${{ matrix.target }}/release/*.exe" "artifacts/$BIN_NAME.exe"
                       Write-Host "Successfully copied artifacts for $BIN_NAME"
@@ -438,7 +438,7 @@ jobs:
             - name: Upload artifacts
               uses: actions/upload-artifact@v4
               with:
-                  name: xmu_assistant_sign_bot-${{ matrix.target }}
+                  name: xmu_assistant_bot-${{ matrix.target }}
                   path: artifacts/**
                   if-no-files-found: warn
                   compression-level: 6
@@ -515,20 +515,20 @@ jobs:
               shell: bash
               run: |
                   mkdir -p artifacts
-                  BIN_NAME="xmu_assistant_sign_bot-${{ matrix.target }}"
+                  BIN_NAME="xmu_assistant_bot-${{ matrix.target }}"
                   # 尝试两个可能的路径
-                  if [ -f "target/${{ matrix.target }}/release/xmu_assistant_sign_bot" ]; then
-                      cp target/${{ matrix.target }}/release/xmu_assistant_sign_bot artifacts/${BIN_NAME}
-                  elif [ -f "target/release/xmu_assistant_sign_bot" ]; then
-                      cp target/release/xmu_assistant_sign_bot artifacts/${BIN_NAME}
+                  if [ -f "target/${{ matrix.target }}/release/xmu_assistant_bot" ]; then
+                      cp target/${{ matrix.target }}/release/xmu_assistant_bot artifacts/${BIN_NAME}
+                  elif [ -f "target/release/xmu_assistant_bot" ]; then
+                      cp target/release/xmu_assistant_bot artifacts/${BIN_NAME}
                   else
                       echo "Error: Binary not found!"
-                      find target -name "xmu_assistant_sign_bot"
+                      find target -name "xmu_assistant_bot"
                       exit 1
                   fi
 
             - name: Upload artifacts
               uses: actions/upload-artifact@v4
               with:
-                  name: xmu_assistant_sign_bot-${{ matrix.target }}
+                  name: xmu_assistant_bot-${{ matrix.target }}
                   path: artifacts/
