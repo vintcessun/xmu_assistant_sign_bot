@@ -30,27 +30,24 @@ impl TimeTask for UsageTask {
     }
 }
 
-const ALL_MODEL: [&str; 20] = [
-    "ep-20260225003643-2w6k5",
-    "ep-20260225232137-4rlsz",
-    "ep-20260227171140-2c4bc",
-    "ep-20260227174622-h4kf4",
-    "ep-20260227174722-zqdw2",
-    "ep-20260227174817-xm7wq",
-    "ep-20260227174956-dwmtd",
-    "ep-20260227175127-ms226",
-    "ep-20260227175746-z4rcs",
-    "ep-20260227175835-ltsn2",
-    "ep-20260227175918-ss5zl",
-    "ep-20260227175955-4pmnf",
-    "ep-20260227180029-7dbz4",
-    "ep-20260227180130-l9bs6",
-    "ep-20260227180228-4m625",
-    "ep-20260227181008-5kd4s",
-    "ep-20260310195544-5c4d6",
-    "ep-20260310195826-75hfq",
-    "ep-20260310195926-b54k5",
-    "ep-20260310200006-x4mdw",
+const ALL_MODEL: [&str; 17] = [
+    "ep-20260410190642-g9dxh",
+    "ep-20260410183351-mbg5v",
+    "ep-20260410183725-z2xfv",
+    "ep-20260410183831-8wlnb",
+    "ep-20260410183944-gzxpz",
+    "ep-20260410184033-49fd8",
+    "ep-20260410184116-fvbrp",
+    "ep-20260410184200-7xrmt",
+    "ep-20260410184302-8m47j",
+    "ep-20260410184431-v8lkc",
+    "ep-20260410184620-mwkjm",
+    "ep-20260410184719-rrwxs",
+    "ep-20260410184828-vdk5g",
+    "ep-20260410184957-vhm2s",
+    "ep-20260410185110-kbppw",
+    "ep-20260410185444-tf92t",
+    "ep-20260410190359-dpggd",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -169,7 +166,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_model_usage() -> Result<()> {
-        let ret = get_top_k_model().await?;
+        let ret: Vec<ModelInfo> = get_top_k_model().await?;
         println!("模型使用情况: ");
         for info in ret {
             println!("模型: {}, 使用量: {}", info.name, info.usage);
