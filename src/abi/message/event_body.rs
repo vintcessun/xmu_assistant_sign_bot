@@ -161,6 +161,7 @@ pub mod notice {
         FriendRecall(FriendRecall),
         GroupMsgEmojiLike(GroupMsgEmojiLike),
         Notify(Notify),
+        GroupCard(GroupCard),
     }
 
     impl MessageType for Notice {
@@ -181,6 +182,7 @@ pub mod notice {
                     Notify::Title(title) => Target::Group(title.group_id),
                 },
                 Notice::GroupMsgEmojiLike(g) => Target::Group(g.group_id),
+                Notice::GroupCard(g) => Target::Group(g.group_id),
             }
         }
 
@@ -269,6 +271,12 @@ pub mod notice {
                     },
                 },
                 Notice::GroupMsgEmojiLike(g) => Sender {
+                    nickname: None,
+                    user_id: Some(g.user_id),
+                    card: None,
+                    role: None,
+                },
+                Notice::GroupCard(g) => Sender {
                     nickname: None,
                     user_id: Some(g.user_id),
                     card: None,
@@ -453,6 +461,16 @@ pub mod notice {
             pub user_id: i64,
             pub title: String,
         }
+    }
+
+    #[derive(Serialize, Deserialize, Debug)]
+    pub struct GroupCard {
+        pub time: i64,
+        pub self_id: i64,
+        pub group_id: i64,
+        pub user_id: i64,
+        pub card_new: String,
+        pub card_old: String,
     }
 }
 
