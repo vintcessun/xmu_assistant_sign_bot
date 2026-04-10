@@ -125,14 +125,14 @@ impl QrSignRequest {
         Ok(QrSignResponse { qq, response: res })
     }
 
-    pub async fn push(qq: i64, data: &QrSignParsed) -> Result<QrSignResponse> {
+    pub async fn push(qq: i64, data: &QrSignParsed) -> Result<Option<QrSignResponse>> {
         let mut err = Err(anyhow::anyhow!("未知错误"));
         let mut client = get_client_from_cache(qq).ok_or(anyhow!("未找到登录数据，请先登录"))?;
         'retry: for _ in 0..3 {
             match Self::make_request(qq, data, client.clone()).await {
-                Ok(r) => return Ok(r),
-                Err(e) => {
-                    trace!("二维码签到请求失败: {:?}", e);
+                Ok(r) => return Ok(Some(r)),
+                Err(_e) => {
+                    //trace!("二维码签到请求失败: {:?}", _e);
                     match ProfileWithoutCache::get_from_client(&client).await {
                         Ok(_) => {
                             let sign_data = sign_request_inner(qq, &client).await?;
@@ -142,10 +142,12 @@ impl QrSignRequest {
                                     continue 'retry;
                                 }
                             }
-                            debug!(
+                            trace!(
+                                qq,
+                                rollcall_id = data.rollcall_id,
                                 "签到数据刷新后未发现对应的签到活动，可能是不属于的签到，停止重试"
                             );
-                            break 'retry;
+                            return Ok(None);
                         }
                         Err(e) => {
                             client = get_client_or_err_for_id(qq).await?;

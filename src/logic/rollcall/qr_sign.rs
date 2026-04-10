@@ -15,7 +15,7 @@ use crate::{
     logic::rollcall::qr_sign_parse::{QrSignRequest, QrSignResponse},
 };
 use anyhow::Result;
-use tracing::info;
+use tracing::{debug, info, trace};
 
 #[handler(msg_type=Message)]
 pub async fn qr_sign(ctx: Context) -> Result<()> {
@@ -85,6 +85,7 @@ async fn qr_sign_cmd_process_file(img: &image::DataReceive) -> Result<Vec<Vec<Qr
 }
 
 pub async fn qr_sign_request(data: &str) -> Result<Vec<QrSignResponse>> {
+    trace!("进行二维码推送签到{data}");
     let parsed = QrSignRequest::parse(data).await?;
     let mut task = Vec::new();
     for val in &*LOGIN_DATA {
@@ -92,6 +93,17 @@ pub async fn qr_sign_request(data: &str) -> Result<Vec<QrSignResponse>> {
         task.push(QrSignRequest::push(qq, &parsed));
     }
     let ret = futures::future::join_all(task).await;
-    let ret = ret.into_iter().filter_map(|x| x.ok()).collect();
-    Ok(ret)
+    let result: Vec<QrSignResponse> = ret
+        .into_iter()
+        .filter_map(|item| match item {
+            Ok(Some(resp)) => Some(resp),
+            Ok(None) => None,
+            Err(e) => {
+                debug!("推送签到错误: {:?}", e);
+                None
+            }
+        })
+        .collect();
+    debug!(help_list=?result, "帮助详情");
+    Ok(result)
 }
