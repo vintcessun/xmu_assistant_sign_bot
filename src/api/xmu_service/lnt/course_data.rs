@@ -1,7 +1,8 @@
-use crate::{abi::utils::SmartJsonExt, api::xmu_service::lnt::get_session_client};
+use crate::{abi::utils::SmartJsonExt, api::network::SessionClient};
 use ahash::RandomState;
 use anyhow::Result;
 use dashmap::DashMap;
+use helper::session_client_helper;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, LazyLock};
 
@@ -32,8 +33,7 @@ pub struct CourseDataResponse {
 static COURSE_DATA: LazyLock<CourseDataStruct> = LazyLock::new(CourseDataStruct::new);
 
 pub struct CourseDataStruct {
-    pub profile_data:
-        DashMap<String, DashMap<i64, Arc<CourseDataResponse>, RandomState>, RandomState>,
+    pub profile_data: DashMap<i64, Arc<CourseDataResponse>, RandomState>,
 }
 
 impl Default for CourseDataStruct {
@@ -49,18 +49,14 @@ impl CourseDataStruct {
         }
     }
 
-    pub async fn get_profile(
+    pub async fn get_from_client(
         &self,
-        session: &str,
+        client: &SessionClient,
         course_id: i64,
     ) -> Result<Arc<CourseDataResponse>> {
-        if let Some(entry) = self.profile_data.get(session)
-            && let Some(entry) = entry.get(&course_id)
-        {
+        if let Some(entry) = self.profile_data.get(&course_id) {
             return Ok((*entry.value()).clone());
         }
-
-        let client = get_session_client(session);
 
         let res = client
             .get(format!(
@@ -70,10 +66,8 @@ impl CourseDataStruct {
         let course_data = res.json_smart::<CourseDataResponse>().await?;
         let course_data = Arc::new(course_data);
 
-        self.profile_data
-            .entry(session.to_string())
-            .or_default()
-            .insert(course_id, course_data.clone());
+        self.profile_data.insert(course_id, course_data.clone());
+
         Ok(course_data)
     }
 }
@@ -81,8 +75,12 @@ impl CourseDataStruct {
 pub struct CourseData;
 
 impl CourseData {
-    pub async fn get(session: &str, course_id: i64) -> Result<Arc<CourseDataResponse>> {
-        COURSE_DATA.get_profile(session, course_id).await
+    #[session_client_helper]
+    pub async fn get_from_client(
+        client: &SessionClient,
+        course_id: i64,
+    ) -> Result<Arc<CourseDataResponse>> {
+        COURSE_DATA.get_from_client(client, course_id).await
     }
 }
 

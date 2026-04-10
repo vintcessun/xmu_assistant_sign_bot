@@ -1,5 +1,4 @@
 use super::super::BuildHelp;
-use super::data::LOGIN_DATA;
 use crate::{
     abi::{logic_import::*, message::from_str},
     api::{
@@ -18,13 +17,7 @@ help_msg=r#"用法:/sign
 功能:查询签到"#)]
 pub async fn sign(ctx: Context) -> Result<()> {
     let client = get_client_or_err(&mut ctx).await?;
-    let qq = ctx
-        .message
-        .get_sender()
-        .user_id
-        .ok_or(anyhow!("获取用户ID失败"))?;
-
-    let ret = sign_request_inner(qq, &client).await?;
+    let ret = sign_request_inner(&client).await?;
 
     ctx.send_message_async(from_str(format!("查询完成，{} 门课程", ret.len())));
 
@@ -37,12 +30,10 @@ pub async fn sign(ctx: Context) -> Result<()> {
 
 pub async fn sign_request(qq: i64) -> Result<Vec<SignResponse>> {
     let client = get_client_or_err_for_id(qq).await?;
-    sign_request_inner(qq, &client).await
+    sign_request_inner(&client).await
 }
 
-pub async fn sign_request_inner(qq: i64, client: &SessionClient) -> Result<Vec<SignResponse>> {
-    let session_cookie = &LOGIN_DATA.get(&qq).ok_or(anyhow!("没找到登录信息"))?.lnt;
-
+pub async fn sign_request_inner(client: &SessionClient) -> Result<Vec<SignResponse>> {
     let all_courses = Rollcalls::get_from_client(client)
         .await
         .map_err(|e| anyhow!("错误: {e} 登录状态可能失效"))?;
@@ -57,7 +48,7 @@ pub async fn sign_request_inner(qq: i64, client: &SessionClient) -> Result<Vec<S
         let is_radar = per_course.is_radar;
         let course_title = per_course.course_title;
 
-        let course_info = CourseData::get(session_cookie, course_id).await?;
+        let course_info = CourseData::get_from_client(client, course_id).await?;
         let course_code = course_info.course_code.clone();
         let instructors = course_info
             .instructors

@@ -36,7 +36,7 @@ pub struct AutoSignRequest {
 impl AutoSignRequest {
     pub async fn number(&self, activity_id: i64) -> Result<AutoSignResponse> {
         let number = SignData::number(&self.client, activity_id).await?;
-        let course_info = CourseData::get(&self.session, self.course_id).await?;
+        let course_info = CourseData::get_from_client(&self.client, self.course_id).await?;
         let user_info = Profile::get(&self.session).await?;
 
         self.client
@@ -81,7 +81,7 @@ impl AutoSignRequest {
 
 impl AutoSignRequest {
     pub async fn qr(&self, activity_id: i64, qrcode: &str) -> Result<AutoSignResponse> {
-        let course_info = CourseData::get(&self.session, self.course_id).await?;
+        let course_info = CourseData::get_from_client(&self.client, self.course_id).await?;
         let user_info = Profile::get(&self.session).await?;
 
         let res = self
@@ -194,7 +194,7 @@ impl AutoSignRequest {
             .pos
             .clone()
             .ok_or(anyhow!("位置设置错误，这个错误不应该发生"))?;
-        let course_info = CourseData::get(&self.session, self.course_id).await?;
+        let course_info = CourseData::get_from_client(&self.client, self.course_id).await?;
         let user_info = Profile::get(&self.session).await?;
 
         let (latitude, longitude) = if random {
@@ -299,7 +299,7 @@ impl AutoSignRequest {
         let data = TIMETABLE_DATA
             .get(&self.qq)
             .ok_or(anyhow!("未找到用户的课程表数据"))?;
-        let course_info = CourseData::get(&self.session, self.course_id).await?;
+        let course_info = CourseData::get_from_client(&self.client, self.course_id).await?;
 
         let similarity_cal =
             |course_name: &str| -> f64 { string_similarity(course_name, &course_info.name) };
