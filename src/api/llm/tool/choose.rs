@@ -146,7 +146,8 @@ pub async fn get_top_k_model() -> Result<Vec<ModelInfo>> {
 static TASK: LazyLock<Arc<TaskRunner<UsageTask>>> = LazyLock::new(|| TaskRunner::new(UsageTask));
 
 pub async fn router(num: usize) -> Option<&'static str> {
-    let list = TASK.get_latest().await.ok()?;
+    let mut list = TASK.get_latest().await.ok()?;
+    list.push("gemini-3.1-flash-lite");
     list.get((num - 1) % list.len()).copied()
 }
 
