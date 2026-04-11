@@ -12,7 +12,7 @@ use std::sync::LazyLock;
 use tracing::{debug, error, info, trace, warn};
 
 const LOW_MODEL: &str = "gemma4:e2b";
-const HIGH_MODEL: &str = "gemini-flash-lite-latest";
+const HIGH_MODEL: &str = "gemini-3.1-flash-lite";
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
     info!(
@@ -147,8 +147,8 @@ pub async fn ask_as_high<T>(message: Vec<ChatMessage>, valid_example: &str) -> R
 where
     T: DeserializeOwned + LlmPrompt,
 {
-    ask_as(message, valid_example).await
-    //Ok(generate_as_with_retries(&CLIENT, HIGH_MODEL, message.clone(), valid_example, 3).await?)
+    //ask_as(message, valid_example).await
+    Ok(generate_as_with_retries(&CLIENT, HIGH_MODEL, message.clone(), valid_example, 3).await?)
 }
 
 pub async fn ask_str(chat_message: Vec<ChatMessage>) -> Result<String> {
@@ -302,6 +302,35 @@ mod tests {
 
         let message =
             ask_as::<SearchMessageReply>(chat_messages, SEARCH_MESSAGE_REPLY_VALID_EXAMPLE).await?;
+
+        println!("解析后的结构化数据: {:?}", message);
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_ask_as_high() -> Result<()> {
+        let client = Arc::new(mock_client::MockClient);
+
+        let msg = serde_json::from_str::<Message>(MSG_SRC_JSON)?;
+
+        //println!("原消息: {:?}", msg);
+
+        let msg_chat = llm_msg_from_message_without_archive(client, &msg).await;
+
+        let chat_messages = [
+            vec![ChatMessage::system(
+                "你是一个智能的理解用户回复的助手，请根据用户的提问和上下文进行回复的生成",
+            )],
+            msg_chat,
+        ]
+        .concat();
+
+        //println!("请求的 ChatMessage: {:?}", chat_messages);
+
+        let message =
+            ask_as_high::<SearchMessageReply>(chat_messages, SEARCH_MESSAGE_REPLY_VALID_EXAMPLE)
+                .await?;
 
         println!("解析后的结构化数据: {:?}", message);
 
