@@ -6,7 +6,7 @@ use genai::chat::BinarySource;
 use genai::chat::ChatMessage;
 use tracing::{debug, error, info};
 
-const MODEL_NAME: &str = "gemini-3-pro-image-preview";
+const MODEL_NAME: &str = "gemini-3.1-flash-image";
 
 pub async fn generate_image(chat_message: Vec<ChatMessage>) -> Result<ImageFile> {
     info!(model = MODEL_NAME, "开始调用 LLM 进行图片生成");
