@@ -2,6 +2,7 @@ use crate::api::llm::tool::config::{AK, ENDPOINT, REGION, SK};
 use crate::api::scheduler::{TaskRunner, TimeTask};
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -134,10 +135,11 @@ pub async fn get_top_k_model() -> Result<Vec<ModelInfo>> {
     }
     ret.sort_by_key(|info| info.usage);
     debug!(models = ?ret, "所有模型使用量");
-    let ret = ret
+    let mut ret = ret
         .into_iter()
         .filter(|x| x.usage < 1000000)
         .collect::<Vec<_>>();
+    ret.shuffle(&mut rand::rng());
     Ok(ret)
 }
 
