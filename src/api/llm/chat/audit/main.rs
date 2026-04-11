@@ -551,3 +551,16 @@ pub async fn audit_test_deep(message: &MessageSend, group_id: i64) -> Result<()>
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    #[tokio::test(flavor = "multi_thread")]
+    pub async fn clean_audit_list()->Result<()>{
+        let all_tasks = AUDIT_TASK.data.get_all()?;
+        for (ts, _) in all_tasks {
+            AUDIT_TASK.data.remove(&ts).await?;
+        }
+        Ok(())
+    }
+}
