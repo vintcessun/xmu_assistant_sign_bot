@@ -555,10 +555,17 @@ pub async fn audit_test_deep(message: &MessageSend, group_id: i64) -> Result<()>
 #[cfg(test)]
 mod tests{
     use super::*;
+
     #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "manual"]
     pub async fn clean_audit_list()->Result<()>{
         let all_tasks = AUDIT_TASK.data.get_all()?;
+        if all_tasks.is_empty() {
+            println!("没有需要清理的审计任务");
+            return Ok(());
+        }
         for (ts, _) in all_tasks {
+            println!("正在清理审计任务，时间戳: {}", ts);
             AUDIT_TASK.data.remove(&ts).await?;
         }
         Ok(())
