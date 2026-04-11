@@ -18,7 +18,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, trace, warn};
 
-const MATCH_REPLY_PROBABILITY: f64 = 0.05;
+const MATCH_REPLY_PROBABILITY: f64 = 0.2;
 
 #[llm_prompt]
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
