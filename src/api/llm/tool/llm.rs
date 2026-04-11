@@ -82,13 +82,13 @@ pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
 });
 
 pub async fn ask(message: Vec<ChatMessage>) -> Result<ChatResponse> {
-    trace!("开始调用 LLM: {}", LOW_MODEL);
+    trace!("开始调用 LLM: {}", HIGH_MODEL);
     let chat_req = genai::chat::ChatRequest::new(message);
     let res = CLIENT
-        .exec_chat(LOW_MODEL, chat_req, None)
+        .exec_chat(HIGH_MODEL, chat_req, None)
         .await
         .map_err(|e| {
-            error!(model_name = LOW_MODEL, error = ?e, "LLM 调用失败");
+            error!(model_name = HIGH_MODEL, error = ?e, "LLM 调用失败");
             e
         })?;
     trace!(response = ?res, "LLM 调用成功");
