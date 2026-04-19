@@ -11,7 +11,7 @@ use serde::de::DeserializeOwned;
 use std::sync::LazyLock;
 use tracing::{debug, error, info, trace, warn};
 
-const LOW_MODEL: &str = "gemma4:e2b";
+const LOW_MODEL: &str = "gemma-4-e4b";
 const HIGH_MODEL: &str = "gemini-3.1-flash-lite";
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
