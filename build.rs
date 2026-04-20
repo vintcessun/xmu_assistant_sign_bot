@@ -207,7 +207,7 @@ fn parse_file_for_handlers(
     }
 
     // 根据函数名长度排序 command_handlers，确保较长的命令优先匹配
-    command_handlers.sort_by(|a, b| b.0.cmp(&a.0));
+    command_handlers.sort_by_key(|b| std::cmp::Reverse(b.0));
 }
 
 fn generate_logic_handlers() {

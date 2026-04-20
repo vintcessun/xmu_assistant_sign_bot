@@ -101,6 +101,9 @@ where
 {
     let mut i = 1;
     loop {
+        if i > 100 {
+            return Err(anyhow::anyhow!("LLM 结构化调用失败，已达到最大重试次数"));
+        }
         let model_name = if i <= all_num() * 2
             && let Some(_model) = router(i).await
         {
