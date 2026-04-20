@@ -28,7 +28,7 @@ pub async fn run_python_code(request: PythonExecRequest) -> Result<String> {
         println!("运行代码: \n{}", code_clean);
         let runner = MontyRun::new(code_clean.to_string(), script_name_clean, input_names)?;
         let mut collect_str = String::with_capacity(128);
-        let collect = PrintWriter::Collect(&mut collect_str);
+        let collect = PrintWriter::CollectString(&mut collect_str);
         let result = runner.run(
             input_values,
             LimitedTracker::new(ResourceLimits::new().max_duration(Duration::from_mins(20))),
@@ -171,7 +171,7 @@ parse_json(x)
     #[test]
     fn test_stdout() {
         let mut collect_str = String::new();
-        let collect = PrintWriter::Collect(&mut collect_str);
+        let collect = PrintWriter::CollectString(&mut collect_str);
         let code = r#"
 def fib(n):
     if n <= 1:
