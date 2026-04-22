@@ -64,7 +64,7 @@ pub async fn generate_image(chat_message: Vec<ChatMessage>) -> Result<ImageFile>
 mod tests {
     use super::*;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_api() -> Result<()> {
         let chat_req = generate_image(vec![ChatMessage::user(
             "生成一张猫咪的图片，要求是卡通风格，分辨率512x512",
