@@ -3,7 +3,10 @@ const BASE: &str = "image";
 use super::BASE_DATA_DIR;
 use crate::{
     abi::message::file::FileUrl,
-    api::storage::{FileBackend, FileStorage},
+    api::{
+        llm::chat::file::LlmFile,
+        storage::{FileBackend, FileStorage},
+    },
     config::ensure_dir,
 };
 use anyhow::{Context, Result, anyhow};
@@ -150,6 +153,21 @@ impl ImageFile {
         file.set_readonly().await?;
 
         debug!(path = ?file.path, "图片文件创建并写入磁盘成功");
+        Ok(file)
+    }
+
+    pub async fn create_from_url(url: &String) -> Result<Self> {
+        debug!(url = url, "开始从 URL 创建图片文件");
+        let file = LlmFile::from_url(url, format!("img_{}", uuid::Uuid::new_v4())).await?;
+        let file = Self {
+            path: file.file.get_path().clone(),
+            cache: Arc::new(OnceCell::new()), // 初始化为空，等待懒加载
+        };
+
+        // 设置只读权限
+        file.set_readonly().await?;
+
+        debug!(path = ?file.path, "图片文件从 URL 创建并写入磁盘成功");
         Ok(file)
     }
 

@@ -8,7 +8,7 @@ use tracing::{debug, trace};
 #[handler(msg_type=Message,command="image",echo_cmd=true,
 help_msg=r#"用法:/image <内容>
 <内容>:生成图片的提示词
-功能:使用 gemini-3-pro-image 进行图片生成"#)]
+功能:使用 gpt-image-2 进行图片生成"#)]
 pub async fn image(ctx: Context) -> Result<()> {
     let msg = ctx.get_message();
 

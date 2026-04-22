@@ -6,7 +6,7 @@ use genai::chat::BinarySource;
 use genai::chat::ChatMessage;
 use tracing::{debug, error, info};
 
-const MODEL_NAME: &str = "gemini-3.1-flash-image";
+const MODEL_NAME: &str = "gpt-image-2-all";
 
 pub async fn generate_image(chat_message: Vec<ChatMessage>) -> Result<ImageFile> {
     info!(model = MODEL_NAME, "开始调用 LLM 进行图片生成");
@@ -28,6 +28,9 @@ pub async fn generate_image(chat_message: Vec<ChatMessage>) -> Result<ImageFile>
             e
         })?;
 
+    #[cfg(test)]
+    println!("LLM 图片生成原始响应: {:#?}", res);
+
     debug!(response = ?res, "LLM 图片生成原始响应");
 
     for part in &res.content {
@@ -37,6 +40,20 @@ pub async fn generate_image(chat_message: Vec<ChatMessage>) -> Result<ImageFile>
                     let file = ImageFile::create_from_base64(base64_str).await?;
                     return Ok(file);
                 }
+            }
+        }
+        if let Some(text) = part.as_text()
+            && let Some(start_index) = text.find("https://pro.filesystem.site/cdn")
+        {
+            let url = text[start_index..]
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .trim_matches(|c| c == '"' || c == '\'')
+                .to_string();
+            if !url.is_empty() {
+                let file = ImageFile::create_from_url(&url).await?;
+                return Ok(file);
             }
         }
     }
