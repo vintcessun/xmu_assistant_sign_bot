@@ -45,13 +45,39 @@ pub async fn generate_image(chat_message: Vec<ChatMessage>) -> Result<ImageFile>
         if let Some(text) = part.as_text()
             && let Some(start_index) = text.find("https://pro.filesystem.site/cdn")
         {
-            let url = text[start_index..]
-                .split_whitespace()
-                .next()
-                .unwrap_or("")
-                .trim_matches(|c| c == '"' || c == '\'')
+            let url: String = text[start_index..]
+                .chars()
+                .take_while(|c| {
+                    c.is_ascii_alphanumeric()
+                        || matches!(
+                            c,
+                            '/' | '.'
+                                | '-'
+                                | '_'
+                                | '%'
+                                | '?'
+                                | '='
+                                | '&'
+                                | '#'
+                                | '+'
+                                | ':'
+                                | '~'
+                                | ','
+                                | ';'
+                                | '@'
+                                | '!'
+                                | '*'
+                                | '\''
+                                | '('
+                                | ')'
+                        )
+                })
+                .collect::<String>()
+                .trim_end_matches([')', '(', '.', ',', ';', '!', '\''])
                 .to_string();
             if !url.is_empty() {
+                #[cfg(test)]
+                println!("等待文件系统准备好文件: {}", url);
                 let file = ImageFile::create_from_url(&url).await?;
                 return Ok(file);
             }
@@ -73,6 +99,14 @@ mod tests {
 
         println!("chat_req: {:?}", chat_req);
 
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_download() -> Result<()> {
+        let url = "https://pro.filesystem.site/cdn/20260423/656d621610191c3ffb42ac14fe788d.webp";
+        let file = ImageFile::create_from_url(&url.to_string()).await?;
+        println!("文件已下载，路径: {:?}", file.path);
         Ok(())
     }
 }

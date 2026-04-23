@@ -158,7 +158,7 @@ impl ImageFile {
 
     pub async fn create_from_url(url: &String) -> Result<Self> {
         debug!(url = url, "开始从 URL 创建图片文件");
-        let file = LlmFile::from_url(url, format!("img_{}", uuid::Uuid::new_v4())).await?;
+        let file = LlmFile::from_url(url, format!("img_{}.webp", uuid::Uuid::new_v4())).await?;
         let file = Self {
             path: file.file.get_path().clone(),
             cache: Arc::new(OnceCell::new()), // 初始化为空，等待懒加载
