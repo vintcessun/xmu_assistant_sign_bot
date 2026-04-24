@@ -1,0 +1,66 @@
+
+running 2 tests
+成功从硬编码配置加载 API 密钥: sk-kWPmycyYVS8gMKZnEGCzAbEuHAsnyrqPDq4IdHkWrKieF0Jf
+Downloaded and attached file from URL: https://pro.filesystem.site/cdn/20260423/656d621610191c3ffb42ac14fe788d.webp, assigned ID: 46f01153
+文件已写入
+文件已下载，路径: "./data/file\\img_f3d4b6f3-6b32-46a2-9618-514505c777f1.webp"
+test api::llm::tool::image::tests::test_download ... ok
+LLM 图片生成原始响应: ChatResponse {
+    content: MessageContent {
+        parts: [
+            Text(
+                "![image](https://oss.filenest.top/uploads/d2cde5d9-76e0-424f-ae49-69307d2c00a6.png)",
+            ),
+        ],
+    },
+    reasoning_content: None,
+    model_iden: ModelIden {
+        adapter_kind: OpenAI,
+        model_name: ModelName(
+            Shared(
+                "gpt-image-2-all",
+            ),
+        ),
+    },
+    provider_model_iden: ModelIden {
+        adapter_kind: OpenAI,
+        model_name: ModelName(
+            Shared(
+                "gpt-image-2-all",
+            ),
+        ),
+    },
+    stop_reason: Some(
+        Completed(
+            "stop",
+        ),
+    ),
+    usage: Usage {
+        prompt_tokens: Some(
+            54,
+        ),
+        prompt_tokens_details: None,
+        completion_tokens: Some(
+            810,
+        ),
+        completion_tokens_details: None,
+        total_tokens: Some(
+            864,
+        ),
+    },
+    captured_raw_body: None,
+    response_id: None,
+}
+等待文件系统准备好文件: https://oss.filenest.top/uploads/d2cde5d9-76e0-424f-ae49-69307d2c00a6.png
+Downloaded and attached file from URL: https://oss.filenest.top/uploads/d2cde5d9-76e0-424f-ae49-69307d2c00a6.png, assigned ID: 3fa94921
+文件已写入
+chat_req: ImageFile { path: "./data/file\\img_e8e0bdc0-93c9-494f-8758-8711dab77852.webp", cache: OnceCell { value: None } }
+test api::llm::tool::image::tests::test_api ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 98 filtered out; finished in 46.42s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
