@@ -1,11 +1,14 @@
 use crate::abi::message::Target;
-use crate::api::llm::chat::archive::bridge::llm_msg_from_message_without_archive;
+use crate::api::llm::chat::archive::bridge::{
+    get_face_reference_message, llm_msg_from_message_without_archive,
+};
 use crate::api::llm::chat::archive::file_embedding::search_llm_file;
 use crate::api::llm::chat::archive::memo_fragment::MemoFragment;
 use crate::api::llm::chat::audit::audit_test_search;
 use crate::api::llm::chat::audit::backlist::Backlist;
-use crate::api::llm::chat::llm::ask_llm;
-use crate::api::llm::chat::message::bridge::IntoMessageSend;
+use crate::api::llm::chat::message::bridge::{
+    IntoMessageSend, MESSAGE_SEND_LLM_RESPONSE_VALID_EXAMPLE, MessageSendLlmResponse,
+};
 use crate::api::llm::tool::ask_as_high;
 use crate::{
     abi::{Context, logic_import::Message, network::BotClient, websocket::BotHandler},
@@ -14,11 +17,8 @@ use crate::{
 use anyhow::{Result, anyhow};
 use genai::chat::{Binary, ChatMessage, ContentPart};
 use llm_xml_caster::llm_prompt;
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, trace, warn};
-
-const MATCH_REPLY_PROBABILITY: f64 = 0.2;
 
 #[llm_prompt]
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -51,19 +51,10 @@ fn test_search_message_reply_valid_example() {
     );
 }
 
-fn reply_probability() -> bool {
-    let mut rng = rand::rng();
-    rng.random_bool(MATCH_REPLY_PROBABILITY)
-}
-
 pub async fn send_message_from_store<T>(ctx: &mut Context<T, Message>) -> Result<()>
 where
     T: BotClient + BotHandler + std::fmt::Debug + 'static,
 {
-    if !reply_probability() {
-        return Ok(());
-    }
-
     let message = ctx.get_message();
 
     let group_id = match ctx.get_target() {
@@ -175,8 +166,19 @@ where
     let chat_message = [
         vec![
             ChatMessage::system(
-                "你是一个智能的助手，请根据用户的提问和搜索到的相关内容，完成回复文本的生成。",
+                "你是李老师，一个来自厦门大学的智能助手，请根据用户的提问和搜索到的相关内容，直接生成格式化回复。\
+### 回复格式规则：\n\
+1. 严禁直接在 <item> 标签下书写任何文字。\n\
+2. 所有文本必须包裹在 <Text><text>...</text></Text> 结构中。\n\
+3. 即使只有一段话，也要拆分为 <item><Text><text>...</text></Text></item>。\n\
+4. 严格遵守提供的符号体系，不要输出 XML 以外的文字。\n\
+5. 如果需要表达表情，请使用 <item><Face><id>表情ID</id></Face></item>，表情ID必须来自参考列表。\n\
+6. 每个消息段后会自动加上换行符，无需在文本内容中添加换行符。\n\
+7. 如果需要提及某人，请使用 <item><At><qq>QQ号</qq></At></item>。\n\
+8. 不需要使用markdown语法。\n\
+9. 在回复文件时务必发送回文件ID，格式：[文件,file_id=aaaaaaaa]。",
             ),
+            get_face_reference_message(),
             ChatMessage::system(format!(
                 "以下是根据用户提问搜索到的相关内容: {:?}",
                 result
@@ -200,22 +202,26 @@ where
     ]
     .concat();
 
-    info!(group_id = ?group_id, "开始调用 LLM 生成搜索回复");
-    let resp = ask_llm(chat_message).await.map_err(|e| {
-        error!(group_id = ?group_id, error = ?e, "LLM 生成搜索回复失败");
+    info!(group_id = ?group_id, "开始调用 LLM 生成结构化搜索回复");
+    let response = ask_as_high::<MessageSendLlmResponse>(
+        chat_message,
+        MESSAGE_SEND_LLM_RESPONSE_VALID_EXAMPLE,
+    )
+    .await
+    .map_err(|e| {
+        error!(group_id = ?group_id, error = ?e, "LLM 生成结构化搜索回复失败");
         e
     })?;
 
-    trace!(llm_response = ?resp, "LLM 搜索回复源数据");
+    trace!(llm_response = ?response, "LLM 搜索回复源数据");
 
-    let msg = match IntoMessageSend::get_message_send(resp).await {
-        Ok(m) => m,
-        Err(e) => {
-            error!(group_id = ?group_id, error = ?e, "LLM 搜索回复转写消息失败");
-            return Err(anyhow!("搜索回复消息转换失败"));
-        }
-    };
-    debug!(group_id = ?group_id, "LLM 搜索回复消息转写成功");
+    let msg = IntoMessageSend::from_response(response)
+        .await
+        .map_err(|e| {
+            error!(group_id = ?group_id, error = ?e, "转换结构化搜索回复为消息失败");
+            anyhow!("搜索回复消息转换失败: {e:?}")
+        })?;
+    debug!(group_id = ?group_id, "LLM 搜索回复结构化转换成功");
 
     audit_test_search(
         &msg,

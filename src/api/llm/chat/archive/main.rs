@@ -34,6 +34,10 @@ where
         Message::Private(p) => p.message_id,
     };
     let user_id = message.get_sender().user_id.unwrap_or_default();
+    let group_id = match &*message {
+        Message::Group(g) => g.group_id,
+        Message::Private(p) => -p.user_id,
+    };
 
     let msg_content = llm_msg_from_message(ctx.client.clone(), &message).await;
     let msg_single = msg_content
@@ -45,7 +49,7 @@ where
         .collect::<Vec<_>>();
 
     //消息记录
-    MessageStorage::save(&id.to_string(), msg_content).await;
+    MessageStorage::save_with_group(&id.to_string(), msg_content, group_id).await;
     trace!(message_id = ?id, "消息内容存储完成");
 
     //印象记录

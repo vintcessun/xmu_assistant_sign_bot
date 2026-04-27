@@ -255,11 +255,12 @@ impl ScheduleRenderer {
                 dedup_courses
                     .sort_by_key(|(item, _)| (item.ksjcdm, item.jsjcdm, item.kcmc.clone()));
 
-                if let Some(last) = segments.last_mut() {
-                    if last.end + 1 == start && last.signature == signature {
-                        last.end = end;
-                        continue;
-                    }
+                if let Some(last) = segments.last_mut()
+                    && last.end + 1 == start
+                    && last.signature == signature
+                {
+                    last.end = end;
+                    continue;
                 }
 
                 segments.push(RenderSegment {
@@ -312,11 +313,14 @@ impl ScheduleRenderer {
                 html, body {{
                     width: 1400px;
                     height: 1800px;
-                    overflow: hidden;
+                    overflow: clip;
                     background: white;
                 }}
                 body {{ 
-                    padding: 14px;
+                    --canvas-height: 1800px;
+                    --body-padding: 14px;
+                    --title-height: 56px;
+                    padding: var(--body-padding);
                     margin: 0;
                     font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
                 }}
@@ -331,7 +335,15 @@ impl ScheduleRenderer {
                     display: flex;
                     flex-direction: column;
                 }}
-                .title {{ font-size: 24px; font-weight: bold; text-align: center; margin-bottom: 14px; color: #1e293b; }}
+                .title {{
+                    height: var(--title-height);
+                    line-height: var(--title-height);
+                    font-size: 24px;
+                    font-weight: 700;
+                    text-align: center;
+                    margin-bottom: 0;
+                    color: #1e293b;
+                }}
                 
                 .grid {{
                     display: grid;
@@ -339,7 +351,7 @@ impl ScheduleRenderer {
                     grid-template-rows: 44px repeat({period_count}, minmax(0, 1fr));
                     gap: 0px;
                     width: 100%;
-                    flex: 1;
+                    height: calc(var(--canvas-height) - var(--body-padding) * 2 - var(--title-height));
                 }}
 
                 .cell {{

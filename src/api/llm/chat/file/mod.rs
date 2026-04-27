@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::{
     fmt::Display,
+    io::Read,
     path::PathBuf,
     sync::{Arc, LazyLock},
 };
@@ -64,13 +65,24 @@ impl LlmFile {
             let mut hasher = sha2::Sha256::new();
             let mut f = std::fs::File::open(&p).map_err(|e| {
                 error!(path = %p.display(), error = ?e, "打开文件失败");
-                e
+                anyhow::Error::from(e)
             })?;
-            std::io::copy(&mut f, &mut hasher).map_err(|e| {
-                error!(path = %p.display(), error = ?e, "读取文件内容计算 SHA-256 失败");
-                e
-            })?;
-            let hash = format!("{:x}", hasher.finalize());
+            let mut buffer = [0; 8192];
+            loop {
+                let n = std::fs::File::read(&mut f, &mut buffer).map_err(|e| {
+                    error!(path = %p.display(), error = ?e, "读取文件内容计算 SHA-256 失败");
+                    anyhow::Error::from(e)
+                })?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&buffer[..n]);
+            }
+            let digest = hasher.finalize();
+            let hash = digest
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>();
             let short = FileShortId::from_hex(&hash).map_err(|e| {
                 error!(hash = %hash, error = ?e, "将 SHA-256 转换为 FileShortId 失败");
                 e

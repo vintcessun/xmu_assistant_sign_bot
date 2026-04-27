@@ -86,7 +86,7 @@ pub struct MessageSendLlmResponse {
     pub message: Vec<SegmentSendLlmResponse>,
 }
 
-const MESSAGE_SEND_LLM_RESPONSE_VALID_EXAMPLE: &str = r#"
+pub const MESSAGE_SEND_LLM_RESPONSE_VALID_EXAMPLE: &str = r#"
 <MessageSendLlmResponse>
     <message>
         <item>
@@ -221,6 +221,48 @@ impl IntoMessageSend {
                 }
             }
         }
+    }
+
+    /// 将 LLM 结构化输出直接转换为 MessageSend，不发起任何 LLM 调用。
+    pub async fn from_response(msg: MessageSendLlmResponse) -> Result<MessageSend> {
+        let mut ret = Vec::new();
+        for segment in msg.message {
+            ret.push(match segment {
+                SegmentSendLlmResponse::At { qq } => {
+                    trace!(qq = %qq, "转换消息段: @用户");
+                    SegmentSend::At(at::DataSend { qq })
+                }
+                SegmentSendLlmResponse::Face { id } => {
+                    trace!(face_id = %id, "转换消息段: 表情");
+                    SegmentSend::Face(face::DataSend { id })
+                }
+                SegmentSendLlmResponse::Image { file } => {
+                    trace!(file_id = %file.id, "转换消息段: 图片");
+                    let llm_file = file.to_llm_file().await?;
+                    let file_path = llm_file.file.get_path();
+                    let file_url = FileUrl::from_path(file_path).map_err(|e| {
+                        warn!(path = %file_path.display(), error = ?e, "从文件路径创建 FileUrl 失败");
+                        e
+                    })?;
+                    SegmentSend::Image(box_new!(image::DataSend, {
+                        file: file_url,
+                        r#type: None,
+                        cache: Cache::default(),
+                        proxy: Proxy::default(),
+                        timeout: None,
+                    }))
+                }
+                SegmentSendLlmResponse::Text { text } => {
+                    trace!(content = %text, "转换消息段: 文本");
+                    SegmentSend::Text(text::DataSend { text })
+                }
+            });
+            ret.push(SegmentSend::Text(text::DataSend {
+                text: "\n".to_string(),
+            }));
+        }
+        info!(segment_count = ?ret.len(), "结构化回复转换完成");
+        Ok(MessageSend::Array(ret))
     }
 }
 
