@@ -1,3 +1,4 @@
+use super::cache::write_client_cache;
 use super::qr::LOGIN_DATA;
 use crate::abi::message::MessageSend;
 use crate::api::xmu_service::jw::{UserInfo, Zzy, ZzyProfile};
@@ -28,6 +29,8 @@ pub async fn update_and_login(
         e
     })?;
     info!(user_id = id, "用户登录数据存储成功");
+
+    write_client_cache(id, session.clone(), "login_qr");
 
     Ok(login_data)
 }
@@ -146,6 +149,7 @@ pub async fn try_pwd_login(session: &SessionClient, id: i64) -> Result<Arc<Login
                 error!(user_id = id, error = ?e, "存储用户登录数据失败");
                 e
             })?;
+            write_client_cache(id, session.clone(), "login_pwd");
             Ok(login_data)
         }
         None => Err(anyhow!("账号密码登录数据不存在")),
@@ -193,6 +197,8 @@ pub async fn process_login_castgc<T: BotClient + BotHandler + fmt::Debug>(
             &data.castgc,
             &url::Url::parse("https://ids.xmu.edu.cn").unwrap(),
         );
+        write_client_cache(id, session.clone(), "recover_castgc");
+        info!(user_id = id, "recover_success_cache_written");
         return Ok(session);
     }
 

@@ -1,5 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use rand::Rng;
+use rand::RngExt;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 use xmu_assistant_bot::api::storage::HotTable;

@@ -164,6 +164,11 @@ impl<
         &self.message_text
     }
 
+    /// 替换当前会话的 message_text（用于命令代理前插固定前缀，不重建 Context）。
+    pub fn set_message_text(&mut self, text: impl Into<Arc<str>>) {
+        self.message_text = text.into();
+    }
+
     pub fn get_message_number<N: FromStr>(&self) -> Result<N> {
         self.message_text
             .chars()

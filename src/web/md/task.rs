@@ -3,7 +3,8 @@ use crate::{
     web::{URL, md::expose::ON_QUEUE},
 };
 use anyhow::{Context, Result};
-use headless_chrome::{Browser, LaunchOptions, types::PrintToPdfOptions}; // 导入 PrintToPdfOptions
+use chromiumoxide::cdp::browser_protocol::page::PrintToPdfParams;
+use chromiumoxide::{Browser, BrowserConfig};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -11,11 +12,9 @@ use std::{
     sync::{Arc, LazyLock},
     time::SystemTime,
 };
-use tokio::task;
+use tracing::{debug, error, info, trace};
 use urlencoding::encode; // 导入 urlencoding::encode
 use uuid::Uuid;
-// 导入 headless_chrome 相关的类型。
-use tracing::{debug, error, info, trace};
 
 static DATA: LazyLock<HotTable<String, MdTaskResult>> = LazyLock::new(|| HotTable::new("md"));
 const EXPIRE_DURATION_SECS: u64 = 60 * 60 * 24; // 1 天
@@ -91,30 +90,39 @@ impl MdTask {
         let pdf_path_ref = pdf_file.get_path();
         trace!(task_id = %self.id, path = %pdf_path_ref.display(), "准备 PDF 文件路径");
 
-        // 必须在阻塞任务中运行 headless_chrome
-        let pdf_bytes = task::spawn_blocking(move || {
+        // 使用 chromiumoxide (异步)
+        let pdf_bytes = {
             debug!("尝试启动 Chrome 浏览器");
-            let browser = Browser::new(
-                LaunchOptions::default_builder()
-                    .build()
-                    .context("构建浏览器启动选项失败")
-                    .map_err(|e| {
-                        error!(error = ?e, "构建浏览器启动选项失败");
-                        e
-                    })?,
-            )
-            .context("启动 Chrome 浏览器失败")
-            .map_err(|e| {
-                error!(error = ?e, "启动 Chrome 浏览器失败");
-                e
+            let config = BrowserConfig::builder().build().map_err(|e| {
+                let err = anyhow::anyhow!("构建浏览器启动选项失败: {}", e);
+                error!(error = ?err, "构建浏览器启动选项失败");
+                err
             })?;
 
-            debug!("创建浏览器标签页");
-            let tab = browser
-                .new_tab()
-                .context("创建新的浏览器标签页失败")
+            let (browser, mut handler) = Browser::launch(config)
+                .await
+                .context("启动 Chrome 浏览器失败")
                 .map_err(|e| {
-                    error!(error = ?e, "创建新的浏览器标签页失败");
+                    error!(error = ?e, "启动 Chrome 浏览器失败");
+                    e
+                })?;
+
+            tokio::spawn(async move {
+                use futures_util::StreamExt;
+                while let Some(event) = handler.next().await {
+                    if event.is_err() {
+                        break;
+                    }
+                }
+            });
+
+            debug!("创建浏览器新页面");
+            let page = browser
+                .new_page("about:blank")
+                .await
+                .context("创建新的浏览器页面失败")
+                .map_err(|e| {
+                    error!(error = ?e, "创建新的浏览器页面失败");
                     e
                 })?;
 
@@ -126,32 +134,26 @@ impl MdTask {
             trace!(data_url_len = data_url.len(), "Data URL 生成完成");
 
             debug!("导航到 Data URL");
-            // 替代 set_content
-            tab.navigate_to(&data_url)
+            page.goto(&data_url)
+                .await
                 .context("导航到 Data URL 失败")
                 .map_err(|e| {
                     error!(error = ?e, "导航到 Data URL 失败");
                     e
                 })?;
 
-            // 替代 wait_for_navigation
-            tab.wait_until_navigated()
-                .context("等待页面导航完成失败")
-                .map_err(|e| {
-                    error!(error = ?e, "等待页面导航完成失败");
-                    e
-                })?;
             debug!("页面导航完成，准备生成 PDF");
 
             // 打印 PDF，显式开启背景打印以确保样式完整
-            let pdf_options = PrintToPdfOptions {
-                print_background: Some(true),
+            let pdf_params = PrintToPdfParams {
                 display_header_footer: Some(false),
+                print_background: Some(true),
                 ..Default::default()
             };
 
-            let pdf_bytes = tab
-                .print_to_pdf(Some(pdf_options))
+            let pdf_bytes = page
+                .pdf(pdf_params)
+                .await
                 .context("打印 PDF 失败")
                 .map_err(|e| {
                     error!(error = ?e, "打印 PDF 失败");
@@ -159,13 +161,8 @@ impl MdTask {
                 })?;
             debug!("PDF 字节流已生成");
 
-            Ok::<Vec<u8>, anyhow::Error>(pdf_bytes)
-        })
-        .await
-        .context("Markdown PDF 渲染任务调度失败")?;
-
-        // Handling the inner Result
-        let pdf_bytes = pdf_bytes.context("Markdown PDF 渲染任务内部执行失败")?;
+            pdf_bytes
+        };
 
         // 写入 PDF 文件
         fs::write(pdf_path_ref, pdf_bytes).context("写入 PDF 文件失败")?;
