@@ -53,7 +53,7 @@ jobs:
                     sudo apt-get install -y --no-install-recommends aptitude cmake gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev:armhf libssl-dev:armhf pkg-config ninja-build libc6-dev-armhf-cross binutils-arm-linux-gnueabihf
                     sudo aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' \
                       libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf \
-                      libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf
+                      libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libpostproc-dev:armhf
                   else
                     # x86_64 or aarch64 native
                     sudo apt-get install -y mold clang pkg-config libssl-dev libclang-dev libopencv-dev \
@@ -86,7 +86,7 @@ jobs:
                   if [[ "$T" == "i686"* ]]; then
                     ./configure --prefix=$HOME/deps/ffmpeg --extra-cflags="-m32 -fPIC" --extra-cxxflags="-m32 -fPIC" --extra-ldflags="-m32" --arch=i686 --target-os=linux --enable-pic --disable-debug --disable-doc --enable-gpl --enable-postproc --enable-static --disable-shared --disable-x86asm
                   else
-                    ./configure --prefix=$HOME/deps/ffmpeg --cross-prefix=arm-linux-gnueabihf- --arch=armel --target-os=linux --enable-pic --disable-debug --disable-doc --enable-gpl --enable-static --disable-shared --extra-cflags="-mfloat-abi=hard"
+                    ./configure --prefix=$HOME/deps/ffmpeg --cross-prefix=arm-linux-gnueabihf- --arch=armel --target-os=linux --enable-pic --disable-debug --disable-doc --enable-gpl --enable-postproc --enable-static --disable-shared --extra-cflags="-mfloat-abi=hard"
                   fi
                   make -j$(nproc) && make install
                   cd ..
@@ -150,7 +150,7 @@ jobs:
                     export CXXFLAGS_armv7_unknown_linux_gnueabihf="-mfloat-abi=hard -I/usr/arm-linux-gnueabihf/include"
                     export BINDGEN_EXTRA_CLANG_ARGS="-I/usr/include/arm-linux-gnueabihf"
                     export LIBRARY_PATH="$HOME/deps/opencv/lib:$HOME/deps/ffmpeg/lib:$LIBRARY_PATH"
-                    export RUSTFLAGS=""
+                    export RUSTFLAGS="-L native=$HOME/deps/opencv/lib -L native=$HOME/deps/ffmpeg/lib -C link-arg=-Wl,--start-group -C link-arg=-lavdevice -C link-arg=-lavfilter -C link-arg=-lavformat -C link-arg=-lavcodec -C link-arg=-lswresample -C link-arg=-lswscale -C link-arg=-lpostproc -C link-arg=-lavutil -C link-arg=-Wl,--end-group"
                   elif [[ "$T" == "x86_64"* ]]; then
                     export RUSTFLAGS="-C link-arg=-fuse-ld=mold"
                   fi
