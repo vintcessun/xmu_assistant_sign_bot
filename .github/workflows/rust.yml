@@ -229,6 +229,8 @@ jobs:
                   # Enable vcpkg GitHub Actions binary caching so compiled packages
                   # are stored in GHA cache and restored on subsequent runs without recompiling
                   "VCPKG_BINARY_SOURCES=clear;x-gha,readwrite" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  "VCPKG_MAX_CONCURRENCY=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  "CMAKE_BUILD_PARALLEL_LEVEL=1" | Out-File -FilePath $env:GITHUB_ENV -Append
 
                   Write-Host "Disk space before cleanup:"
                   Get-PSDrive C | Format-Table Name, Used, Free -AutoSize
@@ -260,14 +262,23 @@ jobs:
                   $TRIPLET = if ("${{ matrix.target }}" -like "*x86_64*") { "x64-windows" } elseif ("${{ matrix.target }}" -like "*i686*") { "x86-windows" } else { "arm64-windows" }
 
                   # 增强 vcpkg 环境稳定性
-                  git -C $env:VCPKG_ROOT pull
+                  if ("${{ matrix.target }}" -notlike "*i686*") {
+                      git -C $env:VCPKG_ROOT pull
+                  } else {
+                      Write-Host "Skipping vcpkg pull for i686 to keep dependency graph stable."
+                  }
 
                   # 增加重试逻辑以应对网络抖动（i686 限制 1 次以避免过长编译时间）
                   $maxRetries = if ("${{ matrix.target }}" -like "*i686*") { 1 } else { 3 }
                   $retryCount = 0
+                  $installArgs = if ("${{ matrix.target }}" -like "*i686*") { "--clean-after-build" } else { "" }
                   while ($retryCount -lt $maxRetries) {
                       Write-Host "Attempting vcpkg install (Attempt $($retryCount + 1)/$maxRetries)..."
-                      vcpkg install opencv4[contrib] --triplet $TRIPLET
+                      if ($installArgs) {
+                          vcpkg install opencv4[contrib] --triplet $TRIPLET $installArgs
+                      } else {
+                          vcpkg install opencv4[contrib] --triplet $TRIPLET
+                      }
                       
                       if ($LASTEXITCODE -eq 0) {
                           Write-Host "Vcpkg install succeeded."
