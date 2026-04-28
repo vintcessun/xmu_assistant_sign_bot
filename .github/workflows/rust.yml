@@ -307,7 +307,7 @@ jobs:
                     Set-Location ffmpeg-7.1
                     
                     # 最小化配置以加快编译，禁用非关键组件
-                    $CONFIG_ARGS = "--arch=x86 --target-os=win32 --toolchain=msvc --enable-shared --enable-static --disable-programs --disable-doc --disable-debug --disable-avdevice --disable-postproc --cc=cl --cxx=cl --prefix=C:/ffmpeg"
+                      $CONFIG_ARGS = "--arch=x86 --target-os=win32 --toolchain=msvc --enable-shared --enable-static --disable-programs --disable-doc --disable-debug --disable-postproc --cc=cl --cxx=cl --prefix=C:/ffmpeg"
                     & "$MSYS2_PATH\usr\bin\bash.exe" -lc "cd `"$PWD`" && ./configure $CONFIG_ARGS && make -j2 && make install"
 
                     # 清理
@@ -388,6 +388,8 @@ jobs:
 
                   # 4. 设置 FFmpeg 相关路径
                   "FFMPEG_DIR=C:\ffmpeg" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  "PKG_CONFIG_PATH=C:\ffmpeg\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  "PKG_CONFIG_LIBDIR=C:\ffmpeg\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Append
                   "FFMPEG_NO_AVFFT=1" | Out-File -FilePath $env:GITHUB_ENV -Append
 
                   # 5. 允许跨平台编译
