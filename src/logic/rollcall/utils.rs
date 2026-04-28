@@ -1,5 +1,6 @@
+use rand::RngExt;
 use rand::distr::uniform::SampleRange;
-use rand::{Rng, distr::uniform::SampleUniform};
+use rand::distr::uniform::SampleUniform;
 use std::cmp;
 use std::time::{SystemTime, UNIX_EPOCH};
 

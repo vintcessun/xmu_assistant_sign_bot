@@ -16,6 +16,8 @@ use url::Url;
 
 pub struct QrSignRequest;
 
+const MAX_RETRY: usize = 3;
+
 const TAG_LIST: [&str; 11] = [
     "courseId",
     "activityId",
@@ -128,13 +130,39 @@ impl QrSignRequest {
     pub async fn push(qq: i64, data: &QrSignParsed) -> Result<Option<QrSignResponse>> {
         let mut err = Err(anyhow::anyhow!("未知错误"));
         trace!("为{qq}进行推送签到");
-        let mut client =
-            get_client_from_cache(qq).ok_or(anyhow!("{qq}未找到登录数据，请先登录"))?;
-        'retry: for _ in 0..3 {
+        let mut client = match get_client_from_cache(qq) {
+            Some(client) => {
+                trace!(qq, event = "cache_hit", "二维码签到命中客户端缓存");
+                client
+            }
+            None => {
+                trace!(
+                    qq,
+                    event = "cache_miss",
+                    "二维码签到未命中客户端缓存，协程内执行恢复"
+                );
+                match get_client_or_err_for_id(qq).await {
+                    Ok(client) => {
+                        trace!(
+                            qq,
+                            event = "recover_success_cache_written",
+                            "二维码签到协程内恢复客户端成功"
+                        );
+                        client
+                    }
+                    Err(e) => {
+                        debug!(qq, event = "recover_failed", error = ?e, "二维码签到协程内恢复客户端失败");
+                        return Err(e);
+                    }
+                }
+            }
+        };
+
+        'retry: for _ in 0..MAX_RETRY {
             match Self::make_request(qq, data, client.clone()).await {
                 Ok(r) => return Ok(Some(r)),
-                Err(_e) => {
-                    //trace!("二维码签到请求失败: {:?}", _e);
+                Err(req_err) => {
+                    debug!(qq, event = "request_failed", error = ?req_err, "二维码签到请求失败，检查登录状态并尝试恢复");
                     match ProfileWithoutCache::get_from_client(&client).await {
                         Ok(_) => {
                             let sign_data = sign_request_inner(&client).await?;
@@ -146,16 +174,34 @@ impl QrSignRequest {
                             }
                             trace!(
                                 qq,
+                                event = "business_skip_none",
                                 rollcall_id = data.rollcall_id,
                                 "签到数据刷新后未发现对应的签到活动，可能是不属于的签到，停止重试"
                             );
                             return Ok(None);
                         }
-                        Err(e) => {
-                            client = get_client_or_err_for_id(qq).await?;
-                            debug!(qq, error = ?e, "二维码签到请求失败");
-                            err = Err(e);
-                        }
+                        Err(profile_err) => match get_client_or_err_for_id(qq).await {
+                            Ok(new_client) => {
+                                trace!(
+                                    qq,
+                                    event = "recover_success_cache_written",
+                                    error = ?profile_err,
+                                    "二维码签到协程内恢复成功，继续重试"
+                                );
+                                client = new_client;
+                                err = Err(profile_err);
+                            }
+                            Err(recover_err) => {
+                                debug!(
+                                    qq,
+                                    event = "recover_failed",
+                                    profile_error = ?profile_err,
+                                    recover_error = ?recover_err,
+                                    "二维码签到协程内恢复失败"
+                                );
+                                err = Err(recover_err);
+                            }
+                        },
                     }
                 }
             }
