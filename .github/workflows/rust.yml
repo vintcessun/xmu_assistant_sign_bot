@@ -227,7 +227,8 @@ jobs:
               shell: pwsh
               run: |
                   # Enable vcpkg GitHub Actions binary caching so compiled packages
-                  # are stored in GHA cache and restored on subsequent runs without recompiling
+                  # are stored in GHA cache and restored on subsequent runs without recompiling.
+                  # First run compiles from source (~2h), subsequent runs restore from cache instantly.
                   "VCPKG_BINARY_SOURCES=clear;x-gha,readwrite" | Out-File -FilePath $env:GITHUB_ENV -Append
                   "VCPKG_MAX_CONCURRENCY=1" | Out-File -FilePath $env:GITHUB_ENV -Append
                   "CMAKE_BUILD_PARALLEL_LEVEL=1" | Out-File -FilePath $env:GITHUB_ENV -Append
