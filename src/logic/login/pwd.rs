@@ -1,4 +1,5 @@
 use super::super::BuildHelp;
+use super::cache::write_client_cache;
 use crate::abi::message::MessageSend;
 use crate::api::network::SessionClient;
 use crate::api::storage::HotTable;
@@ -65,6 +66,8 @@ pub async fn login_pwd(ctx: Context) -> Result<()> {
                 error!(user_id = id, error = ?e, "存储用户登录数据失败");
                 e
             })?;
+
+            write_client_cache(id, client.clone(), "login_pwd_cmd");
 
             ctx.send_message_async(message::from_str("账密保存成功"));
         }

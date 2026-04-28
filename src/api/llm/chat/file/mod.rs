@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::{
     fmt::Display,
+    io::Read,
     path::PathBuf,
     sync::{Arc, LazyLock},
 };
@@ -64,13 +65,24 @@ impl LlmFile {
             let mut hasher = sha2::Sha256::new();
             let mut f = std::fs::File::open(&p).map_err(|e| {
                 error!(path = %p.display(), error = ?e, "打开文件失败");
-                e
+                anyhow::Error::from(e)
             })?;
-            std::io::copy(&mut f, &mut hasher).map_err(|e| {
-                error!(path = %p.display(), error = ?e, "读取文件内容计算 SHA-256 失败");
-                e
-            })?;
-            let hash = format!("{:x}", hasher.finalize());
+            let mut buffer = [0; 8192];
+            loop {
+                let n = std::fs::File::read(&mut f, &mut buffer).map_err(|e| {
+                    error!(path = %p.display(), error = ?e, "读取文件内容计算 SHA-256 失败");
+                    anyhow::Error::from(e)
+                })?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&buffer[..n]);
+            }
+            let digest = hasher.finalize();
+            let hash = digest
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>();
             let short = FileShortId::from_hex(&hash).map_err(|e| {
                 error!(hash = %hash, error = ?e, "将 SHA-256 转换为 FileShortId 失败");
                 e
@@ -121,6 +133,34 @@ async fn get_mine_type(file: &PathBuf) -> Result<&'static str> {
     Ok(mine_type)
 }
 
+/// 计算文件内容的 SHA-256 短 ID（前 8 位十六进制）
+async fn compute_file_short_id(path: PathBuf) -> Result<FileShortId> {
+    tokio::task::spawn_blocking(move || {
+        let mut hasher = sha2::Sha256::new();
+        let mut f = std::fs::File::open(&path).map_err(|e| {
+            error!(path = %path.display(), error = ?e, "打开文件失败");
+            anyhow::Error::from(e)
+        })?;
+        let mut buffer = [0u8; 8192];
+        loop {
+            let n = std::io::Read::read(&mut f, &mut buffer).map_err(|e| {
+                error!(path = %path.display(), error = ?e, "读取文件内容失败");
+                anyhow::Error::from(e)
+            })?;
+            if n == 0 { break; }
+            hasher.update(&buffer[..n]);
+        }
+        let digest = hasher.finalize();
+        let hash = digest.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+        FileShortId::from_hex(&hash)
+    })
+    .await
+    .map_err(|e| {
+        error!(error = ?e, "文件哈希计算任务失败");
+        anyhow::anyhow!("spawn_blocking failed: {:?}", e)
+    })?
+}
+
 impl LlmFile {
     pub async fn from_url(url: &String, alias: String) -> Result<Self> {
         debug!(url = %url, alias = %alias, "尝试从 URL 获取 LlmFile");
@@ -144,24 +184,33 @@ impl LlmFile {
         debug!(url = %url, "文件在过滤数据库中不存在或查找失败，开始下载");
 
         let file = {
-            let file = download_to_file(SessionClient::new(), url, &alias)
+            let raw_file = download_to_file(SessionClient::new(), url, &alias)
                 .await
                 .map_err(|e| {
                     error!(url = %url, error = ?e, "下载文件失败");
                     e
                 })?;
 
-            if let Ok(mime) = get_mine_type(&file.path).await
+            // Phase E: 内容哈希去重——下载后先算 SHA-256 查重，已存在则复用
+            let content_id = compute_file_short_id(raw_file.path.clone()).await.ok();
+            if let Some(cid) = content_id
+                && let Ok(Some(existing)) = Self::get_by_id(cid)
+            {
+                debug!(url = %url, file_id = %cid, "内容哈希命中：复用已有文件，跳过重复存储");
+                FILE_URL_FILTER_DB.insert(url, &cid).await.ok();
+                return Ok((*existing).clone());
+            }
+
+            if let Ok(mime) = get_mine_type(&raw_file.path).await
                 && mime == "image/gif"
             {
                 debug!(url = %url, "下载的文件是 GIF，开始转换为 MP4");
                 let file_new = File::prepare(&format!("{alias}.mp4"));
                 let path = file_new.get_path();
-                gif_to_mp4_silent_async(file.get_path(), path).await?;
-
+                gif_to_mp4_silent_async(raw_file.get_path(), path).await?;
                 file_new
             } else {
-                file
+                raw_file
             }
         };
 

@@ -172,7 +172,7 @@ fn is_command_handler(attrs: &[Attribute]) -> bool {
 fn parse_file_for_handlers(
     file_path: &Path,
     module_prefix: &str,
-    command_handlers: &mut Vec<(usize, String)>,
+    command_handlers: &mut Vec<(usize, String, String)>,
     other_handlers: &mut Vec<String>,
 ) {
     // 使用 expect! 替代 ? 确保在 build.rs 中失败时 panic
@@ -199,7 +199,7 @@ fn parse_file_for_handlers(
             let handler_path = format!("{}::{}", module_prefix, handler_struct_name);
 
             if is_command {
-                command_handlers.push((fn_name.len(), handler_path));
+                command_handlers.push((fn_name.len(), handler_path, fn_name));
             } else {
                 other_handlers.push(handler_path);
             }
@@ -268,9 +268,19 @@ fn generate_logic_handlers() {
     // 3. 收集 Handler 路径字符串 (保持为 String)
     let cmd_args = command_handlers
         .iter()
-        .map(|(_, path)| path.clone())
+        .map(|(_, path, _)| path.clone())
         .collect::<Vec<_>>()
         .join(",\n        ");
+
+    // 自动生成命令名目录，供 broker 一致性检查直接读取
+    let generated_commands = std::iter::once("\"help\"".to_string())
+        .chain(
+            command_handlers
+                .iter()
+                .map(|(_, _, cmd)| format!("\"{}\"", cmd)),
+        )
+        .collect::<Vec<_>>()
+        .join(", ");
 
     let other_args = other_handlers.to_vec().join(",\n        ");
 
@@ -291,6 +301,8 @@ pub trait BuildHelp {{
     const HELP_MSG: &'static str;
 }}
 
+pub const GENERATED_COMMANDS: &[&str] = &[{}];
+
 register_handler_with_help!(
     command = [
         {}
@@ -300,7 +312,7 @@ register_handler_with_help!(
     ]
 );
 "#,
-        cmd_args, other_args
+        generated_commands, cmd_args, other_args
     );
 
     generated_string.push_str(&code_body);
@@ -571,7 +583,7 @@ fn generate_omikuji_data(out_dir: &str) -> Result<(), Box<dyn std::error::Error>
 
     // 5.4. API
     // 注意：rand 已经在 main crate dependencies 中，但在 build.rs 生成的文件中需要声明 use
-    writeln!(file, "use rand::Rng;")?;
+    writeln!(file, "use rand::RngExt;")?;
 
     // Senso-ji API
     writeln!(file, "/// 随机获取一条浅草寺签文。")?;

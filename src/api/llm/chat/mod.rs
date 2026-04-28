@@ -1,5 +1,6 @@
 pub mod archive;
 pub mod audit;
+pub mod broker;
 pub mod config;
 pub mod deep;
 pub mod file;

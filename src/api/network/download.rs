@@ -11,6 +11,73 @@ use tracing::{debug, error, trace, warn};
 
 const OPTIMAL_CHUNKS: u64 = 1; //为了稳定性，先固定为1，后续可以根据实际情况调整
 
+fn is_windows_reserved_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name).trim();
+    if stem.is_empty() {
+        return false;
+    }
+    let upper = stem.to_ascii_uppercase();
+    matches!(
+        upper.as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    )
+}
+
+fn escape_filename_for_path(filename: &str) -> String {
+    let leaf = std::path::Path::new(filename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(filename)
+        .trim();
+
+    let source = if leaf.is_empty() { "file" } else { leaf };
+    let mut escaped = String::with_capacity(source.len());
+
+    for ch in source.chars() {
+        let invalid =
+            ch.is_control() || matches!(ch, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*');
+        if invalid {
+            let mut buf = [0_u8; 4];
+            for b in ch.encode_utf8(&mut buf).as_bytes() {
+                escaped.push('%');
+                escaped.push_str(&format!("{:02X}", b));
+            }
+        } else {
+            escaped.push(ch);
+        }
+    }
+
+    let escaped = escaped.trim_end_matches([' ', '.']);
+    let escaped = if escaped.is_empty() { "file" } else { escaped };
+
+    if is_windows_reserved_name(escaped) {
+        format!("_{}", escaped)
+    } else {
+        escaped.to_string()
+    }
+}
+
 pub async fn download_to_file(client: SessionClient, url: &str, filename: &str) -> Result<File> {
     download_to_backend::<File>(client, url, filename).await
 }
@@ -29,13 +96,21 @@ pub fn download_to_backend_sync<T: FileBackend>(
     url: &str,
     filename: &str,
 ) -> FutureFile {
+    let safe_filename = escape_filename_for_path(filename);
+    if safe_filename != filename {
+        warn!(
+            original_filename = filename,
+            safe_filename = safe_filename,
+            "下载文件名包含非法路径字符，已自动转义"
+        );
+    }
     debug!(
         url = url,
-        filename = filename,
+        filename = safe_filename,
         "开始创建异步下载任务 (Sync 接口)"
     );
     // 1. 准备后端（分配路径并创建占位）
-    let backend = T::prepare(filename);
+    let backend = T::prepare(&safe_filename);
     let path = backend.get_path().clone();
     let path_clone = path.clone();
     let url_clone = url.to_string();
@@ -73,9 +148,17 @@ pub async fn download_to_backend<T: FileBackend>(
     url: &str,
     filename: &str,
 ) -> Result<T> {
+    let safe_filename = escape_filename_for_path(filename);
+    if safe_filename != filename {
+        warn!(
+            original_filename = filename,
+            safe_filename = safe_filename,
+            "下载文件名包含非法路径字符，已自动转义"
+        );
+    }
     debug!(
         url = url,
-        filename = filename,
+        filename = safe_filename,
         "开始调用下载任务 (Async 接口)"
     );
     // 1. 获取元数据（复用 SessionClient 自动处理 Cookie）
@@ -92,7 +175,7 @@ pub async fn download_to_backend<T: FileBackend>(
     );
 
     // 2. 准备后端（分配路径并创建占位）
-    let backend = T::prepare(filename);
+    let backend = T::prepare(&safe_filename);
     let path = backend.get_path();
 
     // 3. 执行 11 协程并行下载
@@ -242,6 +325,18 @@ async fn download_parallel_benchmarked(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_escape_filename_for_path_illegal_chars() {
+        let got = escape_filename_for_path("课程资料/第一章:绪论?.pdf");
+        assert_eq!(got, "第一章%3A绪论%3F.pdf");
+    }
+
+    #[test]
+    fn test_escape_filename_for_path_reserved_name() {
+        let got = escape_filename_for_path("CON.txt");
+        assert_eq!(got, "_CON.txt");
+    }
 
     #[tokio::test]
     async fn test_download() -> Result<()> {

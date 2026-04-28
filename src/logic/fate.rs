@@ -1,8 +1,6 @@
 use super::BuildHelp;
 use crate::api::llm::chat::tool::time::time_info_getter;
 use genai::chat::ChatMessage;
-use rand::SeedableRng;
-use rand::rngs::SmallRng;
 use tracing::{debug, trace, warn};
 
 // 引入 build.rs 生成的 omikuji 模块
@@ -18,7 +16,7 @@ help_msg=r#"用法:/fate
 功能:用于求签，本功能基于 AI 模型生成的概率预测，仅供娱乐。命运掌握在自己手中，请务必相信科学，拒绝迷信。"#)]
 pub async fn fate(ctx: Context) -> Result<()> {
     // 使用随机数，确保每次求签结果不同
-    let mut rng = SmallRng::from_os_rng();
+    let mut rng = rand::make_rng();
 
     let fortune_senso_ji = random_senso_ji_fortune(&mut rng);
     let fortune_ruanyf = random_ruanyf_fortune(&mut rng);

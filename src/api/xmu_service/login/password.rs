@@ -6,7 +6,7 @@ use crate::api::xmu_service::login::{
 use crate::api::{network::SessionClient, xmu_service::login::LoginRequest};
 use anyhow::{Result, anyhow, bail};
 use base64::Engine;
-use rand::Rng;
+use rand::RngExt;
 
 impl LoginRequest {
     pub fn password(

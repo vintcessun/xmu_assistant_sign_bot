@@ -14,19 +14,17 @@ use crate::{
             login::login_password,
         },
     },
-    logic::login::{LOGIN_DATA, PWD_DATA, process::process_login},
+    logic::login::{
+        LOGIN_DATA, PWD_DATA,
+        cache::{CLIENT_CACHE, write_client_cache},
+        process::process_login,
+    },
 };
-use dashmap::DashMap;
 use std::fmt;
 use std::sync::Arc;
-use std::sync::LazyLock;
-use tracing::info;
+use tracing::{info, warn};
 
-static CLIENT_CACHE: LazyLock<DashMap<i64, SessionClient>> = LazyLock::new(DashMap::new);
-
-pub fn get_client_from_cache(id: i64) -> Option<SessionClient> {
-    CLIENT_CACHE.get(&id).map(|entry| entry.value().clone())
-}
+pub use crate::logic::login::cache::get_client_from_cache;
 
 pub async fn get_client_or_err_for_id(id: i64) -> Result<SessionClient> {
     let cached_client = CLIENT_CACHE.get(&id).map(|entry| entry.value().clone());
@@ -39,8 +37,14 @@ pub async fn get_client_or_err_for_id(id: i64) -> Result<SessionClient> {
     if let Some(lnt) = login_lnt {
         let client = get_session_client(&lnt);
         if ProfileWithoutCache::get_from_client(&client).await.is_ok() {
-            CLIENT_CACHE.insert(id, client.clone());
+            write_client_cache(id, client.clone(), "recover_lnt");
+            info!(user_id = id, "recover_success_cache_written");
             return Ok(client);
+        } else {
+            warn!(
+                user_id = id,
+                "recover_failed: lnt 恢复会话失败，尝试密码重登录"
+            );
         }
     }
     let login_credential = PWD_DATA
@@ -48,11 +52,20 @@ pub async fn get_client_or_err_for_id(id: i64) -> Result<SessionClient> {
         .map(|entry| (entry.username.clone(), entry.password.clone()));
     if let Some((username, password)) = login_credential {
         let client = SessionClient::new();
-        let login_data = login_password(&client, username, &password).await?;
-        LOGIN_DATA.insert(id, Arc::new(login_data))?;
-        CLIENT_CACHE.insert(id, client.clone());
-        return Ok(client);
+        match login_password(&client, username, &password).await {
+            Ok(login_data) => {
+                LOGIN_DATA.insert(id, Arc::new(login_data))?;
+                write_client_cache(id, client.clone(), "recover_pwd");
+                info!(user_id = id, "recover_success_cache_written");
+                return Ok(client);
+            }
+            Err(e) => {
+                warn!(user_id = id, error = ?e, "recover_failed: 密码重登录失败");
+                return Err(e);
+            }
+        }
     }
+    warn!(user_id = id, "recover_failed: 无可用登录凭证");
     Err(anyhow!("未登录"))
 }
 
@@ -65,9 +78,10 @@ where
     if let Ok(client) = get_client_or_err_for_id(id).await {
         return Ok(client);
     }
-    info!("未登录发起登录");
+    info!(user_id = id, "未登录发起登录");
     let login_data = process_login(ctx, id).await?;
     let client = get_session_client(&login_data.lnt);
-    CLIENT_CACHE.insert(id, client.clone());
+    // process_login 内部路径已写入缓存；此处为 qr 登录返回后经 lnt 重建 session 的补充写入
+    write_client_cache(id, client.clone(), "login_qr_rehydrate");
     Ok(client)
 }

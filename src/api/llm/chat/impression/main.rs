@@ -4,7 +4,7 @@ use anyhow::Result;
 use dashmap::DashMap;
 use genai::chat::ChatMessage;
 use llm_xml_caster::llm_prompt;
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::LazyLock;

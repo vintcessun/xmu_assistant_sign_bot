@@ -1,15 +1,19 @@
 use anyhow::Result;
+use dashmap::DashSet;
 use uuid::Uuid;
 
 use crate::api::{
-    llm::chat::{file::LlmFile, llm::get_single_file_embedding},
+    llm::chat::{file::{LlmFile, FileShortId}, llm::get_single_file_embedding},
     storage::{HasEmbedding, VectorSearchEngine},
 };
 use std::sync::{Arc, LazyLock};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 static FILE_EMBEDDING_DB: LazyLock<VectorSearchEngine<LlmFile>> =
     LazyLock::new(|| VectorSearchEngine::new("llm_chat_file_embedding_dataset"));
+
+/// 会话内已嵌入的文件 ID 集合，防止重复插入向量库
+static EMBEDDED_FILE_IDS: LazyLock<DashSet<FileShortId>> = LazyLock::new(DashSet::new);
 
 impl HasEmbedding for LlmFile {
     fn get_embedding(&self) -> &[f32] {
@@ -18,6 +22,12 @@ impl HasEmbedding for LlmFile {
 }
 
 pub async fn embedding_llm_file(mut file: LlmFile) -> Result<Arc<LlmFile>> {
+    // Phase E: 幂等检查——同 file_id 跳过重复插入
+    if EMBEDDED_FILE_IDS.contains(&file.id) {
+        debug!(file_id = %file.id, file_name = %file.alias, "文件嵌入已存在，跳过重复插入");
+        return Ok(Arc::new(file));
+    }
+
     info!(file_name = %file.alias, "开始文件嵌入和存储");
     let embedding = get_single_file_embedding(&file).await.map_err(|e| {
         error!(file_name = %file.alias, error = ?e, "获取文件嵌入失败");
@@ -29,6 +39,7 @@ pub async fn embedding_llm_file(mut file: LlmFile) -> Result<Arc<LlmFile>> {
         error!(file_name = %file.alias, error = ?e, "插入向量数据库失败");
         e
     })?;
+    EMBEDDED_FILE_IDS.insert(file.id);
     info!(file_name = %file.alias, "文件嵌入和存储成功");
     Ok(file)
 }

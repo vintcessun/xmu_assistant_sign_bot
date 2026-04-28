@@ -7,11 +7,11 @@ use crate::{
     },
     api::llm::chat::{
         audit::audit_test_fast,
-        repeat::reply::{MessageAbstract, RepeatReply},
+        repeat::reply::{MessageAbstract, RepeatReply, normalize_text},
     },
 };
 use anyhow::{Result, anyhow};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 pub async fn send_message_from_hot<T, M>(ctx: &mut Context<T, M>) -> Result<()>
 where
@@ -19,13 +19,13 @@ where
     M: MessageType + std::fmt::Debug + Send + Sync + 'static,
 {
     let msg = ctx.get_message_text().to_string();
-    let sender = ctx.get_message().get_sender().user_id.ok_or_else(|| {
-        error!("获取消息发送者 QQ 号失败");
-        anyhow!("获取消息发送者 QQ 号失败")
-    })?;
+    let group_id = match ctx.get_target() {
+        Target::Group(id) => id,
+        Target::Private(id) => -id,
+    };
     let message = MessageAbstract {
-        qq: sender,
-        msg_text: msg,
+        group_id,
+        normalized_text: normalize_text(&msg),
     };
 
     debug!(message = ?message, "尝试生成重复消息热回复");
@@ -35,12 +35,7 @@ where
         anyhow!("未命中热回复")
     })?;
 
-    let group_id = match ctx.get_target() {
-        Target::Group(id) => id,
-        Target::Private(id) => -id,
-    };
-
-    audit_test_fast(&message_send, message.clone(), group_id)
+    audit_test_fast(&message_send, message.clone(), message.group_id)
         .await
         .map_err(|e| {
             warn!(group_id = ?group_id, error = ?e, "发送快速审计任务失败");

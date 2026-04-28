@@ -14,7 +14,12 @@ static NOTICE_DB: LazyLock<ColdTable<i64, MessageStore>> =
 pub struct MessageStore {
     pub msg: ChatMessage,
     pub timestamp: u64,
+    #[serde(default)]
+    pub group_id: i64,
 }
+
+/// 会话记忆（闲聊类）TTL：7 天
+const CHAT_MESSAGE_TTL_SECS: u64 = 7 * 24 * 3600;
 
 pub struct MessageStorage;
 
@@ -28,6 +33,10 @@ impl MessageStorage {
     }
 
     pub async fn save(key: &String, message: Vec<ChatMessage>) {
+        Self::save_with_group(key, message, 0).await;
+    }
+
+    pub async fn save_with_group(key: &String, message: Vec<ChatMessage>, group_id: i64) {
         trace!(key = ?key, message = ?message, "正在尝试保存消息");
 
         let mut msg_contents = vec![];
@@ -44,6 +53,7 @@ impl MessageStorage {
                         timestamp: time::SystemTime::now()
                             .duration_since(time::UNIX_EPOCH)?
                             .as_secs(),
+                        group_id,
                     },
                 )
                 .await?;
@@ -69,13 +79,49 @@ impl MessageStorage {
         let mut ret = Vec::with_capacity(segments.len());
 
         for segment in segments {
-            let (id, MessageStore { msg, timestamp }) = segment;
+            let (
+                id,
+                MessageStore {
+                    msg,
+                    timestamp,
+                    group_id: _,
+                },
+            ) = segment;
             if timestamp >= start_time && timestamp <= end_time {
                 ret.push((id, msg));
             }
         }
 
         ret
+    }
+
+    pub async fn get_recent_by_group(group_id: i64, limit: usize) -> Vec<(String, ChatMessage)> {
+        trace!(group_id = ?group_id, limit = ?limit, "开始获取指定群组最近消息记录");
+        let now = time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let cutoff = now.saturating_sub(CHAT_MESSAGE_TTL_SECS);
+
+        let mut segments = MESSAGE_DB.get_all_async().await.unwrap_or_else(|e| {
+            error!(group_id = ?group_id, error = ?e, "获取所有消息记录失败，返回空列表");
+            vec![]
+        });
+
+        // 过滤：同群组且未超出会话记忆 TTL
+        segments.retain(|(_, s)| s.group_id == group_id && s.timestamp >= cutoff);
+        segments.sort_by_key(|(_, s)| s.timestamp);
+
+        let take_count = limit.min(segments.len());
+        segments
+            .into_iter()
+            .rev()
+            .take(take_count)
+            .map(|(id, s)| (id, s.msg))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect()
     }
 }
 
@@ -100,6 +146,7 @@ impl NoticeStorage {
                         .duration_since(time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_secs(),
+                    group_id: 0,
                 },
             )
             .await;
@@ -122,7 +169,14 @@ impl NoticeStorage {
         });
         let mut ret = Vec::with_capacity(segments.len());
         for segment in segments {
-            let (_, MessageStore { msg, timestamp }) = segment;
+            let (
+                _,
+                MessageStore {
+                    msg,
+                    timestamp,
+                    group_id: _,
+                },
+            ) = segment;
             if timestamp >= start_time && timestamp <= end_time {
                 ret.push(msg);
             }
