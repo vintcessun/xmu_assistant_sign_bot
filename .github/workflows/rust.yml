@@ -231,25 +231,7 @@ jobs:
                   "VCPKG_BINARY_SOURCES=clear;x-gha,readwrite" | Out-File -FilePath $env:GITHUB_ENV -Append
                   "VCPKG_MAX_CONCURRENCY=1" | Out-File -FilePath $env:GITHUB_ENV -Append
                   "CMAKE_BUILD_PARALLEL_LEVEL=1" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-                  Write-Host "Disk space before lightweight cleanup:"
-                  Get-PSDrive C | Format-Table Name, Used, Free -AutoSize
-
-                  # Keep cleanup lightweight to avoid spending too long deleting huge trees.
-                  $paths = @(
-                      "C:\Program Files\Android",
-                      "C:\Program Files (x86)\Android",
-                      "C:\Users\runneradmin\AppData\Local\Temp"
-                  )
-                  foreach ($p in $paths) {
-                      if (Test-Path $p) {
-                          Write-Host "Removing: $p"
-                          Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue
-                      }
-                  }
-
-                  Write-Host "Disk space after lightweight cleanup:"
-                  Get-PSDrive C | Format-Table Name, Used, Free -AutoSize
+                  Write-Host "i686 optimization enabled: vcpkg binary cache + low concurrency"
 
             - name: Update vcpkg and Install OpenCV
               shell: pwsh
