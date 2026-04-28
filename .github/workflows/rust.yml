@@ -259,12 +259,9 @@ jobs:
                   if (Test-Path -Path "C:\ffmpeg") { Remove-Item -Recurse -Force "C:\ffmpeg" }
                   New-Item -ItemType Directory -Path "C:\ffmpeg"
 
-                  if ($TARGET -like "i686*") {
-                    # 1. 创建临时工具目录并准备 MSVC 环境
-                    $TEMP_TOOLS = "C:\temp_tools"
-                    New-Item -ItemType Directory -Path $TEMP_TOOLS -Force
-                    
-                    # 导入 32 位 MSVC 环境变量
+                  if ($TARGET -like "*i686*") {
+                    # i686 源码编译，但限制资源使用以避免超时
+                    # 导入 32 位 MSVC 环境
                     $VS_INSTALL_DIR = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
                     $VCVARS = "$VS_INSTALL_DIR\VC\Auxiliary\Build\vcvars32.bat"
                     $tmpFile = New-TemporaryFile
@@ -279,42 +276,28 @@ jobs:
                     }
                     Remove-Item $tmpFile
 
-                    # 2. 在 MSYS2 内部安装工具
+                    # 在 MSYS2 内编译 FFmpeg（限制并发为 2 避免超时）
                     $MSYS2_PATH = "C:\msys64"
-                    # 设置 MSYS2 继承父进程环境，确保能找到 cl.exe
                     $env:MSYS2_PATH_TYPE = "inherit"
                     & "$MSYS2_PATH\usr\bin\bash.exe" -lc "pacman -S --noconfirm nasm make pkgconf"
 
-                    # 3. 下载并编译 FFmpeg
                     Invoke-WebRequest -Uri https://ffmpeg.org/releases/ffmpeg-7.1.tar.bz2 -OutFile ffmpeg.tar.bz2
                     tar -xf ffmpeg.tar.bz2
                     Set-Location ffmpeg-7.1
                     
-                    # 修正 cl.exe 无法创建可执行文件的问题：显式指定 CC/CXX
-                    # 增加 --enable-pic (虽然 msvc 默认 pic), 关键是确保所有组件都编译并安装
-                    $CONFIG_ARGS = "--arch=x86 --target-os=win32 --toolchain=msvc --enable-shared --enable-static --disable-programs --disable-doc --cc=cl --cxx=cl --prefix=C:/ffmpeg"
-                    & "$MSYS2_PATH\usr\bin\bash.exe" -lc "cd `"$PWD`" && ./configure $CONFIG_ARGS && make -j$env:NUMBER_OF_PROCESSORS && make install"
+                    # 最小化配置以加快编译，禁用非关键组件
+                    $CONFIG_ARGS = "--arch=x86 --target-os=win32 --toolchain=msvc --enable-shared --enable-static --disable-programs --disable-doc --disable-debug --disable-avdevice --disable-postproc --cc=cl --cxx=cl --prefix=C:/ffmpeg"
+                    & "$MSYS2_PATH\usr\bin\bash.exe" -lc "cd `"$PWD`" && ./configure $CONFIG_ARGS && make -j2 && make install"
 
-                    # 4. 卸载临时工具
+                    # 清理
                     & "$MSYS2_PATH\usr\bin\bash.exe" -lc "pacman -Rs --noconfirm nasm make pkgconf"
-                    Remove-Item -Recurse -Force $TEMP_TOOLS
-
-                    # 5. 修正 lib 路径 (MSVC 编译出来的 lib 可能在 C:\ffmpeg\bin 目录下或需要移动)
-                    # configure --prefix=C:/ffmpeg 后，make install 会自动创建目录
-                    if (Test-Path "C:\ffmpeg\bin\*.lib") {
-                        Move-Item -Path "C:\ffmpeg\bin\*.lib" -Destination "C:\ffmpeg\lib" -Force
-                    }
-
-                    # 6. !!! 彻底清理 !!!
                     Set-Location ..
                     Remove-Item -Recurse -Force ffmpeg-7.1
                     Remove-Item -Force ffmpeg.tar.bz2
                     
-                    # 还原环境变量，确保 aws-lc-sys 编译时看不到 MSYS2
-                    $env:PATH = $ORIGINAL_PATH
-                    $env:MSYS2_PATH_TYPE = $null
-                    Write-Host "MSYS2 environment cleared. Ready for clean Rust build."
+                    Write-Host "i686 FFmpeg compilation complete"
                   } else {
+                      # x86_64 和 aarch64 使用预编译
                       if ($TARGET -like "*aarch64*") {
                         $URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-winarm64-gpl-shared-7.1.zip"
                       } else {
@@ -412,7 +395,9 @@ jobs:
                   Write-Host "All critical libraries verified successfully."
 
             - name: Build release binary
-              run: cargo build --release --target ${{ matrix.target }} --verbose
+              run: |
+                  $JOBS = if ("${{ matrix.target }}" -like "*i686*") { "2" } else { "4" }
+                  cargo build --release --target ${{ matrix.target }} --jobs $JOBS --verbose
               env:
                   RUSTFLAGS: >-
                       -C link-arg=-fuse-ld=lld-link 
