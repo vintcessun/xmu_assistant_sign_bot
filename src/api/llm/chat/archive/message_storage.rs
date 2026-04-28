@@ -18,6 +18,9 @@ pub struct MessageStore {
     pub group_id: i64,
 }
 
+/// 会话记忆（闲聊类）TTL：7 天
+const CHAT_MESSAGE_TTL_SECS: u64 = 7 * 24 * 3600;
+
 pub struct MessageStorage;
 
 impl MessageStorage {
@@ -94,12 +97,19 @@ impl MessageStorage {
 
     pub async fn get_recent_by_group(group_id: i64, limit: usize) -> Vec<(String, ChatMessage)> {
         trace!(group_id = ?group_id, limit = ?limit, "开始获取指定群组最近消息记录");
+        let now = time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let cutoff = now.saturating_sub(CHAT_MESSAGE_TTL_SECS);
+
         let mut segments = MESSAGE_DB.get_all_async().await.unwrap_or_else(|e| {
             error!(group_id = ?group_id, error = ?e, "获取所有消息记录失败，返回空列表");
             vec![]
         });
 
-        segments.retain(|(_, s)| s.group_id == group_id);
+        // 过滤：同群组且未超出会话记忆 TTL
+        segments.retain(|(_, s)| s.group_id == group_id && s.timestamp >= cutoff);
         segments.sort_by_key(|(_, s)| s.timestamp);
 
         let take_count = limit.min(segments.len());

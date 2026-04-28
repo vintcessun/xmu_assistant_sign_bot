@@ -14,8 +14,7 @@ pub async fn llm_message(mut ctx: Context) -> Result<()> {
     let compact_msg = raw_msg.replace("\n", "").replace(" ", "");
     let prefix = config::get_command_prefix();
 
-    if raw_msg.starts_with(prefix) {
-        let raw_cmd_part = &raw_msg[prefix.len()..];
+    if let Some(raw_cmd_part) = raw_msg.strip_prefix(prefix) {
         let trimmed_cmd_part = raw_cmd_part.trim_start();
 
         // 兼容 "前缀后带空白" 的命令输入：通过 Broker 统一注入前缀并分发

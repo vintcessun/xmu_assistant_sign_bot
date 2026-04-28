@@ -1,5 +1,6 @@
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 use dashmap::DashMap;
 use tracing::{debug, info};
@@ -8,7 +9,10 @@ use crate::{
     abi::{
         Context,
         logic_import::{Message, Notice},
-        message::{MessageReceive, Target, event_body::MessageType, event_message, message_body::SegmentReceive},
+        message::{
+            MessageReceive, Target, event_body::MessageType, event_message,
+            message_body::SegmentReceive,
+        },
         network::BotClient,
         websocket::BotHandler,
     },
@@ -35,6 +39,10 @@ static L0_HIT: AtomicU64 = AtomicU64::new(0);
 static L1_HIT: AtomicU64 = AtomicU64::new(0);
 static L2_HIT: AtomicU64 = AtomicU64::new(0);
 
+/// 累计 L2 延迟（毫秒）和调用次数，用于计算平均响应延迟
+static L2_LATENCY_TOTAL_MS: AtomicU64 = AtomicU64::new(0);
+static L2_LATENCY_COUNT: AtomicU64 = AtomicU64::new(0);
+
 const RATE_LIMIT_WINDOW_SECS: u64 = 60;
 const RATE_LIMIT_MAX_REPLIES: u32 = 10;
 
@@ -43,8 +51,25 @@ const LAST_SPEAKER_PROTECT_SECS: u64 = 30;
 
 /// 寒暄/水消息词组，字数较少时命中则视为低质量消息
 const GREETING_PATTERNS: &[&str] = &[
-    "哈哈", "嗯嗯", "呵呵", "哈哈哈", "嗯", "啊", "哦", "好的", "好", "是", "ok", "OK",
-    "okay", "嗯嗯嗯", "哈", "嗯哼", "哦哦", "哦哦哦", "好好",
+    "哈哈",
+    "嗯嗯",
+    "呵呵",
+    "哈哈哈",
+    "嗯",
+    "啊",
+    "哦",
+    "好的",
+    "好",
+    "是",
+    "ok",
+    "OK",
+    "okay",
+    "嗯嗯嗯",
+    "哈",
+    "嗯哼",
+    "哦哦",
+    "哦哦哦",
+    "好好",
 ];
 
 fn current_secs() -> u64 {
@@ -82,10 +107,11 @@ fn is_low_quality_message(message: &event_message::Message, text: &str) -> bool 
             _ => None,
         },
     };
-    if let Some(segs) = segs {
-        if !segs.is_empty() && segs.iter().all(|s| matches!(s, SegmentReceive::Face(_))) {
-            return true;
-        }
+    if let Some(segs) = segs
+        && !segs.is_empty()
+        && segs.iter().all(|s| matches!(s, SegmentReceive::Face(_)))
+    {
+        return true;
     }
     // 去除空白后字符数
     let char_count: usize = text.chars().filter(|c| !c.is_whitespace()).count();
@@ -135,7 +161,7 @@ fn consume_group_token(group_id: i64) -> bool {
 /// 每 N 次路由打印一次统计摘要
 fn maybe_log_stats(total: u64) {
     const LOG_INTERVAL: u64 = 100;
-    if total % LOG_INTERVAL == 0 {
+    if total.is_multiple_of(LOG_INTERVAL) {
         let l0 = L0_HIT.load(Ordering::Relaxed);
         let l1 = L1_HIT.load(Ordering::Relaxed);
         let l2 = L2_HIT.load(Ordering::Relaxed);
@@ -146,7 +172,14 @@ fn maybe_log_stats(total: u64) {
             l1_hits = l1,
             l2_hits = l2,
             no_reply = miss,
-            l0_rate_pct = if total > 0 { l0 * 100 / total } else { 0 },
+            l0_rate_pct = (l0 * 100).checked_div(total).unwrap_or(0),
+            l2_avg_latency_ms = {
+                let count = L2_LATENCY_COUNT.load(Ordering::Relaxed);
+                L2_LATENCY_TOTAL_MS
+                    .load(Ordering::Relaxed)
+                    .checked_div(count)
+                    .unwrap_or(0)
+            },
             "路由统计摘要"
         );
     }
@@ -178,11 +211,12 @@ where
     }
 
     // 快速门控：群组非 AT 低质量消息直接跳过后续 LLM 路由
-    if let Target::Group(group_id) = ctx.get_target() {
-        if !at_bot && is_low_quality_message(ctx.message.as_ref(), &text) {
-            debug!(group_id = ?group_id, text = %text, "快速门控：低质量消息，跳过 L1/L2");
-            return;
-        }
+    if let Target::Group(group_id) = ctx.get_target()
+        && !at_bot
+        && is_low_quality_message(ctx.message.as_ref(), &text)
+    {
+        debug!(group_id = ?group_id, text = %text, "快速门控：低质量消息，跳过 L1/L2");
+        return;
     }
 
     //L1: 搜索回复
@@ -197,24 +231,28 @@ where
 
     //L2: 深度回复
     // 群组限流检查 + 最后发言保护（AT 消息豁免，私聊不受限）
-    if let Target::Group(group_id) = ctx.get_target() {
-        if !at_bot {
-            let user_id = ctx.get_message().get_sender().user_id.unwrap_or_default();
-            if check_last_speaker_protection(group_id, user_id) {
-                debug!(group_id = ?group_id, user_id = ?user_id, "L2: 最后发言保护触发，跳过深度回复");
-                return;
-            }
-            if !consume_group_token(group_id) {
-                debug!(group_id = ?group_id, "L2: 群组回复频率超限，跳过深度回复");
-                return;
-            }
+    if let Target::Group(group_id) = ctx.get_target()
+        && !at_bot
+    {
+        let user_id = ctx.get_message().get_sender().user_id.unwrap_or_default();
+        if check_last_speaker_protection(group_id, user_id) {
+            debug!(group_id = ?group_id, user_id = ?user_id, "L2: 最后发言保护触发，跳过深度回复");
+            return;
+        }
+        if !consume_group_token(group_id) {
+            debug!(group_id = ?group_id, "L2: 群组回复频率超限，跳过深度回复");
+            return;
         }
     }
 
+    let l2_start = Instant::now();
     match send_message_from_llm(ctx).await {
         Ok(_) => {
+            let elapsed_ms = l2_start.elapsed().as_millis() as u64;
+            L2_LATENCY_TOTAL_MS.fetch_add(elapsed_ms, Ordering::Relaxed);
+            L2_LATENCY_COUNT.fetch_add(1, Ordering::Relaxed);
             L2_HIT.fetch_add(1, Ordering::Relaxed);
-            info!("L2: 深度回复成功，结束路由");
+            info!(l2_latency_ms = elapsed_ms, "L2: 深度回复成功，结束路由");
             return;
         }
         Err(e) => debug!(error = ?e, "L2: 深度回复处理失败"),

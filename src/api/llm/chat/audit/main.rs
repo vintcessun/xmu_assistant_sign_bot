@@ -496,11 +496,21 @@ pub async fn audit_test_fast(
     Ok(())
 }
 
+/// L1 搜索审计采样计数器（每 AUDIT_SEARCH_SAMPLE_RATE 次采样一次）
+static AUDIT_SEARCH_COUNTER: AtomicU64 = AtomicU64::new(0);
+const AUDIT_SEARCH_SAMPLE_RATE: u64 = 4; // 25% 采样率
+
 pub async fn audit_test_search(
     message: &MessageSend,
     group_id: i64,
     search_key: Vec<String>,
 ) -> Result<()> {
+    // Phase F: L1 审计采样——每 4 条采样一条，降低成本
+    let count = AUDIT_SEARCH_COUNTER.fetch_add(1, Ordering::Relaxed);
+    if !count.is_multiple_of(AUDIT_SEARCH_SAMPLE_RATE) {
+        debug!(group_id = ?group_id, count = count, "L1 审计采样跳过（采样率 1/{}）", AUDIT_SEARCH_SAMPLE_RATE);
+        return Ok(());
+    }
     let ts = time::SystemTime::now()
         .duration_since(time::UNIX_EPOCH)
         .unwrap_or_default()
