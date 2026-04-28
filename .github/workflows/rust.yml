@@ -222,6 +222,38 @@ jobs:
                   restore-keys: |
                       vcpkg-downloads-${{ runner.os }}-
 
+            - name: Free disk space and enable vcpkg binary cache (i686)
+              if: matrix.target == 'i686-pc-windows-msvc'
+              shell: pwsh
+              run: |
+                  # Enable vcpkg GitHub Actions binary caching so compiled packages
+                  # are stored in GHA cache and restored on subsequent runs without recompiling
+                  "VCPKG_BINARY_SOURCES=clear;x-gha,readwrite" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+                  Write-Host "Disk space before cleanup:"
+                  Get-PSDrive C | Format-Table Name, Used, Free -AutoSize
+
+                  # Remove large unused tools to free disk space for OpenCV compilation
+                  $paths = @(
+                      "C:\Program Files\Android",
+                      "C:\Program Files (x86)\Android",
+                      "C:\hostedtoolcache\windows\Java_Adopt_jdk",
+                      "C:\hostedtoolcache\windows\Java_Microsoft_jdk",
+                      "C:\hostedtoolcache\windows\Java_Temurin_jdk",
+                      "C:\hostedtoolcache\windows\PyPy",
+                      "C:\tools\miniconda3",
+                      "C:\Program Files\dotnet"
+                  )
+                  foreach ($p in $paths) {
+                      if (Test-Path $p) {
+                          Write-Host "Removing: $p"
+                          Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue
+                      }
+                  }
+
+                  Write-Host "Disk space after cleanup:"
+                  Get-PSDrive C | Format-Table Name, Used, Free -AutoSize
+
             - name: Update vcpkg and Install OpenCV
               shell: pwsh
               run: |
@@ -230,8 +262,8 @@ jobs:
                   # 增强 vcpkg 环境稳定性
                   git -C $env:VCPKG_ROOT pull
 
-                  # 增加重试逻辑以应对网络抖动
-                  $maxRetries = 3
+                  # 增加重试逻辑以应对网络抖动（i686 限制 1 次以避免过长编译时间）
+                  $maxRetries = if ("${{ matrix.target }}" -like "*i686*") { 1 } else { 3 }
                   $retryCount = 0
                   while ($retryCount -lt $maxRetries) {
                       Write-Host "Attempting vcpkg install (Attempt $($retryCount + 1)/$maxRetries)..."
