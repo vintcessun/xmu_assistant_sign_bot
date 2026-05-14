@@ -108,7 +108,9 @@ where
 
     let context_message: Vec<ChatMessage> = if total_chars > CTX_COMPRESS_CHAR_THRESHOLD {
         // 触发压缩：将较旧的消息提交给 MemoFragment 异步归档，仅保留最近 N 条
-        let split_at = context_message_pairs.len().saturating_sub(CTX_KEEP_RECENT_COUNT);
+        let split_at = context_message_pairs
+            .len()
+            .saturating_sub(CTX_KEEP_RECENT_COUNT);
         let (old_pairs, recent_pairs) = context_message_pairs.split_at(split_at);
 
         if !old_pairs.is_empty() {
@@ -116,8 +118,7 @@ where
             let gid = group_id;
             tokio::spawn(async move {
                 if let Err(e) =
-                    MemoFragment::insert(gid, old_ids, "请压缩并摘要以下对话内容".to_string())
-                        .await
+                    MemoFragment::insert(gid, old_ids, "请压缩并摘要以下对话内容".to_string()).await
                 {
                     warn!(group_id = ?gid, error = ?e, "MemoFragment 异步压缩失败");
                 }

@@ -14,7 +14,7 @@ use crate::{
                 llm::ask_llm,
                 repeat::reply::MessageAbstract,
             },
-            tool::{ ask_as},
+            tool::ask_as,
         },
         storage::ColdTable,
     },
@@ -23,17 +23,21 @@ use crate::{
 use anyhow::Result;
 use futures::{SinkExt, StreamExt, channel::mpsc, future::join_all};
 use genai::chat::ChatMessage;
+use llm_xml_caster::llm_prompt;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
-    sync::{Arc, LazyLock, atomic::{AtomicU64, Ordering}},
+    sync::{
+        Arc, LazyLock,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{self, Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::time::{Instant, sleep, sleep_until};
 use tracing::{debug, error, info, trace, warn};
-use llm_xml_caster::{llm_prompt};
 
-static AUDIT_TASK: LazyLock<AuditTask> = LazyLock::new(|| AuditTask::new("llm_chat_audit_task_store"));
+static AUDIT_TASK: LazyLock<AuditTask> =
+    LazyLock::new(|| AuditTask::new("llm_chat_audit_task_store"));
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -44,7 +48,7 @@ pub enum AuditType {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AuditTestRequest {  
+pub struct AuditTestRequest {
     pub message: Vec<ChatMessage>,
     pub audit_type: AuditType,
     pub timestamp: u64,
@@ -97,7 +101,7 @@ async fn sleep_until_unix_timestamp(target_timestamp: u64) {
 }
 
 #[llm_prompt]
-#[derive(Debug, Clone, Serialize, Deserialize,PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AuditLlmResponse {
     #[prompt("该回复是否具有记忆价值，值得被永久铭记？")]
     pub is_value: bool,
@@ -111,7 +115,9 @@ pub struct AuditLlmResponse {
     pub bad_detail: Option<String>,
     #[prompt("如果该回答具有惩罚性，请描述该回复触犯群聊潜规则的具体原因是什么？")]
     pub bad_reason: Option<String>,
-    #[prompt("如果该回答具有惩罚性，请给出改进建议，帮助 Bot 更好地融入群聊氛围，请用换行符分割每个建议")]
+    #[prompt(
+        "如果该回答具有惩罚性，请给出改进建议，帮助 Bot 更好地融入群聊氛围，请用换行符分割每个建议"
+    )]
     pub suggestions: Option<Vec<String>>,
 }
 
@@ -155,7 +161,7 @@ impl AuditTask {
         let ts = task.timestamp;
         info!(timestamp = ?ts, audit_type = ?task.audit_type, "开始处理审计任务");
         let retry_times = task.retry_times.load(Ordering::Relaxed);
-        if retry_times > 5{
+        if retry_times > 5 {
             error!(timestamp = ?ts, audit_type = ?task.audit_type, retry_times = ?retry_times, "审计任务重试次数过多，放弃处理");
             return Ok(());
         }
@@ -180,22 +186,22 @@ impl AuditTask {
         sleep_until_unix_timestamp(target_delay).await;
 
         let src_msg = task.message.clone();
-        
+
         // 3. 获取消息上下文
         let before_msg_all = MessageStorage::get_range(ts - LLM_AUDIT_DURATION_SECS, ts).await;
         let (before_id, before_msg) = before_msg_all
             .into_iter()
             .unzip::<String, ChatMessage, Vec<String>, Vec<ChatMessage>>();
-        
+
         let before_notice = NoticeStorage::get_range(ts - LLM_AUDIT_DURATION_SECS, ts).await;
-        
+
         let after_msg_all = MessageStorage::get_range(ts, ts + LLM_AUDIT_DURATION_SECS).await;
         let (after_id, after_msg) = after_msg_all
             .into_iter()
             .unzip::<String, ChatMessage, Vec<String>, Vec<ChatMessage>>();
-        
+
         let after_notice = NoticeStorage::get_range(ts, ts + LLM_AUDIT_DURATION_SECS).await;
-        
+
         // 4. 构建 LLM 提示词
         let msg = [vec![ChatMessage::system(
             r#"# Role
@@ -260,20 +266,25 @@ impl AuditTask {
         trace!(response = ?audit_response.content, "LLM 审计原始回复");
 
         // 6. 解析结构化数据
-        let audit_data = ask_as::<AuditLlmResponse>(vec![
-            ChatMessage::system("你是一个专业的把分析格式化成指定格式的转写转家"),
-            ChatMessage::user(audit_response.content),
-        ], AUDIT_LLM_RESPONSE_VALID_EXAMPLE)
+        let audit_data = ask_as::<AuditLlmResponse>(
+            vec![
+                ChatMessage::system("你是一个专业的把分析格式化成指定格式的转写转家"),
+                ChatMessage::user(audit_response.content),
+            ],
+            AUDIT_LLM_RESPONSE_VALID_EXAMPLE,
+        )
         .await
         .map_err(|e| {
             error!(timestamp = ?ts, error = ?e, "LLM 审计结果结构化解析失败");
             e
         })?;
-        
+
         debug!(audit_data = ?audit_data, "LLM 审计结果结构化解析成功");
 
         // 7. 处理惩罚机制 (黑名单)
-        if let Some(is_penalty) = audit_data.is_penalty && is_penalty {
+        if let Some(is_penalty) = audit_data.is_penalty
+            && is_penalty
+        {
             warn!(timestamp = ?ts, audit_type = ?task.audit_type, "审计结果判定为需要惩罚");
             let now_unix = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -286,7 +297,13 @@ impl AuditTask {
             if let Some(fast_key) = &task.fast_key {
                 let bad_detail = audit_data.bad_detail.clone().unwrap_or_default();
                 let bad_reason = audit_data.bad_reason.clone().unwrap_or_default();
-                let suggestions = audit_data.suggestions.clone().unwrap_or_default().into_iter().map(|s| s.to_string()).collect::<Vec<_>>();
+                let suggestions = audit_data
+                    .suggestions
+                    .clone()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>();
                 let entry = Arc::new(BlacklistEntry {
                     bad_detail,
                     bad_reason,
@@ -302,7 +319,13 @@ impl AuditTask {
             } else if let Some(search_key) = &task.search_key {
                 let bad_detail = audit_data.bad_detail.clone().unwrap_or_default();
                 let bad_reason = audit_data.bad_reason.clone().unwrap_or_default();
-                let suggestions = audit_data.suggestions.clone().unwrap_or_default().into_iter().map(|s| s.to_string()).collect::<Vec<_>>();
+                let suggestions = audit_data
+                    .suggestions
+                    .clone()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>();
                 let entry = Arc::new(BlacklistEntry {
                     bad_detail,
                     bad_reason,
@@ -310,7 +333,7 @@ impl AuditTask {
                     fail_count: audit_data.fail_count.unwrap_or(1),
                     penalty_end: VecDeque::from(vec![penalty_end_ts]),
                 });
-                
+
                 // 收集消息内容
                 let msg_futures = search_key.iter().map(MessageStorage::get);
                 let msg = join_all(msg_futures)
@@ -338,7 +361,7 @@ impl AuditTask {
             info!(timestamp = ?ts, "审计结果判定为具有记忆价值");
             let value_detail = audit_data.value_detail.clone().unwrap_or_default();
             trace!(value_detail = %value_detail, "记忆价值详情");
-            
+
             let mut message_id = Vec::with_capacity(before_id.len() + after_id.len() + 5);
             message_id.extend(before_id);
             message_id.extend(after_id);
@@ -352,11 +375,10 @@ impl AuditTask {
             debug!(timestamp = ?ts, "审计结果判定为不具有记忆价值");
         }
 
-
         // 9. 标记任务完成
         data.insert(
             &ts,
-            & AuditTestTask {
+            &AuditTestTask {
                 task,
                 status: AuditStatus::Completed,
             },
@@ -415,7 +437,8 @@ impl AuditTask {
 
     pub async fn send_audit_task(&self, task: Arc<AuditTestRequest>) -> Result<()> {
         info!(timestamp = ?task.timestamp, audit_type = ?task.audit_type, "发送新的审计任务");
-        if let Err(e) = self.data
+        if let Err(e) = self
+            .data
             .insert(
                 &task.timestamp,
                 &AuditTestTask {
@@ -430,12 +453,10 @@ impl AuditTask {
         }
 
         let mut tx = self.tx.clone();
-        tx.send(task)
-            .await
-            .map_err(|e| {
-                error!(error = ?e, "发送审计任务到处理器通道失败");
-                anyhow::anyhow!(e)
-            })
+        tx.send(task).await.map_err(|e| {
+            error!(error = ?e, "发送审计任务到处理器通道失败");
+            anyhow::anyhow!(e)
+        })
     }
 
     fn rebuild_task(&self) -> Result<()> {
@@ -447,7 +468,7 @@ impl AuditTask {
                 return Err(e);
             }
         };
-        
+
         let mut pending_count = 0;
         for (ts, task) in all_tasks {
             if task.status != AuditStatus::Completed {
@@ -563,12 +584,12 @@ pub async fn audit_test_deep(message: &MessageSend, group_id: i64) -> Result<()>
 }
 
 #[cfg(test)]
-mod tests{
+mod tests {
     use super::*;
 
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "manual"]
-    pub async fn clean_audit_list()->Result<()>{
+    pub async fn clean_audit_list() -> Result<()> {
         let all_tasks = AUDIT_TASK.data.get_all()?;
         if all_tasks.is_empty() {
             println!("没有需要清理的审计任务");

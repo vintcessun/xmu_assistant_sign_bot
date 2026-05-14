@@ -81,16 +81,17 @@ pub async fn get_test(ctx: Context) -> Result<()> {
     let result = distribute.parse(client).await?;
 
     for msg in result.message.build_chunk(30) {
-        ctx.send_message_async(msg);
+        let _ = ctx.send_message(msg).await;
     }
 
     let task = MdTask::new(result.markdown);
     debug!(quiz_id = id, "创建 Markdown 任务");
 
-    ctx.send_message_async(from_str(format!(
+    ctx.send_message(from_str(format!(
         "小测内容已生成，访问链接下载或预览：{}",
         task.get_url()
-    )));
+    )))
+    .await?;
 
     task.finish().await?;
 

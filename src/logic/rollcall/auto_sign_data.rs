@@ -1,7 +1,7 @@
+use crate::api::xmu_service::lnt::rollcalls::{DisplayExt, RollcallStatus};
+use crate::logic::rollcall::auto_sign_data::auto_sign_response::qr::QRSignSuccessResult;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
-
-use crate::logic::rollcall::auto_sign_data::auto_sign_response::qr::QRSignSuccessResult;
 
 pub mod auto_sign_response {
     use super::*;
@@ -23,6 +23,7 @@ pub mod auto_sign_response {
             pub longitude: f32,
             pub student_distance: f64,
             pub try_type: RadarType,
+            pub second_check: Option<RollcallStatus>,
         }
 
         #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -45,6 +46,7 @@ pub mod auto_sign_response {
         pub struct Success {
             pub course_name: String,
             pub number_code: String,
+            pub second_check: Option<RollcallStatus>,
         }
 
         #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -184,13 +186,14 @@ impl Display for AutoSignResponse {
                 auto_sign_response::RadarSign::Success(data) => {
                     write!(
                         f,
-                        "成功雷达签到{}，签到位置为：{}({:.6}, {:.6})，距离为：{:.2}米，签到方法为: {}",
+                        "成功雷达签到{}，签到位置为：{}({:.6}, {:.6})，距离为：{:.2}米，签到方法为: {}，二次确认结果为: {}",
                         data.course_name,
                         data.student_location,
                         data.latitude,
                         data.longitude,
                         data.student_distance,
-                        data.try_type
+                        data.try_type,
+                        data.second_check.display()
                     )?;
                 }
                 auto_sign_response::RadarSign::AlreadySigned(data) => {
@@ -201,8 +204,10 @@ impl Display for AutoSignResponse {
                 auto_sign_response::NumberSign::Success(data) => {
                     write!(
                         f,
-                        "成功数字签到{}，签到码为{}",
-                        data.course_name, data.number_code
+                        "成功数字签到{}，签到码为{}，二次确认结果为: {}",
+                        data.course_name,
+                        data.number_code,
+                        data.second_check.display()
                     )?;
                 }
                 auto_sign_response::NumberSign::AlreadySigned(data) => {
@@ -261,6 +266,7 @@ impl AutoSignResponse {
         longitude: f32,
         student_distance: f64,
         try_type: RadarType,
+        second_check: Option<RollcallStatus>,
     ) -> Self {
         Self::Radar(auto_sign_response::RadarSign::Success(
             auto_sign_response::radar::Success {
@@ -270,6 +276,7 @@ impl AutoSignResponse {
                 longitude,
                 student_distance,
                 try_type,
+                second_check,
             },
         ))
     }
@@ -280,11 +287,16 @@ impl AutoSignResponse {
         ))
     }
 
-    pub fn number_success(course_name: String, number_code: String) -> Self {
+    pub fn number_success(
+        course_name: String,
+        number_code: String,
+        second_check: Option<RollcallStatus>,
+    ) -> Self {
         Self::Number(auto_sign_response::NumberSign::Success(
             auto_sign_response::number::Success {
                 course_name,
                 number_code,
+                second_check,
             },
         ))
     }

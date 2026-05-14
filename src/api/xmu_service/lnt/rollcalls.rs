@@ -46,6 +46,20 @@ impl fmt::Display for RollcallStatus {
     }
 }
 
+pub trait DisplayExt {
+    fn display(&self) -> &'static str;
+}
+
+impl DisplayExt for Option<RollcallStatus> {
+    fn display(&self) -> &'static str {
+        match self {
+            Some(RollcallStatus::OnCallFine) => "已签到",
+            Some(RollcallStatus::Absent) => "缺勤",
+            None => "获取失败",
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct RollcallsResponse {
     pub rollcalls: Vec<Rollcall>,

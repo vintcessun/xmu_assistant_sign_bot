@@ -3,7 +3,10 @@ use dashmap::DashSet;
 use uuid::Uuid;
 
 use crate::api::{
-    llm::chat::{file::{LlmFile, FileShortId}, llm::get_single_file_embedding},
+    llm::chat::{
+        file::{FileShortId, LlmFile},
+        llm::get_single_file_embedding,
+    },
     storage::{HasEmbedding, VectorSearchEngine},
 };
 use std::sync::{Arc, LazyLock};

@@ -5,7 +5,7 @@ use crate::{
         network::SessionClient,
         xmu_service::{
             jw::LocationStore,
-            lnt::{CourseData, Profile},
+            lnt::{CourseData, Profile, Rollcalls, rollcalls::RollcallStatus},
         },
     },
     logic::rollcall::{
@@ -34,6 +34,20 @@ pub struct AutoSignRequest {
 }
 
 impl AutoSignRequest {
+    pub async fn check_signed_state(&self, activity_id: i64) -> Result<RollcallStatus> {
+        let all_courses = Rollcalls::get_from_client(&self.client)
+            .await
+            .map_err(|e| anyhow!("错误: {e} 登录状态可能失效"))?;
+
+        for per_course in all_courses.rollcalls {
+            if per_course.rollcall_id == activity_id {
+                return Ok(per_course.status);
+            }
+        }
+
+        bail!("未找到活动 ID: {}", activity_id);
+    }
+
     pub async fn number(&self, activity_id: i64) -> Result<AutoSignResponse> {
         let number = SignData::number(&self.client, activity_id).await?;
         let course_info = CourseData::get_from_client(&self.client, self.course_id).await?;
@@ -72,9 +86,12 @@ impl AutoSignRequest {
             )
             .await?;
 
+        let second_check = self.check_signed_state(activity_id).await.ok();
+
         Ok(AutoSignResponse::number_success(
             course_info.name.clone(),
             number.to_string(),
+            second_check,
         ))
     }
 }
@@ -279,6 +296,8 @@ impl AutoSignRequest {
             SignData::location_remove(activity_id).await?;
         }
 
+        let second_check = self.check_signed_state(activity_id).await.ok();
+
         Ok(AutoSignResponse::radar_success(
             course_info.name.clone(),
             loc.name.to_string(),
@@ -286,6 +305,7 @@ impl AutoSignRequest {
             loc.longitude,
             student_distance,
             try_type,
+            second_check,
         ))
     }
 

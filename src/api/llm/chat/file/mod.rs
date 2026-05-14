@@ -147,11 +147,16 @@ async fn compute_file_short_id(path: PathBuf) -> Result<FileShortId> {
                 error!(path = %path.display(), error = ?e, "读取文件内容失败");
                 anyhow::Error::from(e)
             })?;
-            if n == 0 { break; }
+            if n == 0 {
+                break;
+            }
             hasher.update(&buffer[..n]);
         }
         let digest = hasher.finalize();
-        let hash = digest.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+        let hash = digest
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>();
         FileShortId::from_hex(&hash)
     })
     .await
