@@ -24,10 +24,10 @@ pub struct ClassroomSubjectResponse {
 pub struct ClassroomSubject;
 
 impl ClassroomSubjectResponse {
-    pub async fn parse(&self, client: SessionClient) -> Result<HtmlParseResult> {
+    pub async fn parse(&mut self, client: SessionClient) -> Result<HtmlParseResult> {
         let mut ret = HtmlParseResult::new();
 
-        for subject in &self.subjects {
+        for subject in &mut self.subjects {
             let problem_content = get_problem_message_content(subject, client.clone()).await?;
             ret.node_message(problem_content);
         }
@@ -47,7 +47,7 @@ mod tests {
     async fn test() -> Result<()> {
         let castgc = "TGT-4017429-6KAhATeeVXolstMjtOxHIv1EHDxnJejNaDlXvFiIYazONlAgn0ijGNwjysYzgJCi8iQnull_main";
         let session = castgc_get_session(castgc).await?;
-        let data = ClassroomSubject::get(&session, 2776).await?;
+        let mut data = ClassroomSubject::get(&session, 2776).await?;
         println!("ClassroomList: {:?}", data);
         let parsed = data.parse(SessionClient::new()).await?;
         println!("Parsed: {:?}", parsed);

@@ -38,6 +38,14 @@ pub struct SubjectOption {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct SubjectCorrectAnswer {
+    pub content: String,
+    pub sort: i64,
+    //pub uuid:i64,
+    //pub alternates:Vec<_>
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Subject {
     pub answer_explanation: String,
     pub description: String,
@@ -47,6 +55,7 @@ pub struct Subject {
     pub wrong_explanation: String,
     pub sort: i64,
     pub sub_subjects: Vec<Subject>,
+    pub correct_answers: Vec<SubjectCorrectAnswer>,
     //pub answer_number: IgnoredAny,
     //pub correct_answers: IgnoredAny,
     //pub data: IgnoredAny,
@@ -83,7 +92,7 @@ pub struct SubmissionResponse {
 }
 
 async fn get_problem_message_content_plain(
-    subject: &Subject,
+    subject: &mut Subject,
     client: SessionClient,
 ) -> Result<HtmlParseResult> {
     let message_type = format!("{}", subject.r#type);
@@ -99,30 +108,50 @@ async fn get_problem_message_content_plain(
 
     ret.text("\n\n");
 
-    let mut ans = String::new();
+    match subject.r#type {
+        SubjectType::SingleSelection
+        | SubjectType::MultipleSelection
+        | SubjectType::TrueOrFalse => {
+            let mut ans: String = String::new();
 
-    for option in &subject.options {
-        let option_chr = (b'A' + (option.sort as u8 % 26)) as char;
-        let option_prefix = format!("{option_chr}. ");
-        ret.text(option_prefix);
+            for option in &subject.options {
+                let option_chr = (b'A' + (option.sort as u8 % 26)) as char;
+                let option_prefix = format!("{option_chr}. ");
+                ret.text(option_prefix);
 
-        let option_content = html_to_message_and_markdown(&option.content, client.clone()).await?;
-        ret.extend(option_content);
+                let option_content =
+                    html_to_message_and_markdown(&option.content, client.clone()).await?;
+                ret.extend(option_content);
 
-        ret.text('\n');
+                ret.text('\n');
 
-        if option.is_answer {
-            ans.push(option_chr);
+                if option.is_answer {
+                    ans.push(option_chr);
+                }
+            }
+
+            ret.text(format!("本题答案: {}", ans));
+        }
+        SubjectType::FillInBlank => {
+            subject.correct_answers.sort_by_key(|a| a.sort);
+            let answer = subject
+                .correct_answers
+                .iter()
+                .map(|x| x.content.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            ret.text(format!("本题答案: {}", answer));
+        }
+        _ => {
+            ret.text(format!("本题({})：此类型答案无法获取", subject.r#type));
         }
     }
-
-    ret.text(format!("本题答案: {}", ans));
 
     Ok(ret)
 }
 
 pub fn get_problem_message_content(
-    subject: &Subject,
+    subject: &mut Subject,
     client: SessionClient,
 ) -> BoxFuture<'_, Result<HtmlParseResult>> {
     async move {
@@ -140,7 +169,7 @@ pub fn get_problem_message_content(
             let this_problem = get_problem_message_content_plain(subject, client.clone()).await?;
             ret.extend(this_problem);
 
-            for sub in &subject.sub_subjects {
+            for sub in &mut subject.sub_subjects {
                 let sub_problem: HtmlParseResult =
                     get_problem_message_content(sub, client.clone()).await?;
                 ret.extend(sub_problem);
@@ -157,10 +186,10 @@ pub fn get_problem_message_content(
 }
 
 impl SubmissionResponse {
-    pub async fn parse(&self, client: SessionClient) -> Result<HtmlParseResult> {
+    pub async fn parse(&mut self, client: SessionClient) -> Result<HtmlParseResult> {
         let mut ret = HtmlParseResult::new();
 
-        for subject in &self.subjects_data.subjects {
+        for subject in &mut self.subjects_data.subjects {
             let problem_content = get_problem_message_content(subject, client.clone()).await?;
             ret.node_message(problem_content);
         }
@@ -195,7 +224,7 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_parse() -> Result<()> {
-        let parsed: SubmissionResponse = serde_json::from_str(DATA)?;
+        let mut parsed: SubmissionResponse = serde_json::from_str(DATA)?;
         let client = SessionClient::new();
         let parsed = parsed.parse(client).await?;
         println!("Parsed: {:?}", parsed);

@@ -125,22 +125,23 @@ pub async fn test_ans(ctx: Context) -> Result<()> {
     );
 
     debug!(submission_id = submission_id, "开始获取具体答案内容");
-    let submission = SubmissionsId::get_from_client(&client, id, submission_id).await?;
+    let mut submission = SubmissionsId::get_from_client(&client, id, submission_id).await?;
 
     debug!(submission_id = submission_id, "开始解析答案内容");
     let result = submission.parse(client).await?;
 
     for msg in result.message.build_chunk(30) {
-        ctx.send_message_async(msg);
+        let _ = ctx.send_message(msg).await;
     }
 
     let task = MdTask::new(result.markdown);
     debug!(submission_id = submission_id, "创建 Markdown 任务");
 
-    ctx.send_message_async(from_str(format!(
+    ctx.send_message(from_str(format!(
         "小测答案已生成，访问链接下载或预览：{}",
         task.get_url()
-    )));
+    )))
+    .await?;
 
     task.finish().await?;
 

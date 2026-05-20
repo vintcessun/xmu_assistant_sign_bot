@@ -65,7 +65,7 @@ pub async fn get_class(ctx: Context) -> Result<()> {
     debug!(class_id = id, "成功解析课堂互动 ID");
 
     debug!(class_id = id, "开始获取课堂互动内容 ClassroomSubject 数据");
-    let distribute = ClassroomSubject::get_from_client(&client, id).await?;
+    let mut distribute = ClassroomSubject::get_from_client(&client, id).await?;
 
     debug!(class_id = id, "开始解析课堂互动内容");
     let result = distribute.parse(client).await?;

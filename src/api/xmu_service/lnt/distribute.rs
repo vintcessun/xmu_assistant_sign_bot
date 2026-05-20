@@ -173,7 +173,6 @@ mod tests {
 
     #[tokio::test]
     async fn test() -> Result<()> {
-        //TODO:目前只是REWRITE了尚未测试
         let castgc = "TGT-3827578-M2HQ5YkLD9VjNneiiEWeEXaizQy1X67ewOmxyCS4pfYHiMdQSYUwWP1HsHcrVM4A8WInull_main";
         let session = castgc_get_session(castgc).await?;
         let data = Distribute::get(&session, 71211).await?;
