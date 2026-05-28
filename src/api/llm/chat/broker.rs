@@ -29,6 +29,13 @@ pub const AVAILABLE_COMMANDS: &[&str] = &[
     "echo",
     "fate",
     "test",
+    "del_sign_time",
+    "auto_sign",
+    "push_sign",
+    "spec_sign",
+    "sign_time",
+    "sign_api",
+    "sign",
 ];
 
 /// 判断给定的命令名是否在 Broker 可调用列表中（不含前缀）。
