@@ -12,7 +12,10 @@ use crate::{
         qrcode::QrCode,
         storage::FileStorage,
     },
-    logic::rollcall::qr_sign_parse::{QrSignRequest, QrSignResponse},
+    logic::rollcall::{
+        auto_sign_data::{AutoSignResponse, auto_sign_response},
+        qr_sign_parse::{QrSignRequest, QrSignResponse},
+    },
 };
 use anyhow::Result;
 use tracing::{debug, info, trace, warn};
@@ -48,15 +51,33 @@ pub async fn qr_sign(ctx: Context) -> Result<()> {
 
     let time = start.elapsed().as_secs_f64();
 
+    let mut is_success = true;
+
     let mut used = false;
     let mut msgs = Vec::with_capacity(rets.len());
     for ret in rets {
         let mut msg = MessageSend::new_message().text("二维码帮助如下:\n");
         for r in ret {
             msg = msg.text(format!("QQ: {}, 响应: {}\n", r.qq, r.response));
+            if let AutoSignResponse::Qr(s) = r.response
+                && let auto_sign_response::QRSign::Success(s) = s
+                && let auto_sign_response::qr::QRSignSuccessResult::Failed(_) = s.sign_result
+            {
+                is_success = false;
+            }
         }
         msgs.push(msg.build());
         used = true;
+    }
+
+    if !is_success {
+        ctx.send_message(
+            MessageSend::new_message()
+                .at(ctx.sender.user_id.unwrap_or(0).to_string())
+                .text("部分二维码签到失败")
+                .build(),
+        )
+        .await?;
     }
 
     if used {
