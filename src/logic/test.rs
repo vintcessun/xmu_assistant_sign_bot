@@ -47,8 +47,12 @@ pub async fn test(ctx: Context) -> Result<()> {
 小测是否开始: {}
 小测ID: {}"#,
             exam.title,
-            Exams::to_beijing_date(&exam.start_time),
-            Exams::to_beijing_date(&exam.end_time),
+            exam.start_time
+                .map(|time| Exams::to_beijing_date(&time))
+                .unwrap_or_else(|| "未设置".into()),
+            exam.end_time
+                .map(|time| Exams::to_beijing_date(&time))
+                .unwrap_or_else(|| "未设置".into()),
             exam.is_started,
             exam.id
         )));
