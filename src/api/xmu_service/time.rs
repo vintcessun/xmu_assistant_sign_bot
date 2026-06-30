@@ -2,9 +2,9 @@ use crate::api::xmu_service::jw::Weekday;
 use chrono::NaiveDate;
 use num_traits::FromPrimitive;
 
-//NOTICE: 2026年3月2日是新学期的第一天，之后的签到时间表都以此为基准进行计算
+//NOTICE: 2026年6月29日是新学期的第一天，之后的签到时间表都以此为基准进行计算
 //因此，START_DATE 是一个非常重要的常量，确保它的正确性对于签到功能的正常运行至关重要。
-static START_DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 3, 2).unwrap();
+static START_DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 6, 29).unwrap();
 
 //NOTICE: 使用北京时间对准
 static TIME_ZONE: chrono::FixedOffset = chrono::FixedOffset::east_opt(8 * 3600).unwrap();

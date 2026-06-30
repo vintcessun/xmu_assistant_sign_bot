@@ -2,7 +2,7 @@ use tracing::{info, level_filters::LevelFilter};
 use tracing_appender::non_blocking;
 use tracing_subscriber::{Layer, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-pub fn init_logger(path: &str, level: LevelFilter) -> non_blocking::WorkerGuard {
+pub fn init_logger_with_file(path: &str, level: LevelFilter) -> non_blocking::WorkerGuard {
     let file_appender = tracing_appender::rolling::daily(path, "xmu_assistant_bot");
     let (file_writer, guard) = non_blocking(file_appender);
 
@@ -25,4 +25,16 @@ pub fn init_logger(path: &str, level: LevelFilter) -> non_blocking::WorkerGuard 
     info!(log_path = ?path, log_level = ?level, "日志系统初始化完成");
 
     guard
+}
+
+pub fn init_logger_without_file(level: LevelFilter) {
+    let stdout_layer = fmt::layer()
+        .with_ansi(true)
+        .with_thread_ids(true)
+        .with_target(true)
+        .with_filter(level);
+
+    tracing_subscriber::registry().with(stdout_layer).init();
+
+    info!(log_level = ?level, "日志系统初始化完成");
 }

@@ -45,10 +45,11 @@ async fn main() -> Result<()> {
 
     info!("正在启动 xmu_assistant_bot...");
 
-    config::ensure_dir(LOG_PATH);
     config::ensure_dir(config::DATA_DIR);
 
-    let _guard = logger::init_logger(LOG_PATH, LevelFilter::INFO);
+    //config::ensure_dir(LOG_PATH);
+    //let _guard = logger::init_logger_with_file(LOG_PATH, LevelFilter::INFO);
+    logger::init_logger_without_file(LevelFilter::INFO);
 
     // 启动周期性内存回收任务。
     spawn_memory_reclaimer();
