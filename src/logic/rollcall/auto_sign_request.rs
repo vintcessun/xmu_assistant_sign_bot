@@ -342,10 +342,23 @@ impl AutoSignRequest {
         self.radar_inner(activity_id, loc, true, RadarType::Triple)
             .await
     }
+
+    /// 命中“已有人成功(<100m)”的位置缓存时，直接复用，避免逐个探测以减少请求次数。
+    async fn radar_cache(&self, activity_id: i64) -> Result<AutoSignResponse> {
+        let loc = SignData::location(activity_id)
+            .await
+            .ok_or(anyhow!("无可用的签到位置缓存"))?;
+
+        self.radar_inner(activity_id, loc, true, RadarType::Cache)
+            .await
+    }
 }
 
 impl AutoSignRequest {
     pub async fn radar(&self, activity_id: i64) -> Result<AutoSignResponse> {
+        if let Ok(loc) = self.radar_cache(activity_id).await {
+            return Ok(loc);
+        }
         if let Ok(loc) = self.radar_timetable(activity_id).await {
             return Ok(loc);
         }

@@ -56,10 +56,6 @@ impl SignData {
         activity_id: i64,
         device_id: &str,
     ) -> Result<(Arc<LocationStore>, RadarType)> {
-        if let Some(loc) = Self::location(activity_id).await {
-            return Ok((loc, RadarType::Cache));
-        }
-
         let mut student_location = None;
         let mut student_distance = f64::MAX;
 
