@@ -11,7 +11,6 @@ use crate::logic::rollcall::auto_sign_data::AutoSignResponse;
 use crate::logic::rollcall::auto_sign_data::auto_sign_response::{NumberSign, QRSign, RadarSign};
 use crate::logic::rollcall::data::LOGIN_DATA;
 use crate::logic::rollcall::data::TIMETABLE_GROUP;
-use crate::logic::rollcall::timetable::remove_sign_time;
 use crate::logic::rollcall::{sign_request, spec_sign_request};
 use crate::{
     api::{
@@ -22,10 +21,16 @@ use crate::{
 };
 use anyhow::Result;
 use async_trait::async_trait;
+use dashmap::DashSet;
 use helper::handler;
 use std::sync::Arc;
 use std::{sync::LazyLock, time::Duration};
 use tracing::{error, info, trace};
+
+/// 记录已因登录失效而提醒过的用户，避免定时任务每轮（20~40s）重复提醒。
+/// 登录恢复正常后会移除对应用户，下次再失效时可重新提醒一次。
+/// 仅存于内存：进程重启后清空，重启后首次失效会再提醒一次，符合“提醒一次”的预期。
+static NOTLOGIN_REMINDED: LazyLock<DashSet<i64>> = LazyLock::new(DashSet::new);
 
 pub struct TimeSignTask;
 
@@ -57,6 +62,8 @@ pub enum TimeSignUpdateResponse {
         qq: i64,
         group_id: i64,
     },
+    /// 登录已失效但本轮无需提醒（之前已提醒过），不产生任何消息。
+    Skip,
 }
 
 async fn time_sign_task() -> Result<()> {
@@ -84,22 +91,30 @@ async fn time_sign_task() -> Result<()> {
                                 };
                             }
                             if !Profile::check(&e.lnt).await {
-                                remove_sign_time(qq).await?;
+                                // 登录失效：保留课表，仅提醒一次（DashSet::insert 返回 true 表示首次）。
+                                if NOTLOGIN_REMINDED.insert(qq) {
+                                    return Ok(TimeSignUpdateResponse::NotLogin {
+                                        qq,
+                                        group_id: *group_id,
+                                    });
+                                }
+                                return Ok(TimeSignUpdateResponse::Skip);
+                            }
+                        }
+
+                        None => {
+                            // 未找到登录信息：同样保留课表，仅提醒一次。
+                            if NOTLOGIN_REMINDED.insert(qq) {
                                 return Ok(TimeSignUpdateResponse::NotLogin {
                                     qq,
                                     group_id: *group_id,
                                 });
                             }
-                        }
-
-                        None => {
-                            remove_sign_time(qq).await?;
-                            return Ok(TimeSignUpdateResponse::NotLogin {
-                                qq,
-                                group_id: *group_id,
-                            });
+                            return Ok(TimeSignUpdateResponse::Skip);
                         }
                     }
+                    // 登录有效：清除提醒标记，使下次失效时能再提醒一次。
+                    NOTLOGIN_REMINDED.remove(&qq);
                     let mut ret = vec![];
                     let sign_data = sign_request(qq).await?;
                     for data in &sign_data {
@@ -180,11 +195,14 @@ async fn time_sign_task() -> Result<()> {
                     message: Arc::new(
                         MessageSend::new_message()
                             .at(qq.to_string())
-                            .text("定时签到失败，未找到登录信息，请先登录")
+                            .text(
+                                "定时签到检测到登录已失效，请重新登录（课程表已保留，重新登录后会自动恢复定时签到）",
+                            )
                             .build(),
                     ),
                 },
             ),
+            TimeSignUpdateResponse::Skip => continue,
         };
         trace!(qq=qq, group_id=group_id, params=?params, "准备发送定时签到消息");
         tasks.push(async move {
