@@ -58,6 +58,9 @@ rand = { version = "0.10.1", features = ["alloc"] }
 soft-aes = "0.2.2"
 memchr = "2.7.6"
 mimalloc = "0.1.48"
+# 直接依赖以启用 extended API（mi_collect / mi_option_set），用于更激进地回收内存。
+# feature 会与 mimalloc 间接依赖的同一 libmimalloc-sys 实例合并。
+libmimalloc-sys = { version = "0.1.47", features = ["extended"] }
 axum = "0.8.8"
 mime_guess = "2.0.5"
 futures = "0.3.31"
@@ -97,7 +100,6 @@ crossbeam-channel = "0.5.15"
 num-derive = "0.4.2"
 num-traits = "0.2.19"
 tokio-cron-scheduler = "0.15.1"
-volcengine-rs = "0.1.2"
 geoutils = { version = "0.5.1", features = ["serde"] }
 bincode = { version = "2.0.0", features = ["serde"] }
 

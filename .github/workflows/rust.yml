@@ -23,10 +23,6 @@ jobs:
                       os: ubuntu-latest
                     - target: aarch64-unknown-linux-gnu
                       os: ubuntu-24.04-arm
-                    - target: i686-unknown-linux-gnu
-                      os: ubuntu-latest
-                    - target: armv7-unknown-linux-gnueabihf
-                      os: ubuntu-24.04-arm
         steps:
             - name: Checkout source
               uses: actions/checkout@v4
@@ -34,32 +30,13 @@ jobs:
             - name: Prepare LLM tool config
               run: |
                   cp src/api/llm/tool/config-template.rs src/api/llm/tool/config.rs
-                  cp src/api/llm/chat/config-template.rs src/api/llm/chat/config.rs
 
             - name: Install Dependencies
               run: |
                   sudo apt-get update
-                  T="${{ matrix.target }}"
-                  if [[ "$T" == "i686"* ]]; then
-                    sudo dpkg --add-architecture i386
-                    sudo apt-get update
-                    sudo apt-get install -y --no-install-recommends aptitude cmake gcc-multilib g++-multilib libssl-dev:i386 pkg-config ninja-build yasm nasm
-                    sudo aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' \
-                      libavcodec-dev:i386 libavformat-dev:i386 libavutil-dev:i386 libavdevice-dev:i386 \
-                      libavfilter-dev:i386 libswresample-dev:i386 libswscale-dev:i386 libpostproc-dev:i386
-                  elif [[ "$T" == "armv7"* ]]; then
-                    sudo dpkg --add-architecture armhf
-                    sudo apt-get update
-                    sudo apt-get install -y --no-install-recommends aptitude cmake gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev:armhf libssl-dev:armhf pkg-config ninja-build libc6-dev-armhf-cross binutils-arm-linux-gnueabihf
-                    sudo aptitude install -y -o Aptitude::ProblemResolver::SolutionCost='100*untrusted, 100*vulnerable' \
-                      libavcodec-dev:armhf libavformat-dev:armhf libavutil-dev:armhf libavdevice-dev:armhf \
-                      libavfilter-dev:armhf libswresample-dev:armhf libswscale-dev:armhf libpostproc-dev:armhf
-                  else
-                    # x86_64 or aarch64 native
-                    sudo apt-get install -y mold clang pkg-config libssl-dev libclang-dev libopencv-dev \
-                      libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libavfilter-dev \
-                      libswresample-dev libswscale-dev
-                  fi
+                  sudo apt-get install -y mold clang pkg-config libssl-dev libclang-dev libopencv-dev \
+                    libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libavfilter-dev \
+                    libswresample-dev libswscale-dev
 
             - name: Set up Rust
               uses: dtolnay/rust-toolchain@stable
@@ -72,86 +49,11 @@ jobs:
               with:
                   key: ${{ matrix.target }}
 
-            - name: Build Dependencies (i686/armv7 only)
-              if: matrix.target == 'i686-unknown-linux-gnu' || matrix.target == 'armv7-unknown-linux-gnueabihf'
-              run: |
-                  T="${{ matrix.target }}"
-                  mkdir -p $HOME/deps
-
-                  # 1. Build FFmpeg 7.1
-                  FFMPEG_VER="7.1"
-                  wget -q https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VER}.tar.bz2
-                  tar -xf ffmpeg-${FFMPEG_VER}.tar.bz2
-                  cd ffmpeg-${FFMPEG_VER}
-                  if [[ "$T" == "i686"* ]]; then
-                    ./configure --prefix=$HOME/deps/ffmpeg --extra-cflags="-m32 -fPIC" --extra-cxxflags="-m32 -fPIC" --extra-ldflags="-m32" --arch=i686 --target-os=linux --enable-pic --disable-debug --disable-doc --enable-gpl --enable-postproc --enable-static --disable-shared --disable-x86asm
-                  else
-                    ./configure --prefix=$HOME/deps/ffmpeg --cross-prefix=arm-linux-gnueabihf- --arch=armel --target-os=linux --enable-pic --disable-debug --disable-doc --enable-gpl --enable-postproc --enable-static --disable-shared --extra-cflags="-mfloat-abi=hard"
-                  fi
-                  make -j$(nproc) && make install
-                  cd ..
-
-                  # 2. Build OpenCV 4.10.0
-                  OPENCV_VER="4.10.0"
-                  wget -q -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/${OPENCV_VER}.zip
-                  wget -q -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/refs/tags/${OPENCV_VER}.zip
-                  unzip -q opencv.zip && unzip -q opencv_contrib.zip
-                  mkdir -p opencv_build && cd opencv_build
-                  if [[ "$T" == "i686"* ]]; then
-                    cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$HOME/deps/opencv \
-                      -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib-${OPENCV_VER}/modules \
-                      -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
-                      -DCMAKE_C_FLAGS="-m32" -DCMAKE_CXX_FLAGS="-m32" ../opencv-${OPENCV_VER}
-                  else
-                    cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$HOME/deps/opencv \
-                      -DOPENCV_EXTRA_MODULES_PATH=../opencv_contrib-${OPENCV_VER}/modules \
-                      -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
-                      -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++ \
-                      -DCMAKE_C_FLAGS="-mfloat-abi=hard" -DCMAKE_CXX_FLAGS="-mfloat-abi=hard" ../opencv-${OPENCV_VER}
-                  fi
-                  ninja install
-                  cd ..
-
             - name: Build release binary
               shell: bash
               run: |
                   T="${{ matrix.target }}"
-                  mkdir -p .cargo
-                  if [[ "$T" == "i686"* ]]; then
-                    cat <<EOF > .cargo/config.toml
-                  [target.i686-unknown-linux-gnu]
-                  linker = "gcc"
-                  EOF
-                    export PKG_CONFIG_ALLOW_CROSS=1
-                    export PKG_CONFIG_PATH="$HOME/deps/opencv/lib/pkgconfig:$HOME/deps/ffmpeg/lib/pkgconfig:/usr/lib/i386-linux-gnu/pkgconfig"
-                    export PKG_CONFIG_LIBDIR="$HOME/deps/opencv/lib/pkgconfig:$HOME/deps/ffmpeg/lib/pkgconfig:/usr/lib/i386-linux-gnu/pkgconfig"
-                    export OpenCV_DIR="$HOME/deps/opencv/lib/cmake/opencv4"
-                    export FFMPEG_DIR="$HOME/deps/ffmpeg"
-                    export CC_i686_unknown_linux_gnu="gcc -m32"
-                    export CXX_i686_unknown_linux_gnu="g++ -m32"
-                    export CFLAGS_i686_unknown_linux_gnu="-m32 -msse2"
-                    export CXXFLAGS_i686_unknown_linux_gnu="-m32 -msse2"
-                    export LIBRARY_PATH="$HOME/deps/opencv/lib:$HOME/deps/ffmpeg/lib:$LIBRARY_PATH"
-                    export RUSTFLAGS="-C target-feature=+sse2 -C link-arg=-m32 -L native=$HOME/deps/opencv/lib -L native=$HOME/deps/ffmpeg/lib -C link-arg=-Wl,--start-group -C link-arg=-lavdevice -C link-arg=-lavfilter -C link-arg=-lavformat -C link-arg=-lavcodec -C link-arg=-lswresample -C link-arg=-lswscale -C link-arg=-lpostproc -C link-arg=-lavutil -C link-arg=-Wl,--end-group"
-                  elif [[ "$T" == "armv7"* ]]; then
-                    cat <<EOF > .cargo/config.toml
-                  [target.armv7-unknown-linux-gnueabihf]
-                  linker = "arm-linux-gnueabihf-gcc"
-                  rustflags = ["-L", "$HOME/deps/opencv/lib", "-L", "$HOME/deps/ffmpeg/lib"]
-                  EOF
-                    export PKG_CONFIG_ALLOW_CROSS=1
-                    export PKG_CONFIG_PATH="$HOME/deps/opencv/lib/pkgconfig:$HOME/deps/ffmpeg/lib/pkgconfig:/usr/lib/arm-linux-gnueabihf/pkgconfig"
-                    export PKG_CONFIG_LIBDIR="$HOME/deps/opencv/lib/pkgconfig:$HOME/deps/ffmpeg/lib/pkgconfig:/usr/lib/arm-linux-gnueabihf/pkgconfig"
-                    export OpenCV_DIR="$HOME/deps/opencv/lib/cmake/opencv4"
-                    export FFMPEG_DIR="$HOME/deps/ffmpeg"
-                    export CC_armv7_unknown_linux_gnueabihf="arm-linux-gnueabihf-gcc"
-                    export CXX_armv7_unknown_linux_gnueabihf="arm-linux-gnueabihf-g++"
-                    export CFLAGS_armv7_unknown_linux_gnueabihf="-mfloat-abi=hard -I/usr/arm-linux-gnueabihf/include"
-                    export CXXFLAGS_armv7_unknown_linux_gnueabihf="-mfloat-abi=hard -I/usr/arm-linux-gnueabihf/include"
-                    export BINDGEN_EXTRA_CLANG_ARGS="-I/usr/include/arm-linux-gnueabihf"
-                    export LIBRARY_PATH="$HOME/deps/opencv/lib:$HOME/deps/ffmpeg/lib:$LIBRARY_PATH"
-                    export RUSTFLAGS="-L native=$HOME/deps/opencv/lib -L native=$HOME/deps/ffmpeg/lib -C link-arg=-Wl,--start-group -C link-arg=-lavdevice -C link-arg=-lavfilter -C link-arg=-lavformat -C link-arg=-lavcodec -C link-arg=-lswresample -C link-arg=-lswscale -C link-arg=-lpostproc -C link-arg=-lavutil -C link-arg=-Wl,--end-group"
-                  elif [[ "$T" == "x86_64"* ]]; then
+                  if [[ "$T" == "x86_64"* ]]; then
                     export RUSTFLAGS="-C link-arg=-fuse-ld=mold"
                   fi
 
@@ -207,7 +109,6 @@ jobs:
                 target:
                     [
                         x86_64-pc-windows-msvc,
-                        i686-pc-windows-msvc,
                         aarch64-pc-windows-msvc,
                     ]
         steps:
@@ -222,43 +123,22 @@ jobs:
                   restore-keys: |
                       vcpkg-downloads-${{ runner.os }}-
 
-            - name: Free disk space and enable vcpkg binary cache (i686)
-              if: matrix.target == 'i686-pc-windows-msvc'
-              shell: pwsh
-              run: |
-                  # Enable vcpkg GitHub Actions binary caching so compiled packages
-                  # are stored in GHA cache and restored on subsequent runs without recompiling.
-                  # First run compiles from source (~2h), subsequent runs restore from cache instantly.
-                  "VCPKG_BINARY_SOURCES=clear;x-gha,readwrite" | Out-File -FilePath $env:GITHUB_ENV -Append
-                  "VCPKG_MAX_CONCURRENCY=1" | Out-File -FilePath $env:GITHUB_ENV -Append
-                  "CMAKE_BUILD_PARALLEL_LEVEL=1" | Out-File -FilePath $env:GITHUB_ENV -Append
-                  Write-Host "i686 optimization enabled: vcpkg binary cache + low concurrency"
-
             - name: Update vcpkg and Install native libraries
               shell: pwsh
               run: |
-                  $TRIPLET = if ("${{ matrix.target }}" -like "*x86_64*") { "x64-windows" } elseif ("${{ matrix.target }}" -like "*i686*") { "x86-windows" } else { "arm64-windows" }
+                  $TRIPLET = if ("${{ matrix.target }}" -like "*x86_64*") { "x64-windows" } else { "arm64-windows" }
 
                   # 增强 vcpkg 环境稳定性
-                  if ("${{ matrix.target }}" -notlike "*i686*") {
-                      git -C $env:VCPKG_ROOT pull
-                  } else {
-                      Write-Host "Skipping vcpkg pull for i686 to keep dependency graph stable."
-                  }
+                  git -C $env:VCPKG_ROOT pull
 
-                  # 增加重试逻辑以应对网络抖动（i686 限制 1 次以避免过长编译时间）
-                  $maxRetries = if ("${{ matrix.target }}" -like "*i686*") { 1 } else { 3 }
+                  # 增加重试逻辑以应对网络抖动
+                  $maxRetries = 3
                   $retryCount = 0
-                  $installArgs = if ("${{ matrix.target }}" -like "*i686*") { "--clean-after-build" } else { "" }
-                  $packages = if ("${{ matrix.target }}" -like "*i686*") { @("opencv4[contrib]", "ffmpeg") } else { @("opencv4[contrib]") }
+                  $packages = @("opencv4[contrib]")
                   while ($retryCount -lt $maxRetries) {
                       Write-Host "Attempting vcpkg install (Attempt $($retryCount + 1)/$maxRetries)..."
-                      if ($installArgs) {
-                          vcpkg install $packages --triplet $TRIPLET $installArgs
-                      } else {
-                          vcpkg install $packages --triplet $TRIPLET
-                      }
-                      
+                      vcpkg install $packages --triplet $TRIPLET
+
                       if ($LASTEXITCODE -eq 0) {
                           Write-Host "Vcpkg install succeeded."
                           return
@@ -274,15 +154,14 @@ jobs:
                       }
                   }
 
-            - name: Install FFmpeg 7.1 Shared (Download or Compile)
-              if: matrix.target != 'i686-pc-windows-msvc'
+            - name: Install FFmpeg 7.1 Shared (Download)
               shell: pwsh
               run: |
                   $TARGET = "${{ matrix.target }}"
                   if (Test-Path -Path "C:\ffmpeg") { Remove-Item -Recurse -Force "C:\ffmpeg" }
                   New-Item -ItemType Directory -Path "C:\ffmpeg"
 
-                  # x86_64 和 aarch64 使用预编译；i686 使用 vcpkg 的 x86-windows ffmpeg。
+                  # x86_64 和 aarch64 使用预编译。
                   if ($TARGET -like "*aarch64*") {
                     $URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-winarm64-gpl-shared-7.1.zip"
                   } else {
@@ -317,7 +196,6 @@ jobs:
             - name: Prepare LLM tool config
               run: |
                   Copy-Item src/api/llm/tool/config-template.rs src/api/llm/tool/config.rs
-                  Copy-Item src/api/llm/chat/config-template.rs src/api/llm/chat/config.rs
 
             - name: Set up Rust
               uses: dtolnay/rust-toolchain@stable
@@ -353,12 +231,12 @@ jobs:
                   }
                   Write-Host "MSVC include path: $MSVC_INCLUDE"
 
-                  $TRIPLET = if ("${{ matrix.target }}" -like "*x86_64*") { "x64-windows" } elseif ("${{ matrix.target }}" -like "*i686*") { "x86-windows" } else { "arm64-windows" }
-                  $FFMPEG_ROOT = if ("${{ matrix.target }}" -like "*i686*") { "$env:VCPKG_ROOT\installed\$TRIPLET" } else { "C:\ffmpeg" }
+                  $TRIPLET = if ("${{ matrix.target }}" -like "*x86_64*") { "x64-windows" } else { "arm64-windows" }
+                  $FFMPEG_ROOT = "C:\ffmpeg"
 
                   # 3. 设置 BINDGEN_EXTRA_CLANG_ARGS (解决 crtdbg.h 找不到的问题)
                   $FFMPEG_INC = "$FFMPEG_ROOT\include"
-                  $VCPKG_INC = "$env:VCPKG_ROOT\installed\${{ contains(matrix.target, 'x86_64') && 'x64' || contains(matrix.target, 'i686') && 'x86' || 'arm64' }}-windows\\include"
+                  $VCPKG_INC = "$env:VCPKG_ROOT\installed\${{ contains(matrix.target, 'x86_64') && 'x64' || 'arm64' }}-windows\\include"
                   $CLANG_ARGS = "-I`"$UCRT_PATH`" -I`"$UM_PATH`" -I`"$SHARED_PATH`" -I`"$FFMPEG_INC`" -I`"$VCPKG_INC`""
                   if ($MSVC_INCLUDE) {
                       $CLANG_ARGS += " -I`"$MSVC_INCLUDE`""
@@ -388,7 +266,7 @@ jobs:
             - name: Verify OpenCV and FFmpeg libraries
               shell: pwsh
               run: |
-                  $LIB_DIR = "C:\vcpkg\installed\${{ contains(matrix.target, 'x86_64') && 'x64' || contains(matrix.target, 'i686') && 'x86' || 'arm64' }}-windows\\lib"
+                  $LIB_DIR = "C:\vcpkg\installed\${{ contains(matrix.target, 'x86_64') && 'x64' || 'arm64' }}-windows\\lib"
                   # 核心 OpenCV 模块列表，完全匹配本地文件名格式
                   $LIBS = "opencv_core4", "opencv_imgcodecs4", "opencv_wechat_qrcode4", "opencv_dnn4", "opencv_imgproc4", "opencv_features2d4", "opencv_flann4", "opencv_calib3d4", "opencv_objdetect4", "opencv_video4", "opencv_ml4", "opencv_photo4"
                   Write-Host "Verifying critical libraries in $LIB_DIR"
@@ -399,29 +277,18 @@ jobs:
                           exit 1
                       }
                   }
-                  if ("${{ matrix.target }}" -like "*i686*") {
-                      $FFMPEG_LIBS = "avcodec.lib", "avdevice.lib", "avfilter.lib", "avformat.lib", "avutil.lib", "swresample.lib", "swscale.lib"
-                      foreach ($lib in $FFMPEG_LIBS) {
-                          $libPath = Join-Path $LIB_DIR $lib
-                          if (!(Test-Path $libPath)) {
-                              Write-Error "CRITICAL FAILURE: FFmpeg library $libPath not found. Please ensure vcpkg installed ffmpeg for $LIB_DIR correctly."
-                              exit 1
-                          }
-                      }
-                  }
                   Write-Host "All critical libraries verified successfully."
 
             - name: Build release binary
               run: |
-                  $JOBS = if ("${{ matrix.target }}" -like "*i686*") { "2" } else { "4" }
-                  cargo build --release --target ${{ matrix.target }} --jobs $JOBS --verbose
+                  cargo build --release --target ${{ matrix.target }} --jobs 4 --verbose
               env:
                   RUSTFLAGS: >-
                       ${{ contains(matrix.target, 'x86_64') && '-C target-cpu=x86-64-v3' || '' }}
                       ${{ contains(matrix.target, 'aarch64') && '-C target-cpu=generic' || '' }}
                   OPENCV_LINK_LIBS: "opencv_core4,opencv_imgcodecs4,opencv_wechat_qrcode4,opencv_dnn4,opencv_imgproc4,opencv_features2d4,opencv_flann4,opencv_calib3d4,opencv_objdetect4,opencv_video4,opencv_ml4,opencv_photo4"
-                  OPENCV_LINK_PATHS: "C:\\vcpkg\\installed\\${{ contains(matrix.target, 'x86_64') && 'x64' || contains(matrix.target, 'i686') && 'x86' || 'arm64' }}-windows\\lib"
-                  OPENCV_INCLUDE_PATHS: "C:\\vcpkg\\installed\\${{ contains(matrix.target, 'x86_64') && 'x64' || contains(matrix.target, 'i686') && 'x86' || 'arm64' }}-windows\\include,C:\\vcpkg\\installed\\${{ contains(matrix.target, 'x86_64') && 'x64' || contains(matrix.target, 'i686') && 'x86' || 'arm64' }}-windows\\include\\opencv4"
+                  OPENCV_LINK_PATHS: "C:\\vcpkg\\installed\\${{ contains(matrix.target, 'x86_64') && 'x64' || 'arm64' }}-windows\\lib"
+                  OPENCV_INCLUDE_PATHS: "C:\\vcpkg\\installed\\${{ contains(matrix.target, 'x86_64') && 'x64' || 'arm64' }}-windows\\include,C:\\vcpkg\\installed\\${{ contains(matrix.target, 'x86_64') && 'x64' || 'arm64' }}-windows\\include\\opencv4"
 
             - name: Rename artifact
               shell: powershell
@@ -461,7 +328,6 @@ jobs:
             - name: Prepare LLM tool config
               run: |
                   cp src/api/llm/tool/config-template.rs src/api/llm/tool/config.rs
-                  cp src/api/llm/chat/config-template.rs src/api/llm/chat/config.rs
 
             - name: Set up Rust
               uses: dtolnay/rust-toolchain@stable

@@ -9,13 +9,17 @@ pub struct ModelConfig {
     pub api_key_env: &'static str,
 }
 
-// 在这里集中管理所有模型的端点和厂商映射
+// 集中管理用于必要 LLM 选择的模型端点和厂商映射
 pub static MODEL_MAP: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| {
     let mut m = HashMap::new();
+    m.insert(
+        "deepseek-chat",
+        ModelConfig {
+            kind: AdapterKind::OpenAI,
+            base_url: "https://api.deepseek.com/v1/",
+            // 优先从环境变量读取，否则将该字符串本身作为 Key。
+            api_key_env: "DEEPSEEK_API_KEY",
+        },
+    );
     m
 });
-
-pub const AK: &str = "";
-pub const SK: &str = "";
-pub const REGION: &str = "cn-beijing";
-pub const ENDPOINT: &str = "https://ark.cn-beijing.volcengineapi.com";
