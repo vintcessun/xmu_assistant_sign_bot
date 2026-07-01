@@ -74,7 +74,7 @@
 1. 直接发送图片，机器人会进行识别并且推送扫码结果
 2. 移动端扫码工具读取二维码内容后，将解析结果提交到该 API，由机器人服务端统一处理签到请求。
 
-配套客户端仓库：xmu_sign_qr。该客户端基于 Kotlin Multiplatform / Compose 实现，主要用于在 Android / iOS 设备上调用相机扫码，并把扫码结果推送给本项目暴露的签到 API。
+配套客户端仓库：[xmu_sign_qr](https://github.com/vintcessun/xmu_sign_qr)。该客户端基于 Kotlin Multiplatform / Compose 实现，主要用于在 Android / iOS 设备上调用相机扫码，并把扫码结果推送给本项目暴露的签到 API。
 
 基本流程：
 
