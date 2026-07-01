@@ -1,5 +1,13 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:system",
     "python-envs.defaultPackageManager": "ms-python.python:pip",
-    "python-envs.pythonProjects": []
+    "python-envs.pythonProjects": [],
+    "rust-analyzer.cargo.extraEnv": {
+        "LIBCLANG_PATH": "C:\\Program Files\\LLVM\\bin",
+        "OPENCV_CLANG_ARGS": "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"
+    },
+    "rust-analyzer.check.extraEnv": {
+        "LIBCLANG_PATH": "C:\\Program Files\\LLVM\\bin",
+        "OPENCV_CLANG_ARGS": "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"
+    }
 }

@@ -1,0 +1,124 @@
+FROM alibaba-cloud-linux-3-registry.cn-hangzhou.cr.aliyuncs.com/alinux3/alinux3:220901.1
+
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG ALL_PROXY
+ARG NO_PROXY
+
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+ENV ALL_PROXY=${ALL_PROXY}
+ENV NO_PROXY=${NO_PROXY}
+ENV http_proxy=${HTTP_PROXY}
+ENV https_proxy=${HTTPS_PROXY}
+ENV all_proxy=${ALL_PROXY}
+ENV no_proxy=${NO_PROXY}
+
+ARG OPENCV_VERSION=4.10.0
+
+RUN set -eux; \
+    if [ -d /etc/yum.repos.d ]; then \
+    sed -i 's|http://mirrors.cloud.aliyuncs.com|https://mirrors.aliyun.com|g' /etc/yum.repos.d/*.repo || true; \
+    sed -i 's|https://mirrors.cloud.aliyuncs.com|https://mirrors.aliyun.com|g' /etc/yum.repos.d/*.repo || true; \
+    sed -i 's|http://mirrors.aliyuncs.com|https://mirrors.aliyun.com|g' /etc/yum.repos.d/*.repo || true; \
+    sed -i 's|http://mirrors.aliyun.com|https://mirrors.aliyun.com|g' /etc/yum.repos.d/*.repo || true; \
+    fi; \
+    dnf clean all; \
+    dnf makecache
+
+RUN dnf install -y \
+    gcc gcc-c++ make cmake git curl ca-certificates \
+    file findutils tar gzip unzip which \
+    pkgconf pkgconf-pkg-config \
+    openssl-devel zlib-devel jsoncpp-devel \
+    clang clang-devel llvm-devel libstdc++-devel \
+    patchelf binutils \
+    perl nasm yasm \
+    libjpeg-turbo-devel libpng-devel libtiff-devel libwebp-devel openblas-devel \
+    xz \
+    && dnf clean all
+
+
+ARG FFMPEG_VERSION=6.1.2
+
+RUN set -eux; \
+    mkdir -p /tmp/ffmpeg-build; \
+    cd /tmp/ffmpeg-build; \
+    curl -fL \
+    --retry 20 \
+    --retry-delay 3 \
+    --connect-timeout 30 \
+    -o ffmpeg.tar.xz \
+    "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz"; \
+    tar -xJf ffmpeg.tar.xz; \
+    cd "ffmpeg-${FFMPEG_VERSION}"; \
+    ./configure \
+    --prefix=/usr/local \
+    --libdir=/usr/local/lib64 \
+    --pkgconfigdir=/usr/local/lib64/pkgconfig \
+    --enable-shared \
+    --disable-static \
+    --disable-doc \
+    --disable-programs \
+    --disable-debug; \
+    make -j"$(nproc)"; \
+    make install; \
+    ldconfig; \
+    export PKG_CONFIG_PATH="/usr/local/lib64/pkgconfig:/usr/local/lib/pkgconfig:/usr/lib64/pkgconfig:/usr/share/pkgconfig:${PKG_CONFIG_PATH:-}"; \
+    find /usr/local -name 'libavutil.pc' -print; \
+    pkg-config --modversion libavutil; \
+    pkg-config --modversion libavcodec; \
+    pkg-config --modversion libavformat; \
+    pkg-config --modversion libavfilter; \
+    pkg-config --modversion libavdevice; \
+    pkg-config --modversion libswscale; \
+    pkg-config --modversion libswresample; \
+    rm -rf /tmp/ffmpeg-build
+
+RUN set -eux; \
+    mkdir -p /tmp/opencv-build; \
+    cd /tmp/opencv-build; \
+    curl -L -o opencv.zip "https://github.com/opencv/opencv/archive/refs/tags/${OPENCV_VERSION}.zip"; \
+    curl -L -o opencv_contrib.zip "https://github.com/opencv/opencv_contrib/archive/refs/tags/${OPENCV_VERSION}.zip"; \
+    unzip -q opencv.zip; \
+    unzip -q opencv_contrib.zip; \
+    mkdir -p build; \
+    cd build; \
+    cmake "../opencv-${OPENCV_VERSION}" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr/local \
+    -DOPENCV_EXTRA_MODULES_PATH="/tmp/opencv-build/opencv_contrib-${OPENCV_VERSION}/modules" \
+    -DOPENCV_GENERATE_PKGCONFIG=ON \
+    -DBUILD_SHARED_LIBS=ON \
+    -DBUILD_TESTS=OFF \
+    -DBUILD_PERF_TESTS=OFF \
+    -DBUILD_EXAMPLES=OFF \
+    -DBUILD_opencv_apps=OFF \
+    -DBUILD_opencv_python2=OFF \
+    -DBUILD_opencv_python3=OFF \
+    -DBUILD_opencv_java=OFF \
+    -DBUILD_opencv_js=OFF \
+    -DBUILD_LIST=core,imgproc,imgcodecs,dnn,features2d,flann,calib3d,objdetect,video,ml,photo,wechat_qrcode \
+    -DWITH_FFMPEG=OFF \
+    -DWITH_GSTREAMER=OFF \
+    -DWITH_GTK=OFF \
+    -DWITH_QT=OFF \
+    -DWITH_OPENCL=OFF \
+    -DBUILD_PROTOBUF=ON; \
+    cmake --build . --parallel "$(nproc)"; \
+    cmake --install .; \
+    ldconfig; \
+    test -f /usr/local/lib64/pkgconfig/opencv4.pc || test -f /usr/local/lib/pkgconfig/opencv4.pc; \
+    find /usr/local -name 'libopencv_wechat_qrcode.so*' -print -quit | grep .; \
+    rm -rf /tmp/opencv-build
+
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+ENV PKG_CONFIG_PATH="/usr/local/lib64/pkgconfig:/usr/local/lib/pkgconfig:/usr/lib64/pkgconfig:/usr/share/pkgconfig"
+ENV LD_LIBRARY_PATH="/usr/local/lib64:/usr/local/lib:/usr/lib64"
+ENV LIBRARY_PATH="/usr/local/lib64:/usr/local/lib:/usr/lib64"
+ENV CPATH="/usr/local/include:/usr/local/include/opencv4"
+ENV OPENCV_PACKAGE_NAME="opencv4"
+
+WORKDIR /work

@@ -72,7 +72,7 @@ BEFORE_IFACES="$(ip -o link show | awk -F': ' '{print $2}' | sed 's/@.*//' | sor
 # pin them to the tun once it is up (step 6) so their traffic goes through the VPN.
 # Resolving BEFORE the VPN matters: DNS still exits via eth0 here, giving the real
 # addresses; after the tunnel routes are in place resolution could differ/hang.
-XMU_ROUTE_DOMAINS="ids.xmu.edu.cn lnt.xmu.edu.cn jw.xmu.edu.cn c-rms.xmu.edu.cn c-mobile.xmu.edu.cn"
+XMU_ROUTE_DOMAINS="ids.xmu.edu.cn lnt.xmu.edu.cn jw.xmu.edu.cn"
 XMU_ROUTE_STATIC_IPS="121.192.180.236 59.77.5.59"   # extra intranet targets (no DNS)
 XMU_ROUTE_IPS=""
 

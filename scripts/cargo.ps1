@@ -128,12 +128,49 @@ if ($onWindows) {
     # 非 Windows 无 MSVC，不注入 _ALLOW_COMPILER_AND_STL_VERSION_MISMATCH。
 }
 
-# 3. 转发所有参数给真正的 cargo（限定 Application 类型，避免与本脚本同名时递归调用自己）
-$cargoExe = (Get-Command cargo -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+# 3. 转发所有参数给真正的 cargo，避免递归解析到 scripts/cargo.cmd / cargo.ps1
+function Resolve-RealCargo {
+    $scriptDir = Split-Path -Parent $PSCommandPath
+    $scriptDirFull = [System.IO.Path]::GetFullPath($scriptDir).TrimEnd('\', '/')
+
+    # 用户显式指定时优先使用
+    if ($env:REAL_CARGO -and (Test-Path $env:REAL_CARGO)) {
+        return (Resolve-Path $env:REAL_CARGO).Path
+    }
+
+    if ($onWindows) {
+        # 关键：Windows 下直接找 cargo.exe，不找 cargo，避免匹配到 cargo.cmd
+        $commands = Get-Command cargo.exe -CommandType Application -All -ErrorAction SilentlyContinue
+    } else {
+        $commands = Get-Command cargo -CommandType Application -All -ErrorAction SilentlyContinue
+    }
+
+    foreach ($cmd in $commands) {
+        $source = $cmd.Source
+        if (-not $source) { continue }
+
+        $full = [System.IO.Path]::GetFullPath($source)
+
+        # 排除 scripts 目录里的包装器，防止递归
+        if ($full.StartsWith($scriptDirFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+            continue
+        }
+
+        return $full
+    }
+
+    return $null
+}
+
+$cargoExe = Resolve-RealCargo
 if (-not $cargoExe) {
-    Write-Host "[!] 未找到 cargo，请确认 Rust 工具链已安装且在 PATH。" -ForegroundColor Red
+    Write-Host "[!] 未找到真正的 cargo，请确认 Rust 工具链已安装且在 PATH。" -ForegroundColor Red
+    Write-Host "    也可以手动设置 REAL_CARGO，例如：" -ForegroundColor Yellow
+    Write-Host '    $env:REAL_CARGO = "C:\Users\vintces\.cargo\bin\cargo.exe"' -ForegroundColor Yellow
     exit 1
 }
+
+Write-Host "==> cargo = $cargoExe" -ForegroundColor DarkGray
 
 & $cargoExe @args
 exit $LASTEXITCODE
