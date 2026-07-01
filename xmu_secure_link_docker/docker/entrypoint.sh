@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 #
 # Bring up xmu_secure_link (VPN tun) + microsocks (SOCKS5) inside ONE network
-# namespace, then wire the container route table so SOCKS5 connect()s exit
-# through the VPN interface.
+# namespace. We do NOT force the container default route through the VPN; we rely
+# on the split-tunnel routes xmu_secure_link installs itself (campus/ACL targets
+# via the tun, everything else direct). microsocks just follows that route table.
 #
-# Data path: App -> host 127.0.0.1:1080 -> microsocks -> container route table
-#            -> VPN tun -> xmu_secure_link (OpenVPN3) -> OpenVPN server
+# Data path (campus target): App -> 127.0.0.1:1080 -> microsocks
+#            -> VPN tun (client route) -> xmu_secure_link (OpenVPN3) -> server
+# Data path (other target):  App -> 127.0.0.1:1080 -> microsocks -> direct (eth0)
 #
 set -euo pipefail
 
@@ -120,50 +122,18 @@ fi
 # let the client finish pushing its own routes / bringing the link up
 sleep 2
 
-# --- 6. pin the OpenVPN server IP(s) to the ORIGINAL uplink -------------------
-# So that flipping the default route to the tunnel below does not cut the
-# tunnel's own transport (the classic "route eats its own tail" problem).
-collect_server_ips() {
-  # (a) live established sockets owned by the client -> the peer is the server
-  ss -Hnp -t -u state established 2>/dev/null \
-    | grep -E "pid=${VPN_PID},|xmu_secure_link" \
-    | awk '{print $5}' | awk -F: '{print $1}' || true
-  # (b) any /32 host route the client itself installed via the physical dev
-  if [ -n "${ORIG_DEFAULT_DEV:-}" ]; then
-    ip route show dev "$ORIG_DEFAULT_DEV" 2>/dev/null \
-      | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/32' | awk -F/ '{print $1}' || true
-  fi
-  # (c) best-effort log parse as a last resort
-  grep -iE 'remote' "$LOG_FILE" 2>/dev/null \
-    | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' || true
-}
-
-# drop noise: any-address, loopback, link-local, and RFC1918 (the container's
-# own eth0 address); the campus OpenVPN endpoint is a routable public IP.
-SERVER_IPS="$(collect_server_ips \
-  | grep -vE '^(0\.|127\.|169\.254\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)' \
-  | sort -u || true)"
-
-PINNED=0
-if [ -n "$SERVER_IPS" ] && [ -n "${ORIG_DEFAULT_GW:-}" ] && [ -n "${ORIG_DEFAULT_DEV:-}" ]; then
-  while read -r ip; do
-    [ -z "$ip" ] && continue
-    log "pin server route: ${ip}/32 via ${ORIG_DEFAULT_GW} dev ${ORIG_DEFAULT_DEV}"
-    ip route replace "${ip}/32" via "$ORIG_DEFAULT_GW" dev "$ORIG_DEFAULT_DEV" && PINNED=1 || true
-  done <<< "$SERVER_IPS"
-fi
-
-# --- 7. send everything else through the VPN ---------------------------------
-# Only if we managed to pin the server; otherwise leave the client's own routes
-# alone rather than risk killing the tunnel uplink.
-if [ "$PINNED" -eq 1 ]; then
-  log "routing default via VPN interface $VPN_DEV"
-  ip route replace default dev "$VPN_DEV" || true
-else
-  log "WARN: could not identify the OpenVPN server IP."
-  log "WARN: leaving the default route untouched and relying on the routes"
-  log "WARN: xmu_secure_link installed itself (intranet targets should still work)."
-fi
+# --- 6. rely on xmu_secure_link's own (split-tunnel) routes ------------------
+# We deliberately DO NOT pin the server IP and DO NOT flip the container default
+# route to the VPN. The client already installs its own /32 routes for the
+# campus intranet/ACL targets via the tun; everything else keeps the original
+# uplink (eth0). microsocks then simply follows this table:
+#   campus/ACL targets -> VPN tun (hidden campus exit IP)
+#   everything else     -> direct via eth0
+# This avoids the fragile "pin server IP + flip default" dance and its
+# route-eats-its-own-tail failure mode. The bot only sends *.xmu.edu.cn to the
+# SOCKS5 anyway, and those campus IPs are exactly what the client routes through
+# the tunnel — so no forced default route is needed.
+log "using xmu_secure_link's own split-tunnel routes; container default route left untouched"
 
 log "final route table:"
 ip route || true

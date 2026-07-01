@@ -1,16 +1,13 @@
 # xmu_secure_link SOCKS5 中间层 (Docker)
 
-一个最小中间层：**Docker 暴露 `127.0.0.1:1080` SOCKS5，所有走这个 SOCKS5 的 TCP
-流量进入容器，经容器内 `xmu_secure_link` 建立的 VPN 网卡出去。**
+一个最小中间层：**Docker 暴露 `127.0.0.1:1080` SOCKS5；走这个 SOCKS5 的流量进入容器后，
+按 `xmu_secure_link` 自己下发的分流路由走——校园/ACL 目标经 VPN 网卡出去（隐匿真实 IP），
+其余目标直连。不强制把所有连接都塞进 VPN。**
 
 ```text
-App
-  -> 127.0.0.1:1080 SOCKS5
-  -> 容器内 microsocks
-  -> 容器内 Linux 路由表
-  -> 容器内 VPN 网卡 (tun)
-  -> xmu_secure_link (OpenVPN3 Client)
-  -> OpenVPN Server
+App -> 127.0.0.1:1080 SOCKS5 -> 容器内 microsocks -> 容器内 Linux 路由表
+  ├─ 校园/ACL 目标 -> VPN 网卡 (tun) -> xmu_secure_link (OpenVPN3) -> OpenVPN Server
+  └─ 其余目标       -> 直连 (eth0)
 ```
 
 不实现 Clash / PAC / HTTP 代理 / 透明代理 / tun2socks / UDP 转发 / 规则系统。
@@ -25,7 +22,7 @@ App
 | `debian:bookworm-slim` | **`ubuntu:24.04`** | 二进制需要 `GLIBC_2.39`，bookworm 只有 2.36，启动即失败 |
 | 只 `COPY *.so` | 下载自包含 tar（binary + 全部 `.so`）并设 `LD_LIBRARY_PATH` | 二进制 RUNPATH=`$ORIGIN` 不传递，`libovpnffi` 的依赖找不到 |
 | 从日志 `Remotes:` 解析服务器 IP | **用 `ss` 探测已建立连接的对端** + 路由/日志兜底 | 日志格式未公开，`ss` 更稳且与格式无关 |
-| 无条件把默认路由切到 VPN | **只有成功钉住服务器 IP 后才切** | 否则可能切断隧道自身的上行（自咬尾巴） |
+| 无条件把默认路由切到 VPN | **完全不切默认路由，走客户端自己的分流路由** | 客户端已为校园/ACL 目标下发 tun 路由；bot 只把 `*.xmu.edu.cn` 发给 SOCKS5，无需强制默认路由，也彻底避免自咬尾巴 |
 
 镜像里额外安装 `libstdc++6`（`libovpnffi.so` 需要），其余原生依赖都在 tar 内。
 
@@ -131,9 +128,9 @@ docker exec -it xmu-securelink-socks ip route get 59.77.5.59
 
 - **两条 curl 都超时**：SOCKS5 起来了但连接没进 VPN 网卡。
   `docker logs` 看 `[entrypoint]` 输出的 “final route table / probe target routes”，
-  确认探针目标 `dev` 是 `tun*`。若是 `eth0`，说明客户端没为内网目标下发路由，
-  且默认路由未切到 VPN——检查是否打印了 `WARN: could not identify the OpenVPN
-  server IP`（服务器 IP 未识别 → 出于安全没切默认路由）。
+  确认探针目标 `dev` 是 `tun*`。若是 `eth0`，说明客户端还没为这些目标下发 tun 路由
+  （多半是隧道刚起来还没推完路由，或会话过期没连上）——看日志里客户端是否成功建连 /
+  出现 “VPN connected”。
 - **容器反复重启 / `xmu_secure_link exited early`**：多半是会话过期需要交互登录，
   见上文“前置条件”，重新登录后再挂载。
 - **`ip route get` 报错或无 tun**：确认 Docker Desktop WSL2 后端、compose 里的
@@ -148,5 +145,5 @@ docker exec -it xmu-securelink-socks ip route get 59.77.5.59
 3. VPN 网卡只存在于容器内部。
 4. `microsocks` 与 `xmu_secure_link` 在同一网络命名空间。
 5. `microsocks` 不理解 OpenVPN，只做 SOCKS5。
-6. SOCKS5 的 TCP connect 由容器路由表送进 VPN 网卡。
-7. OpenVPN Server 的连接被钉在原始 `eth0`，默认路由切换不会自咬尾巴。
+6. SOCKS5 的 TCP connect 由容器路由表**分流**：校园/ACL 目标进 VPN 网卡，其余直连。
+7. 不修改容器默认路由，只用客户端自己下发的分流路由，不存在自咬尾巴问题。

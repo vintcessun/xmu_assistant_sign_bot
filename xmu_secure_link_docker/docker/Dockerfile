@@ -49,6 +49,13 @@ RUN curl -fSL "${SL_BASE_URL}/${SL_VERSION}/${SL_ASSET}" -o /tmp/sl.tar.gz \
 # Setting LD_LIBRARY_PATH makes the whole bundle resolvable.
 ENV LD_LIBRARY_PATH=/opt/xmu_secure_link
 
+LABEL org.opencontainers.image.title="xmu_secure_link_docker" \
+      org.opencontainers.image.description="SOCKS5 middle layer over xmu_secure_link (SecureLink OpenVPN3), split-tunnel: campus/ACL targets (e.g. *.xmu.edu.cn) exit via the campus VPN, everything else direct. Exposes 127.0.0.1:1080 SOCKS5." \
+      org.opencontainers.image.licenses="GPL-3.0-only" \
+      org.opencontainers.image.source="https://github.com/XMU-MoYu-Club/xmu_secure_link" \
+      org.opencontainers.image.url="https://hub.docker.com/r/vintcessun/xmu_secure_link_docker" \
+      org.opencontainers.image.version="v0.1.0"
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
