@@ -15,46 +15,48 @@ use url::Url;
 
 const MAX_REDIRECTS: u8 = 20;
 
-static GLOBAL_CLIENT: LazyLock<Client> = LazyLock::new(|| {
-    info!("初始化全局 Reqwest HTTP 客户端");
-    Client::builder()
-        .tcp_keepalive(std::time::Duration::from_secs(3600))
-        .redirect(reqwest::redirect::Policy::none()) // 必须手动处理重定向，才能跨请求同步 Cookie
-        .pool_max_idle_per_host(100)
-        .build()
-        .unwrap_or_else(|e| {
-            error!(error = ?e, "初始化全局 Reqwest HTTP 客户端失败");
-            panic!()
-        })
-});
-
-/// 预留：将来用户态 OpenVPN（libopenvpn3 + smoltcp）暴露一个本地 SOCKS5 后，
-/// 用它把 `*.xmu.edu.cn` 请求经该代理走隧道、其余直连，从而隐匿真实 IP。
-/// 目前**未启用**——不进入 `request_internal` 主流程，仅占位。将来把代理地址填进
-/// [`XMU_SOCKS5_PROXY`] 并在 `request_internal` 里改用 [`socks_proxied_client`] 即可启用。
-#[allow(dead_code)]
-const XMU_SOCKS5_PROXY: Option<&str> = None; // 例如 Some("socks5h://127.0.0.1:1080")
-
-/// 预留：构造一个“`*.xmu.edu.cn` 走 SOCKS5、其余直连”的 reqwest 客户端。
-/// 未接入主流程（`dead_code`），供将来本地 SOCKS5 就绪后启用。
-#[allow(dead_code)]
-fn socks_proxied_client() -> Option<Client> {
-    let addr = XMU_SOCKS5_PROXY?;
-    let proxy = reqwest::Proxy::custom(move |url| {
-        if crate::api::vpn::should_tunnel(url.host_str().unwrap_or_default()) {
-            addr.parse::<Url>().ok()
-        } else {
+/// `*.xmu.edu.cn` 走本地 SOCKS5 代理、其余直连。默认 `socks5h://127.0.0.1:1080`；
+/// 可用环境变量 `XMU_SOCKS5_PROXY` 覆盖，设为空串则全部直连（不走代理）。
+/// 用 `socks5h`（DNS 在代理侧解析）让 xmu 域名从代理出口解析、隐匿真实 IP。
+fn xmu_socks5_proxy() -> Option<Url> {
+    let addr = match std::env::var("XMU_SOCKS5_PROXY") {
+        Ok(v) if v.trim().is_empty() => return None,
+        Ok(v) => v,
+        Err(_) => "socks5h://127.0.0.1:1080".to_string(),
+    };
+    match addr.parse::<Url>() {
+        Ok(u) => Some(u),
+        Err(e) => {
+            error!(addr = %addr, error = ?e, "SOCKS5 代理地址无效，*.xmu.edu.cn 将直连");
             None
         }
-    });
-    Client::builder()
-        .tcp_keepalive(std::time::Duration::from_secs(3600))
-        .redirect(reqwest::redirect::Policy::none())
-        .pool_max_idle_per_host(100)
-        .proxy(proxy)
-        .build()
-        .ok()
+    }
 }
+
+static GLOBAL_CLIENT: LazyLock<Client> = LazyLock::new(|| {
+    info!("初始化全局 Reqwest HTTP 客户端");
+    let mut builder = Client::builder()
+        .tcp_keepalive(std::time::Duration::from_secs(3600))
+        .redirect(reqwest::redirect::Policy::none()) // 必须手动处理重定向，才能跨请求同步 Cookie
+        .pool_max_idle_per_host(100);
+
+    // *.xmu.edu.cn 经本地 SOCKS5 出去（隐匿真实 IP），其余直连；由 Proxy::custom 按 host 判定。
+    if let Some(proxy_url) = xmu_socks5_proxy() {
+        info!(proxy = %proxy_url, "*.xmu.edu.cn 将通过 SOCKS5 代理路由");
+        builder = builder.proxy(reqwest::Proxy::custom(move |url| {
+            if crate::api::vpn::should_tunnel(url.host_str().unwrap_or_default()) {
+                Some(proxy_url.clone())
+            } else {
+                None
+            }
+        }));
+    }
+
+    builder.build().unwrap_or_else(|e| {
+        error!(error = ?e, "初始化全局 Reqwest HTTP 客户端失败");
+        panic!()
+    })
+});
 
 pub struct SessionCookieStore {
     // Key: domain, Value: Map<cookie_name, cookie_value>

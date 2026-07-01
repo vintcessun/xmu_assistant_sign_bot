@@ -1,57 +1,45 @@
 # scripts
 
-构建辅助脚本：自动探测合适的 MSVC / Clang 工具链，并完成 `cargo build`。
+`cargo.ps1`：**自动配置 opencv 绑定生成所需的工具链环境变量，然后把参数原样转发给 `cargo`** 的包装器。
+Windows / Linux / macOS 通用（需 PowerShell 7+ / `pwsh`）。
 
 ## 背景
 
 本项目依赖 [`opencv`](https://crates.io/crates/opencv) crate。它在**绑定生成阶段**会用 `libclang`
-解析 OpenCV 与 MSVC 的 C++ 头文件。当系统安装的 **Clang 版本低于新版 MSVC STL 要求的版本**时，
-头文件解析会失败并报错：
+解析头文件。若 `LIBCLANG_PATH` 没配好会找不到 libclang；在 Windows 上，当系统 Clang 版本低于
+新版 MSVC STL 要求时还会报：
 
 ```
 error STL1000: Unexpected compiler version, expected Clang 20 or newer.
 ```
 
-（例如：Visual Studio 18 / MSVC 14.51 的 STL 要求 Clang ≥ 20，而本机仅有 Clang 19。）
+## `cargo.ps1` 做了什么
 
-## 解决方案
-
-`build.ps1` 会：
-
-1. 通过 `vswhere` **探测**（不修改环境）Visual Studio MSVC 工具链——MSVC 的实际选取交给
-   Rust 的 `cc` crate 自动完成（它会通过注册表/vswhere 找到 `cl.exe` 及对应的 `INCLUDE`/`LIB`）。
-   > 注意：脚本**故意不执行 `vcvars64.bat`**。强行导入 vcvars 会打乱 `PATH`/`INCLUDE` 顺序，
-   > 导致 `ffmpeg-sys-next` 等依赖误用 msys64/MinGW 头文件而编译失败。
-2. 在 `LIBCLANG_PATH`、`PATH`、常见安装目录中探测可用的 Clang，挑选**版本最高**的一个，
-   并设置 `LIBCLANG_PATH`；
-3. 当 Clang 与 MSVC STL 版本不匹配时，自动通过 `OPENCV_CLANG_ARGS` 注入 MSVC 官方逃生宏
-   `_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH`，放行 libclang 解析
-   （真正编译绑定时使用 `cl.exe`，不受该版本检查影响）；
-4. 执行 `cargo build`（默认 `--release`）。
+1. **探测 libclang 并设置 `LIBCLANG_PATH`**：
+   - Windows：在 `LIBCLANG_PATH`/`PATH`/常见安装目录中挑**版本最高**的 `clang.exe`；
+   - Linux/macOS：用 `llvm-config --libdir` 或常见目录找 `libclang.so*` / `libclang.dylib`。
+2. **仅 Windows** 通过 `OPENCV_CLANG_ARGS` 注入官方逃生宏
+   `_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH`，放行 Clang 与 MSVC STL 的版本检查
+   （非 Windows 无 MSVC，不注入）。MSVC 本身的选取交给 Rust 的 `cc` crate 自动完成（不执行 vcvars）。
+3. **把收到的全部参数原样转发给 `cargo`**（用 `Application` 类型定位真正的 cargo，避免同名递归）。
 
 ## 用法
 
-PowerShell：
+任意 `cargo` 子命令都可以，环境变量会自动配好：
 
-```powershell
-# release 构建（默认）
-pwsh -File scripts/build.ps1
+```bash
+# Windows (PowerShell)
+pwsh scripts/cargo.ps1 build --release
+pwsh scripts/cargo.ps1 check --message-format=short
 
-# debug 构建
-pwsh -File scripts/build.ps1 -Profile debug
-
-# 透传额外 cargo 参数
-pwsh -File scripts/build.ps1 -- -vv
+# Linux / macOS
+pwsh scripts/cargo.ps1 build --release
+# 或 chmod +x 后（脚本首行有 pwsh shebang）
+./scripts/cargo.ps1 test -- --nocapture
 ```
 
-cmd / 双击：
+## 依赖
 
-```bat
-scripts\build.bat
-scripts\build.bat debug
-```
-
-## 彻底修复（可选）
-
-若希望去掉兼容宏，安装 **Clang ≥ MSVC STL 要求的版本**即可：
-<https://github.com/llvm/llvm-project/releases>。安装后脚本会自动选用更高版本的 Clang。
+- **PowerShell 7+**（`pwsh`）。Linux/macOS 安装：<https://learn.microsoft.com/powershell/scripting/install/installing-powershell>
+- **LLVM/Clang**（提供 libclang）。Windows 用 LLVM 官方安装包；Debian/Ubuntu：`apt install libclang-dev clang`。
+- 想在 Windows 去掉兼容宏，装 **Clang ≥ 新版 MSVC STL 要求的版本**即可：<https://github.com/llvm/llvm-project/releases>

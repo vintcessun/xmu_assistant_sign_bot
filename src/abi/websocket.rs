@@ -78,6 +78,8 @@ impl<T: BotHandler> BotWebsocketClient<T> {
                     }
                 }
             }
+            error!("事件 WebSocket 已断开，立即终止进程（交由守护进程/容器重启重连）");
+            std::process::exit(1);
         }));
 
         let (event_sender, mut event_receiver) = mpsc::unbounded_channel::<String>();
@@ -86,8 +88,8 @@ impl<T: BotHandler> BotWebsocketClient<T> {
             while let Some(msg) = event_receiver.recv().await {
                 trace!(message = ?msg, "准备发送事件消息");
                 if let Err(e) = write_event.send(Message::Text(msg.into())).await {
-                    error!(error = ?e, "通过 WsWriter 传输事件失败");
-                    break;
+                    error!(error = ?e, "事件 WebSocket 发送失败，连接已断开，立即终止进程");
+                    std::process::exit(1);
                 }
                 trace!("事件消息发送成功");
             }
@@ -120,6 +122,8 @@ impl<T: BotHandler> BotWebsocketClient<T> {
                     }
                 }
             }
+            error!("API WebSocket 已断开，立即终止进程（交由守护进程/容器重启重连）");
+            std::process::exit(1);
         }));
 
         let (api_sender, mut api_receiver) = mpsc::unbounded_channel::<String>();
@@ -128,8 +132,8 @@ impl<T: BotHandler> BotWebsocketClient<T> {
             while let Some(msg) = api_receiver.recv().await {
                 trace!(message = ?msg, "准备发送 API 消息");
                 if let Err(e) = write_api.send(Message::Text(msg.into())).await {
-                    error!(error = ?e, "通过 WsWriter 传输消息失败");
-                    break;
+                    error!(error = ?e, "API WebSocket 发送失败，连接已断开，立即终止进程");
+                    std::process::exit(1);
                 }
                 trace!("API 消息发送成功");
             }
