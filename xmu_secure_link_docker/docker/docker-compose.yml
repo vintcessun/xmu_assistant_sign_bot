@@ -1,0 +1,43 @@
+services:
+  xmu-securelink-socks:
+    build:
+      # Context is this docker/ folder itself: the image downloads the prebuilt
+      # release, so the only file it needs from the context is entrypoint.sh.
+      context: .
+      dockerfile: Dockerfile
+      # Only needed if the Docker BUILD network can't resolve DNS on its own
+      # (e.g. this host reaches the internet through a local Clash proxy).
+      # Set before building:  $env:DOCKER_BUILD_PROXY="http://host.docker.internal:7890"
+      # Leave unset for a normal direct-internet machine.
+      args:
+        http_proxy: ${DOCKER_BUILD_PROXY:-}
+        https_proxy: ${DOCKER_BUILD_PROXY:-}
+    container_name: xmu-securelink-socks
+
+    # NET_ADMIN + /dev/net/tun let xmu_secure_link create the VPN interface and
+    # let entrypoint.sh edit the *container's* route table.
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+
+    # Expose SOCKS5 on the host loopback ONLY. The host route table is never
+    # touched; the VPN tun exists solely inside this container.
+    ports:
+      - "127.0.0.1:1080:1080"
+
+    # Mount the SecureLink data dir so the saved SSO session is reused and no
+    # interactive browser login is needed. The HOST path is NOT hard-coded: it
+    # is passed in via the SECURELINK_DATA_DIR env var. Set it before running:
+    #   PowerShell: $env:SECURELINK_DATA_DIR="C:/.../data/securelink"
+    #   bash      : export SECURELINK_DATA_DIR=/mnt/c/.../data/securelink
+    #   ctr path: /root/.local/share/mysecurelinkrs
+    # NOTE: directories-rs lowercases the app id on Linux; Docker paths are case-sensitive.
+    volumes:
+      - "${SECURELINK_DATA_DIR:?Set SECURELINK_DATA_DIR to the host SecureLink data directory}:/root/.local/share/mysecurelinkrs"
+
+    environment:
+      - RUST_LOG=info
+      - SOCKS_PORT=1080
+
+    restart: unless-stopped
