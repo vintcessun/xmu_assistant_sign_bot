@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
 # Bring up xmu_secure_link (VPN tun) + microsocks (SOCKS5) inside ONE network
-# namespace. We do NOT force the container default route through the VPN; we rely
-# on the split-tunnel routes xmu_secure_link installs itself (campus/ACL targets
-# via the tun, everything else direct). microsocks just follows that route table.
+# namespace. We do NOT force the container default route through the VPN; instead
+# we pin the key XMU targets (lnt/jw + the intranet probes) to the tun with /32
+# routes — everything else stays direct. microsocks just follows that route table.
 #
 # Data path (campus target): App -> 127.0.0.1:1080 -> microsocks
 #            -> VPN tun (client route) -> xmu_secure_link (OpenVPN3) -> server
@@ -67,6 +67,36 @@ ip route || true
 # snapshot interfaces so the newly created VPN one is easy to spot
 BEFORE_IFACES="$(ip -o link show | awk -F': ' '{print $2}' | sed 's/@.*//' | sort -u)"
 
+# --- 3b. resolve the XMU domains BEFORE the VPN starts -----------------------
+# Resolve via the normal (pre-VPN) uplink to capture the real public IPs, then
+# pin them to the tun once it is up (step 6) so their traffic goes through the VPN.
+# Resolving BEFORE the VPN matters: DNS still exits via eth0 here, giving the real
+# addresses; after the tunnel routes are in place resolution could differ/hang.
+XMU_ROUTE_DOMAINS="ids.xmu.edu.cn lnt.xmu.edu.cn jw.xmu.edu.cn c-rms.xmu.edu.cn c-mobile.xmu.edu.cn"
+XMU_ROUTE_STATIC_IPS="121.192.180.236 59.77.5.59"   # extra intranet targets (no DNS)
+XMU_ROUTE_IPS=""
+
+resolve_xmu_domains() {
+  local ips="" d r
+  for d in $XMU_ROUTE_DOMAINS; do
+    # getent uses the container resolver; dig is the fallback (dnsutils installed).
+    r="$(getent ahostsv4 "$d" 2>/dev/null | awk '{print $1}' | sort -u)"
+    [ -z "$r" ] && r="$(dig +short A "$d" 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)"
+    if [ -n "$r" ]; then
+      log "resolved $d -> $(echo $r | tr '\n' ' ')"
+      ips="$ips $r"
+    else
+      log "WARN: could not resolve $d (skipping)"
+    fi
+  done
+  XMU_ROUTE_IPS="$(printf '%s\n' $ips $XMU_ROUTE_STATIC_IPS \
+    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sort -u | tr '\n' ' ')"
+  log "XMU pin IPs: ${XMU_ROUTE_IPS:-<none>}"
+}
+
+log "resolving XMU domains before starting VPN"
+resolve_xmu_domains
+
 # --- 4. start the VPN client (auto-connects from the mounted session) --------
 log "starting xmu_secure_link"
 cd "$BIN_DIR"
@@ -122,18 +152,36 @@ fi
 # let the client finish pushing its own routes / bringing the link up
 sleep 2
 
-# --- 6. rely on xmu_secure_link's own (split-tunnel) routes ------------------
-# We deliberately DO NOT pin the server IP and DO NOT flip the container default
-# route to the VPN. The client already installs its own /32 routes for the
-# campus intranet/ACL targets via the tun; everything else keeps the original
-# uplink (eth0). microsocks then simply follows this table:
-#   campus/ACL targets -> VPN tun (hidden campus exit IP)
-#   everything else     -> direct via eth0
-# This avoids the fragile "pin server IP + flip default" dance and its
-# route-eats-its-own-tail failure mode. The bot only sends *.xmu.edu.cn to the
-# SOCKS5 anyway, and those campus IPs are exactly what the client routes through
-# the tunnel — so no forced default route is needed.
-log "using xmu_secure_link's own split-tunnel routes; container default route left untouched"
+# --- 6. pin the resolved XMU targets to the VPN tun -------------------------
+# The client's own split-tunnel routes did NOT cover lnt/jw, so we explicitly add
+# /32 routes (via the tun) for the XMU IPs resolved at startup in step 3b. We
+# still do NOT flip the container default route — only these targets go through
+# the VPN, everything else stays direct. (Edit XMU_ROUTE_DOMAINS to add hosts.)
+add_xmu_routes() {
+  local dev="$VPN_DEV"
+  local tun_ip
+  tun_ip="$(ip -4 addr show "$dev" 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1 | head -n1)"
+  if [ -n "$tun_ip" ]; then
+    log "tun ($dev) IPv4: $tun_ip"
+  else
+    log "WARN: $dev has no IPv4 yet; adding routes without src"
+  fi
+
+  log "adding XMU /32 routes via $dev"
+  for ip in $XMU_ROUTE_IPS; do
+    if [ -n "$tun_ip" ]; then
+      ip route replace "${ip}/32" dev "$dev" src "$tun_ip" || log "WARN: failed to add ${ip}/32"
+    else
+      ip route replace "${ip}/32" dev "$dev" || log "WARN: failed to add ${ip}/32"
+    fi
+  done
+
+  log "XMU route check:"
+  for ip in $XMU_ROUTE_IPS; do
+    ip route get "$ip" 2>/dev/null || true
+  done
+}
+add_xmu_routes
 
 log "final route table:"
 ip route || true
