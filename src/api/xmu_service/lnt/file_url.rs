@@ -1,15 +1,11 @@
 use crate::abi::utils::SmartJsonExt;
 use crate::api::{
-    network::{SessionClient, download_to_file},
-    storage::{ColdTable, File},
+    network::{SessionClient, download_to_temp},
+    storage::TempFile,
 };
 use anyhow::Result;
 use helper::{lnt_get_api, session_client_helper};
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, LazyLock};
-
-static FILE_DATA: LazyLock<ColdTable<i64, Arc<File>>> =
-    LazyLock::new(|| ColdTable::new("lnt_file_url"));
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FileUrlResponse {
@@ -30,18 +26,11 @@ impl FileUrl {
         client: SessionClient,
         id: i64,
         filename: &str,
-    ) -> Result<Arc<File>> {
-        if let Some(file) = FILE_DATA.get_async(&id).await? {
-            return Ok(file);
-        }
-
+    ) -> Result<TempFile> {
+        // 不再缓存/持久化：每次下载为临时文件，发送后自动清理，避免 data 目录堆积。
         let url = FileUrlWithoutDownload::get_from_client(&client, id).await?;
         let url = url.url;
-
-        let file = download_to_file(client, &url, filename).await?;
-        let file = Arc::new(file);
-        FILE_DATA.insert(&id, &file).await?;
-
+        let file = download_to_temp(client, &url, filename).await?;
         Ok(file)
     }
 }

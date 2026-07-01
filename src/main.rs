@@ -7,7 +7,7 @@ use tracing::{info, level_filters::LevelFilter};
 use xmu_assistant_bot::abi::client::client_init;
 use xmu_assistant_bot::abi::router::handler::Router;
 use xmu_assistant_bot::*;
-const LOG_PATH: &str = "logs";
+// const LOG_PATH: &str = "logs";
 
 // mimalloc option 序号（libmimalloc-sys 0.1.47 未导出具名常量；mimalloc v2/v3 的
 // `mi_option_e` 枚举中这些序号一致，见 mimalloc.h）。

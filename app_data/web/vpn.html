@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SecureLink VPN 登录</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background:#f2f4f7; margin:0; padding:24px; color:#1f2933; }
+  .card { max-width:520px; margin:0 auto; background:#fff; border-radius:14px; padding:24px; box-shadow:0 8px 24px rgba(0,0,0,.08); }
+  h1 { font-size:20px; margin:0 0 12px; }
+  .sub { color:#6b7280; font-size:13px; margin:0 0 16px; }
+  .qr { display:flex; justify-content:center; padding:12px; background:#fafafa; border-radius:10px; }
+  .qr svg { width:220px; height:220px; }
+  a { color:#2563eb; word-break:break-all; }
+  textarea { width:100%; box-sizing:border-box; border:1px solid #d1d5db; border-radius:8px; padding:10px; font-family:monospace; font-size:13px; }
+  button { margin-top:10px; width:100%; padding:11px; border:0; border-radius:8px; background:#2563eb; color:#fff; font-size:15px; cursor:pointer; }
+  button.secondary { background:#0891b2; }
+  button:active { opacity:.85; }
+  hr { border:0; border-top:1px solid #eef0f3; margin:22px 0; }
+  .msg { margin-top:12px; padding:10px 12px; border-radius:8px; font-size:13px; white-space:pre-line; display:none; }
+  .msg.ok { display:block; background:#ecfdf5; color:#065f46; }
+  .msg.err { display:block; background:#fef2f2; color:#991b1b; }
+  code { background:#f3f4f6; padding:1px 4px; border-radius:4px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>SecureLink VPN 登录</h1>
+  <p class="sub">QQ：__QQ_ID__ · 用手机扫码或点击链接完成统一身份认证登录</p>
+
+  <div class="qr">__LOGIN_QR__</div>
+
+  <p style="margin-top:14px;">扫码不便时可 <a id="loginLink" target="_blank" rel="noopener">点此打开登录页</a>。</p>
+
+  <p>登录完成后，把浏览器<strong>最终跳转到的地址</strong>（形如 <code>...?code=...</code>）粘贴到下面提交：</p>
+  <textarea id="callback" rows="3" placeholder="https://svpnlink.xmu.edu.cn/...?code=..."></textarea>
+  <button id="submitBtn">提交并刷新登录</button>
+  <div id="submitMsg" class="msg"></div>
+
+  <hr>
+  <button id="refreshBtn" class="secondary">刷新 VPN 内容和出口 IP</button>
+  <div id="vpnInfo" class="msg"></div>
+</div>
+
+<script>
+  const VPN_ID = __VPN_ID_JS__;
+  const LOGIN_URL = __LOGIN_URL_JS__;
+
+  const link = document.getElementById('loginLink');
+  link.href = LOGIN_URL;
+  link.textContent = LOGIN_URL;
+
+  function show(el, text, ok) {
+    el.textContent = text;
+    el.className = 'msg ' + (ok ? 'ok' : 'err');
+  }
+
+  document.getElementById('submitBtn').onclick = async () => {
+    const cb = document.getElementById('callback').value.trim();
+    const msg = document.getElementById('submitMsg');
+    if (!cb) { show(msg, '请先粘贴 callback URL', false); return; }
+    show(msg, '提交中…', true);
+    try {
+      const r = await fetch('/vpn/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: VPN_ID, callback_url: cb })
+      });
+      const j = await r.json();
+      let t = j.message;
+      if (j.exit_ip) t += '\n出口 IP：' + j.exit_ip;
+      if (j.remotes && j.remotes.length) t += '\nVPN 远端：' + j.remotes.join(', ');
+      show(msg, t, j.ok);
+    } catch (e) { show(msg, '请求失败：' + e, false); }
+  };
+
+  document.getElementById('refreshBtn').onclick = async () => {
+    const info = document.getElementById('vpnInfo');
+    show(info, '刷新中…', true);
+    try {
+      const r = await fetch('/vpn/refresh_ip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: VPN_ID })
+      });
+      const j = await r.json();
+      let t = j.message;
+      t += '\n出口 IP：' + (j.exit_ip ? j.exit_ip : '获取失败（隧道可能未连上）');
+      if (j.remotes && j.remotes.length) t += '\nVPN 远端：' + j.remotes.join(', ');
+      show(info, t, j.ok);
+    } catch (e) { show(info, '请求失败：' + e, false); }
+  };
+</script>
+</body>
+</html>

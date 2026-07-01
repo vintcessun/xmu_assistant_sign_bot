@@ -28,6 +28,34 @@ static GLOBAL_CLIENT: LazyLock<Client> = LazyLock::new(|| {
         })
 });
 
+/// 预留：将来用户态 OpenVPN（libopenvpn3 + smoltcp）暴露一个本地 SOCKS5 后，
+/// 用它把 `*.xmu.edu.cn` 请求经该代理走隧道、其余直连，从而隐匿真实 IP。
+/// 目前**未启用**——不进入 `request_internal` 主流程，仅占位。将来把代理地址填进
+/// [`XMU_SOCKS5_PROXY`] 并在 `request_internal` 里改用 [`socks_proxied_client`] 即可启用。
+#[allow(dead_code)]
+const XMU_SOCKS5_PROXY: Option<&str> = None; // 例如 Some("socks5h://127.0.0.1:1080")
+
+/// 预留：构造一个“`*.xmu.edu.cn` 走 SOCKS5、其余直连”的 reqwest 客户端。
+/// 未接入主流程（`dead_code`），供将来本地 SOCKS5 就绪后启用。
+#[allow(dead_code)]
+fn socks_proxied_client() -> Option<Client> {
+    let addr = XMU_SOCKS5_PROXY?;
+    let proxy = reqwest::Proxy::custom(move |url| {
+        if crate::api::vpn::should_tunnel(url.host_str().unwrap_or_default()) {
+            addr.parse::<Url>().ok()
+        } else {
+            None
+        }
+    });
+    Client::builder()
+        .tcp_keepalive(std::time::Duration::from_secs(3600))
+        .redirect(reqwest::redirect::Policy::none())
+        .pool_max_idle_per_host(100)
+        .proxy(proxy)
+        .build()
+        .ok()
+}
+
 pub struct SessionCookieStore {
     // Key: domain, Value: Map<cookie_name, cookie_value>
     raw_data: DashMap<SmolStr, DashMap<SmolStr, Arc<str>>, RandomState>,

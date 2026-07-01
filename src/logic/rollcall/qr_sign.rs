@@ -8,7 +8,7 @@ use crate::{
         },
     },
     api::{
-        network::{SessionClient, download_to_file},
+        network::{SessionClient, download_to_temp},
         qrcode::QrCode,
         storage::FileStorage,
     },
@@ -96,7 +96,7 @@ pub async fn qr_sign(ctx: Context) -> Result<()> {
 }
 
 async fn qr_sign_cmd_process_file(img: &image::DataReceive) -> Result<Vec<Vec<QrSignResponse>>> {
-    let file = download_to_file(SessionClient::new(), &img.url, &img.file).await?;
+    let file = download_to_temp(SessionClient::new(), &img.url, &img.file).await?;
     let data = QrCode::from_file(file.get_path()).await?;
     let mut tasks = Vec::with_capacity(data.len());
     for d in &data {

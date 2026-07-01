@@ -1,6 +1,6 @@
 use crate::api::{
     network::SessionClient,
-    storage::{File, FileBackend},
+    storage::{FileBackend, TempFile},
 };
 use anyhow::{Result, bail};
 use futures::{FutureExt, future::BoxFuture};
@@ -78,8 +78,9 @@ fn escape_filename_for_path(filename: &str) -> String {
     }
 }
 
-pub async fn download_to_file(client: SessionClient, url: &str, filename: &str) -> Result<File> {
-    download_to_backend::<File>(client, url, filename).await
+/// 下载为临时文件（用完 drop 后自动清理），不再持久化到 data/file。
+pub async fn download_to_temp(client: SessionClient, url: &str, filename: &str) -> Result<TempFile> {
+    download_to_backend::<TempFile>(client, url, filename).await
 }
 
 pub struct FutureFile {
@@ -87,11 +88,11 @@ pub struct FutureFile {
     pub future: BoxFuture<'static, Result<()>>,
 }
 
-pub fn download_to_file_sync(client: SessionClient, url: &str, filename: &str) -> FutureFile {
-    download_to_backend_sync::<File>(client, url, filename)
+pub fn download_to_temp_sync(client: SessionClient, url: &str, filename: &str) -> FutureFile {
+    download_to_backend_sync::<TempFile>(client, url, filename)
 }
 
-pub fn download_to_backend_sync<T: FileBackend>(
+pub fn download_to_backend_sync<T: FileBackend + 'static>(
     client: SessionClient,
     url: &str,
     filename: &str,
@@ -135,6 +136,8 @@ pub fn download_to_backend_sync<T: FileBackend>(
         download_parallel_benchmarked(client, &url, &path, total_size).await?;
 
         debug!(path = ?path, "下载任务完成");
+        // 保活后端到下载完成：TempFile 在此 drop 后延迟清理，File 无副作用。
+        drop(backend);
         Ok::<(), anyhow::Error>(())
     }
     .boxed();
@@ -343,7 +346,7 @@ mod tests {
         let client = SessionClient::new();
         let url = "https://download.samplelib.com/png/sample-boat-400x300.png";
         let filename = "sample-boat-400x300.png";
-        let file = download_to_file(client, url, filename).await?;
+        let file = download_to_temp(client, url, filename).await?;
         println!("Downloaded file at path: {:?}", file.path);
         Ok(())
     }

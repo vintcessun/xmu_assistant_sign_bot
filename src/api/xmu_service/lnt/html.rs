@@ -1,6 +1,6 @@
 use crate::{
     abi::message::{MessageSend, MessageSendBuilder, file::FileUrl},
-    api::network::{FutureFile, SessionClient, download_to_file_sync},
+    api::network::{FutureFile, SessionClient, download_to_temp_sync},
     config::get_self_qq,
 };
 use anyhow::Result;
@@ -91,7 +91,7 @@ impl HtmlParseResultInner {
 
 fn get_image(url: &str, client: SessionClient) -> FutureFile {
     let filename = format!("{}", uuid::Uuid::new_v4());
-    download_to_file_sync(client, url, &filename)
+    download_to_temp_sync(client, url, &filename)
 }
 
 fn map_chars(text: &str, map_type: &str) -> String {

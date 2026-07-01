@@ -75,7 +75,7 @@ pub async fn download(ctx: Context) -> Result<()> {
         match res_inner {
             Ok(f) => {
                 let url = f.get_url().await;
-                info!(file_url = url, "准备发送文件链接");
+                info!(file_url = url, "准备发送文件");
                 ctx.send_message_async(MessageSend::new_message().file(url).build());
                 files.push(f);
             }
@@ -86,14 +86,12 @@ pub async fn download(ctx: Context) -> Result<()> {
         }
     }
 
-    debug!("创建 ExposeFileTask");
+    // 文件列表网页：把临时文件所有权交给任务保活，网页有效期（1 天）内可下载，
+    // 过期后随任务一起清理，不再持久化。
     let task = ExposeFileTask::new(files);
-
     let url = task.get_url();
     info!(url = url, "文件暴露任务已创建");
-
     ctx.send_message_async(from_str(format!("文件准备好了在地址 {url}")));
-
     task.finish().await?;
 
     Ok(())

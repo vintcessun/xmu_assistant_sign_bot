@@ -4,4 +4,5 @@ pub mod network;
 pub mod qrcode;
 pub mod scheduler;
 pub mod storage;
+pub mod vpn;
 pub mod xmu_service;
