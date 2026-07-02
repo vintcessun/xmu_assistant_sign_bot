@@ -23,8 +23,11 @@ services:
 
     # Expose SOCKS5 on the host loopback ONLY. The host route table is never
     # touched; the VPN tun exists solely inside this container.
+    # SOCKS_HOST_PORT: override when something else (e.g. a VS Code port
+    # forward, another proxy) already squats on host 1080 — a foreign listener
+    # there silently hijacks the SOCKS traffic away from this container.
     ports:
-      - "127.0.0.1:1080:1080"
+      - "127.0.0.1:${SOCKS_HOST_PORT:-1080}:1080"
 
     # Mount the SecureLink data dir so the saved SSO session is reused and no
     # interactive browser login is needed. The HOST path is NOT hard-coded: it
@@ -39,5 +42,11 @@ services:
     environment:
       - RUST_LOG=info
       - SOCKS_PORT=1080
+      # Session-file watcher (see README "会话文件监听"): how often to compare the
+      # mounted vs isolated working copy, and how long to let an external write
+      # settle. The interval also bounds how fast lost tun routes are re-pinned
+      # after a VPN reconnect, so keep it small.
+      - WATCH_INTERVAL=1
+      - WATCH_DEBOUNCE=2
 
     restart: unless-stopped

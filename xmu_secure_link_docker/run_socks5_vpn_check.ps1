@@ -1,7 +1,11 @@
 param(
   [string]$SecureLinkDataDir = "",
   [switch]$NoBuild,
-  [int]$ReadyTimeoutSec = 150
+  [int]$ReadyTimeoutSec = 150,
+  # Host port the container's SOCKS5 is published on. Change (or set
+  # SOCKS_HOST_PORT) when something else, e.g. a VS Code port forward, already
+  # listens on host 1080 — a foreign listener there hijacks the probes.
+  [int]$SocksPort = $(if ($env:SOCKS_HOST_PORT) { [int]$env:SOCKS_HOST_PORT } else { 1080 })
 )
 
 $ErrorActionPreference = "Stop"
@@ -53,7 +57,10 @@ function Wait-Ready {
     $state = (& docker inspect xmu-securelink-socks --format "{{.State.Status}}" 2>$null | Out-String).Trim()
     if ($state -eq "running") {
       $logs = & docker logs --tail 120 xmu-securelink-socks 2>&1 | Out-String
-      if ($logs -match "starting microsocks" -and $logs -match "VPN interface detected") {
+      # "watching session files" is printed only after the tun is up AND the
+      # XMU /32 routes are pinned, so it marks full readiness (microsocks now
+      # starts BEFORE the VPN, so "starting microsocks" alone is too early).
+      if ($logs -match "watching session files") {
         return
       }
       if ($logs -match "xmu_secure_link exited early" -or $logs -match "no callback URL entered") {
@@ -73,11 +80,22 @@ function Wait-Ready {
 function Assert-RouteViaTun {
   param([Parameter(Mandatory = $true)][string]$Target)
 
-  $route = & docker exec xmu-securelink-socks ip route get $Target 2>&1 | Out-String
-  if ($LASTEXITCODE -ne 0 -or $route -notmatch "\bdev\s+(tun|tap|ovpn)") {
-    throw "route check failed for ${Target}: $route"
+  # The VPN client reconnects on transient server drops; the tun (and our /32
+  # routes) vanish for a few seconds until the entrypoint's watch loop re-pins
+  # them. Retry instead of failing on that window.
+  $attempts = 12
+  for ($i = 1; $i -le $attempts; $i++) {
+    $route = & docker exec xmu-securelink-socks ip route get $Target 2>&1 | Out-String
+    if ($LASTEXITCODE -eq 0 -and $route -match "\bdev\s+(tun|tap|ovpn)") {
+      Write-Host "[ok] route $Target -> $($route.Trim())"
+      return
+    }
+    if ($i -lt $attempts) {
+      Write-Host "[retry $i/$attempts] route $Target not on tun yet (client reconnecting?)"
+      Start-Sleep -Seconds 5
+    }
   }
-  Write-Host "[ok] route $Target -> $($route.Trim())"
+  throw "route check failed for ${Target}: $route"
 }
 
 function Read-Exact {
@@ -105,12 +123,15 @@ function Test-SocksBanner {
     [Parameter(Mandatory = $true)][string]$ExpectedPattern
   )
 
+  # Short timeout on purpose: when the VPN client is mid-reconnect the SYN
+  # black-holes; fail fast and let the retry wrapper land inside a connected
+  # window instead of burning 15s per attempt.
   $client = [System.Net.Sockets.TcpClient]::new()
-  $client.ReceiveTimeout = 15000
-  $client.SendTimeout = 15000
+  $client.ReceiveTimeout = 3000
+  $client.SendTimeout = 3000
 
   try {
-    $client.Connect("127.0.0.1", 1080)
+    $client.Connect("127.0.0.1", $script:SocksPort)
     $stream = $client.GetStream()
 
     [byte[]]$hello = @([byte]0x05, [byte]0x01, [byte]0x00)
@@ -161,6 +182,47 @@ function Test-SocksBanner {
   }
 }
 
+# Wait until the target's route inside the container is on the tun (= the VPN
+# is in a connected window). Probing blind can phase-lock with a periodic
+# server-side disconnect cycle and miss every window; a real consumer's retries
+# land in a window the same way this does.
+function Wait-TunWindow {
+  param([Parameter(Mandatory = $true)][string]$Target, [int]$TimeoutSec = 40)
+  $deadline = (Get-Date).AddSeconds($TimeoutSec)
+  while ((Get-Date) -lt $deadline) {
+    $r = & docker exec xmu-securelink-socks ip route get $Target 2>$null | Out-String
+    if ($r -match "\bdev\s+(tun|tap|ovpn)") { return $true }
+    Start-Sleep -Milliseconds 500
+  }
+  return $false
+}
+
+# Retry wrapper for the banner probes: a probe hitting the few-second window of
+# a VPN reconnect fails spuriously; the entrypoint self-heals within one watch
+# tick, so retrying is the correct acceptance semantics.
+function Test-SocksBannerWithRetry {
+  param(
+    [Parameter(Mandatory = $true)][string]$Name,
+    [Parameter(Mandatory = $true)][string]$TargetHost,
+    [Parameter(Mandatory = $true)][int]$TargetPort,
+    [Parameter(Mandatory = $true)][string]$ExpectedPattern,
+    [int]$Attempts = 20
+  )
+  for ($i = 1; $i -le $Attempts; $i++) {
+    try {
+      if (-not (Wait-TunWindow -Target $TargetHost)) {
+        throw "no connected VPN window within 40s (route never on tun)"
+      }
+      Test-SocksBanner -Name $Name -TargetHost $TargetHost -TargetPort $TargetPort -ExpectedPattern $ExpectedPattern
+      return
+    } catch {
+      if ($i -eq $Attempts) { throw }
+      Write-Host "[retry $i/$Attempts] $Name probe failed: $($_.Exception.Message)"
+      Start-Sleep -Milliseconds 700
+    }
+  }
+}
+
 $dataDir = Resolve-DataDir $SecureLinkDataDir
 if (-not (Test-Path -LiteralPath (Join-Path $dataDir "session.json"))) {
   throw "session.json not found in $dataDir"
@@ -170,6 +232,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $dataDir "device_id"))) {
 }
 
 $env:SECURELINK_DATA_DIR = Convert-ToDockerPath $dataDir
+$env:SOCKS_HOST_PORT = "$SocksPort"   # compose reads this for the host port mapping
 
 Remove-Item -LiteralPath $StepLog -Force -ErrorAction SilentlyContinue
 Write-Step "SECURELINK_DATA_DIR=$env:SECURELINK_DATA_DIR"
@@ -190,16 +253,20 @@ try {
   Write-Step "checking routes"
   Assert-RouteViaTun "121.192.180.236"
   Assert-RouteViaTun "59.77.5.59"
+  Assert-RouteViaTun "219.229.81.200"
 
   Write-Step "checking FTP banner"
-  Test-SocksBanner "FTP" "121.192.180.236" 21 "^220 "
+  Test-SocksBannerWithRetry "FTP" "121.192.180.236" 21 "^220 "
   Write-Step "checking SSH banner"
-  Test-SocksBanner "SSH" "59.77.5.59" 2222 "^SSH-2\.0-"
+  Test-SocksBannerWithRetry "SSH" "59.77.5.59" 2222 "^SSH-2\.0-"
 
   Write-Step "SOCKS5 -> Docker -> VPN validation passed"
 }
 finally {
   Write-Step "stopping docker compose"
-  & docker compose -f $ComposeFile down --timeout 10
+  # 30s: entrypoint waits up to ~10s for the VPN client to disconnect cleanly.
+  # A SIGKILL here leaves a half-open session server-side and later connections
+  # get kicked into a reconnect loop, so give the graceful path room.
+  & docker compose -f $ComposeFile down --timeout 30
   Write-Step "docker compose stopped"
 }
