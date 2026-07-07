@@ -43,6 +43,9 @@ pub async fn logout(ctx: Context) -> Result<()> {
 
     LOGIN_DATA.remove(&id)?;
 
+    // 登出后即时把该用户从选课索引移除，不必等下次兜底重建。
+    crate::logic::rollcall::spawn_remove(id);
+
     ctx.send_message_async(message::from_str("已删除登录数据"));
 
     Ok(())

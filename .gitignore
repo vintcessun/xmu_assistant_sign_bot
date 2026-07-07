@@ -17,3 +17,4 @@ run.exe
 /flamegraphs_output
 /run.bat
 run
+scripts/.build_alinux3_inner.sh

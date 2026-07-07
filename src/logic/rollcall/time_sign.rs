@@ -1,6 +1,5 @@
 use crate::abi::client::get_client;
 use crate::abi::echo::Echo;
-use crate::abi::logic_import::*;
 use crate::abi::message::MessageSend;
 use crate::abi::message::api::SendGroupMessageParams;
 use crate::abi::network::BotClient;
@@ -22,7 +21,6 @@ use crate::{
 use anyhow::Result;
 use async_trait::async_trait;
 use dashmap::DashSet;
-use helper::handler;
 use std::sync::Arc;
 use std::{sync::LazyLock, time::Duration};
 use tracing::{error, info, trace};
@@ -227,10 +225,3 @@ async fn time_sign_task() -> Result<()> {
 
 pub static TIME_SIGN_TASK_RUNNER: LazyLock<Arc<TaskRunner<TimeSignTask>>> =
     LazyLock::new(|| TaskRunner::new(TimeSignTask));
-
-#[handler(msg_type=Message)]
-pub async fn time_sign(ctx: Context) -> Result<()> {
-    TIME_SIGN_TASK_RUNNER.get_latest().await?;
-
-    Ok(())
-}

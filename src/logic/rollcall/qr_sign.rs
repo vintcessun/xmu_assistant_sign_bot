@@ -1,3 +1,4 @@
+use super::course_index::qq_for_course;
 use super::data::LOGIN_DATA;
 use crate::{
     abi::{
@@ -110,10 +111,22 @@ async fn qr_sign_cmd_process_file(img: &image::DataReceive) -> Result<Vec<Vec<Qr
 pub async fn qr_sign_request(data: &str) -> Result<Vec<QrSignResponse>> {
     trace!("进行二维码推送签到{data}");
     let parsed = QrSignRequest::parse(data).await?;
-    let mut qq_list = Vec::new();
-    for entry in &*LOGIN_DATA {
-        qq_list.push(*entry.key());
-    }
+    // 优先用选课索引按 course_id 精准找“选了这门课的已登录用户”，减少无差别全推；
+    // 索引未就绪 / 无该课匹配时兜底全量推送，保证不漏签。
+    let qq_list: Vec<i64> = match qq_for_course(parsed.course_id).await {
+        Some(list) if !list.is_empty() => {
+            debug!(course_id = parsed.course_id, count = list.len(), "按选课索引精准推送");
+            list
+        }
+        _ => {
+            debug!(course_id = parsed.course_id, "选课索引未命中，兜底全量推送");
+            let mut all = Vec::new();
+            for entry in &*LOGIN_DATA {
+                all.push(*entry.key());
+            }
+            all
+        }
+    };
     let mut task = Vec::with_capacity(qq_list.len());
     for qq in qq_list.iter().copied() {
         task.push(QrSignRequest::push(qq, &parsed));

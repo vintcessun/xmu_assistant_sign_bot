@@ -32,6 +32,9 @@ pub async fn update_and_login(
 
     write_client_cache(id, session.clone(), "login_qr");
 
+    // 登录后即时把该用户选课并入索引（随登录动态更新，不必等下次定时刷新）。
+    crate::logic::rollcall::spawn_upsert(id, login_data.lnt.clone());
+
     Ok(login_data)
 }
 
@@ -150,6 +153,8 @@ pub async fn try_pwd_login(session: &SessionClient, id: i64) -> Result<Arc<Login
                 e
             })?;
             write_client_cache(id, session.clone(), "login_pwd");
+            // 登录后即时把该用户选课并入索引（随登录动态更新）。
+            crate::logic::rollcall::spawn_upsert(id, login_data.lnt.clone());
             Ok(login_data)
         }
         None => Err(anyhow!("账号密码登录数据不存在")),
