@@ -832,28 +832,56 @@ pub fn lnt_get_api(args: TokenStream, input: TokenStream) -> TokenStream {
                 // 2. 构造 URL (IDE 会在此处通过 Span 关联实现高亮)
                 let target_url = #url_builder;
 
-                // 3. 执行请求并处理分级英文错误
-                let res = client.get(&target_url).await
-                    .map_err(|e| anyhow::anyhow!("Network Error: Failed to reach '{}'. Details: {}", target_url, e))?;
+                // LNT 会话未就绪时（登录握手后数秒内），/api/* 会被 302 到 SSO 登录页，
+                // 最终落在一个返回 200 的 text/html 页面上；此时判为“尚未认证”并有界重试，
+                // 避免把登录页 HTML 当作 JSON 解析、误报 “error decoding response body”。
+                const MAX_TRIES: u32 = 4;
+                let mut attempt: u32 = 0;
+                loop {
+                    attempt += 1;
 
-                if !res.status().is_success() {
-                    return Err(anyhow::anyhow!(
-                        "HTTP Error: API returned status {} for URL: {}",
-                        res.status(),
-                        target_url
-                    ));
+                    // 3. 执行请求并处理分级英文错误
+                    let res = client.get(&target_url).await
+                        .map_err(|e| anyhow::anyhow!("Network Error: Failed to reach '{}'. Details: {}", target_url, e))?;
+
+                    if !res.status().is_success() {
+                        return Err(anyhow::anyhow!(
+                            "HTTP Error: API returned status {} for URL: {}",
+                            res.status(),
+                            target_url
+                        ));
+                    }
+
+                    let is_login_html = res
+                        .headers()
+                        .get(reqwest::header::CONTENT_TYPE)
+                        .and_then(|v| v.to_str().ok())
+                        .map(|ct| ct.contains("text/html"))
+                        .unwrap_or(false);
+
+                    if is_login_html {
+                        if attempt >= MAX_TRIES {
+                            return Err(anyhow::anyhow!(
+                                "Auth Error: LNT 会话未就绪，{} 次重试后仍被重定向到登录页: {}",
+                                MAX_TRIES,
+                                target_url
+                            ));
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+                        continue;
+                    }
+
+                    // 4. 反序列化
+                    let data = res.json_smart::<#response_type>().await
+                        .map_err(|e| anyhow::anyhow!(
+                            "Deserialization Error: Failed to parse {} from {}. Error: {}",
+                            stringify!(#response_type),
+                            target_url,
+                            e
+                        ))?;
+
+                    return Ok(data);
                 }
-
-                // 4. 反序列化
-                let data = res.json_smart::<#response_type>().await
-                    .map_err(|e| anyhow::anyhow!(
-                        "Deserialization Error: Failed to parse {} from {}. Error: {}",
-                        stringify!(#response_type),
-                        target_url,
-                        e
-                    ))?;
-
-                Ok(data)
             }
         }
     };

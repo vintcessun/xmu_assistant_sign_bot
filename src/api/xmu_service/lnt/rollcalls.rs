@@ -86,4 +86,12 @@ mod tests {
         println!("Rollcalls: {:?}", data);
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_result_2026_7_10() -> Result<()> {
+        let data = r#"{"rollcalls":[{"avatar_big_url":"","class_name":"","course_id":102245,"course_title":"\u667a\u80fd\u4fe1\u606f\u68c0\u7d22","created_by":62032,"created_by_name":"\u6797\u8fbe\u771f","department_name":"\u4fe1\u606f\u5b66\u9662","grade_name":"","group_set_id":0,"is_expired":false,"is_number":false,"is_radar":true,"published_at":null,"rollcall_id":407067,"rollcall_status":"in_progress","rollcall_time":"2026-07-10T06:25:12Z","scored":true,"source":"radar","status":"on_call_fine","student_rollcall_id":0,"title":"2026.07.10 14:25","type":"another"}]}"#;
+        let data: RollcallsResponse = serde_json::from_str(data)?;
+        println!("Rollcalls: {:?}", data);
+        Ok(())
+    }
 }

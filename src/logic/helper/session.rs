@@ -81,6 +81,9 @@ where
     info!(user_id = id, "未登录发起登录");
     let login_data = process_login(ctx, id).await?;
     let client = get_session_client(&login_data.lnt);
+    // 登录刚完成时 LNT 会话可能尚未被服务端标记为已认证，先等待就绪再返回，
+    // 否则紧接着的首个 /api/* 请求会落在登录页 HTML 上、解析失败。
+    crate::api::xmu_service::lnt::wait_lnt_ready(&client).await;
     // process_login 内部路径已写入缓存；此处为 qr 登录返回后经 lnt 重建 session 的补充写入
     write_client_cache(id, client.clone(), "login_qr_rehydrate");
     Ok(client)

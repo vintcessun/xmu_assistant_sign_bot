@@ -103,7 +103,12 @@ pub async fn login_password(
         .get_cookie("CASTGC", &IDS_URL)
         .ok_or(anyhow!("登录失败，未获取到CASTGC Cookie"))?;
 
-    let _ = session.get(LNT_URL.clone()).await?.error_for_status()?;
+    // 通过 /api/profile 触发大陆 cas-client broker 完成 SSO：CASTGC 挂在 ids.xmu.edu.cn 上，
+    // 只有大陆 broker 能用它静默认证。若改打根路径 "/"，会被 Keycloak 路由到马来西亚 broker
+    // (cas-client-malaysia)、只拿到匿名 session，导致随后所有 /api/* 被重定向到登录页解析失败。
+    crate::api::xmu_service::lnt::ProfileWithoutCache::get_from_client(session)
+        .await
+        .map_err(|e| anyhow!("LNT 认证失败（/api/profile 未通过）：{e}"))?;
 
     let lnt = session
         .get_cookie("session", &LNT_URL)

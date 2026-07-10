@@ -139,7 +139,10 @@ pub async fn castgc_get_session(castgc: &str) -> anyhow::Result<String> {
 
     session.set_cookie("CASTGC", castgc, &IDS_URL);
 
-    let _ = session.get(LNT_URL.clone()).await?.error_for_status()?;
+    // 打 /api/profile 走大陆 cas-client broker 用 CASTGC 静默认证（根路径会走马来西亚 broker、只得匿名会话）。
+    crate::api::xmu_service::lnt::ProfileWithoutCache::get_from_client(&session)
+        .await
+        .map_err(|e| anyhow!("LNT 认证失败（/api/profile 未通过）：{e}"))?;
 
     let lnt = session
         .get_cookie("session", &LNT_URL)
@@ -179,13 +182,15 @@ pub async fn login_request(session: &SessionClient, data: LoginRequest) -> Resul
     })?;
     debug!("成功获取 CASTGC Cookie");
 
-    // 访问 LNT URL 获取 session cookie
-    let lnt_url = LNT_URL.clone();
-    let lnt_resp = session.get(lnt_url).await?;
-    lnt_resp.error_for_status().map_err(|e| {
-        error!(url = ?LNT_URL, error = ?e, "访问 LNT URL 返回非成功状态码");
-        e
-    })?;
+    // 通过 /api/profile 触发大陆 cas-client broker 完成 SSO：CASTGC 挂在 ids.xmu.edu.cn 上，
+    // 只有大陆 broker 能用它静默认证。若改打根路径 "/"，会被 Keycloak 路由到马来西亚 broker
+    // (cas-client-malaysia)、只拿到匿名 session，导致随后所有 /api/* 被重定向到登录页解析失败。
+    crate::api::xmu_service::lnt::ProfileWithoutCache::get_from_client(session)
+        .await
+        .map_err(|e| {
+            error!(error = ?e, "LNT 认证失败（/api/profile 未通过）");
+            anyhow!("LNT 认证失败（/api/profile 未通过）：{e}")
+        })?;
 
     let lnt = session.get_cookie("session", &LNT_URL).ok_or_else(|| {
         error!("登录失败，未获取到 LNT session Cookie");

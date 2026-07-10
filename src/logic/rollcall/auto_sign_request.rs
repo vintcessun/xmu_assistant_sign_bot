@@ -368,6 +368,14 @@ impl AutoSignRequest {
         if let Ok(loc) = self.radar_retry(activity_id).await {
             return Ok(loc);
         }
+        // 兜底：四种策略都“失败”，但每次尝试其实都已向 /answer 提交过位置，
+        // 服务端可能已据此把该活动记为已签到（如距离>300 的客户端保护先返回、
+        // 或某次提交后的下游步骤出错）。这里回查真实状态，避免误报失败。
+        if let Ok(RollcallStatus::OnCallFine) = self.check_signed_state(activity_id).await {
+            let course_info = CourseData::get_from_client(&self.client, self.course_id).await?;
+            trace!(activity_id, "四种策略均失败，但服务端回查已签到");
+            return Ok(AutoSignResponse::radar_already_signed(course_info.name.clone()));
+        }
         bail!("所有尝试雷达签到失败")
     }
 }

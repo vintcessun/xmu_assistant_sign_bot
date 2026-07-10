@@ -417,6 +417,7 @@ fn generate_lnt_api_mod() {
         r#"
 use crate::api::network::SessionClient;
 use std::sync::LazyLock;
+use tracing::{debug, warn};
 use url::Url;
 use url_macro::url;
 
@@ -426,6 +427,29 @@ pub fn get_session_client(session: &str) -> SessionClient {
     let client = SessionClient::new();
     client.set_cookie("session", session, &LNT_URL);
     client
+}
+
+/// 等待 LNT 会话在服务端就绪。
+///
+/// SSO 握手拿到 `session` cookie 后，服务端往往还需数秒才把该会话真正标记为
+/// “已认证”。在此窗口内请求 `/api/*` 会被 302 重定向到登录页，导致后续解析失败。
+/// 这里用 `/api/profile` 作为轻量探针有界重试，返回会话是否已就绪。探针所用的
+/// client 与真实消费方一致（仅带 `session` cookie），以准确反映可用性。
+pub async fn wait_lnt_ready(client: &SessionClient) -> bool {
+    const MAX_ATTEMPTS: u32 = 5;
+    for attempt in 1..=MAX_ATTEMPTS {
+        if ProfileWithoutCache::get_from_client(client).await.is_ok() {
+            if attempt > 1 {
+                debug!(attempt, "LNT 会话已就绪");
+            }
+            return true;
+        }
+        if attempt < MAX_ATTEMPTS {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+    }
+    warn!(attempts = MAX_ATTEMPTS, "LNT 会话多次探测后仍未就绪，仍继续返回");
+    false
 }
 "#,
     );
