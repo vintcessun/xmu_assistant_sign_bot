@@ -69,6 +69,7 @@ mod tests {
     use anyhow::Result;
 
     #[tokio::test]
+    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test_exist() -> Result<()> {
         let castgc = "TGT-2531390-mxqQ9-BtOM8LxgojrfyoyhQUHAocCgolFFBSdT6nuxq62GVndQ7ULC1G-pK7tECBfoAnull_main";
         let course_name = "离散数学";
@@ -79,6 +80,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test_no() -> Result<()> {
         let castgc = "TGT-2531390-mxqQ9-BtOM8LxgojrfyoyhQUHAocCgolFFBSdT6nuxq62GVndQ7ULC1G-pK7tECBfoAnull_main";
         let course_name = "生理医学";

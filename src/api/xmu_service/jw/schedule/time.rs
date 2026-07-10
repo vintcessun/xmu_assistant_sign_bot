@@ -32,6 +32,7 @@ mod tests {
     use anyhow::Result;
 
     #[tokio::test]
+    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test() -> Result<()> {
         let castgc = "TGT-3689174-yqV2dqeExUYDOIabL8BdMNCkm-EUrfWocQ18HO03gqA4EUdlwOCCgO9UlWhoSi48p4gnull_main";
         let data = ScheduleTimeRequest {

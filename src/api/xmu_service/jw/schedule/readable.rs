@@ -466,6 +466,7 @@ mod tests {
     use std::process::exit;
 
     #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test_schedule_course_time_save() {
         let castgc = "TGT-4405969-pmHg8jgHP6m--sUUzyI-2sN6Sx8UweIUlomnrNJgHTcWVTk0nKoKcuEYm7rT1DsrV6gnull_main";
         let data = ScheduleListRequest {};

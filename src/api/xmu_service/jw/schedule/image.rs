@@ -626,6 +626,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     pub async fn test() -> Result<()> {
         let castgc = "TGT-5205798-NK0oXgq45hvHea7P3Uh2Xa0LYmqw64m-AGxvUWcR3-iGLwPHM57b1cVe8jlzLLjmoe8null_main";
         println!("[1/4] 获取课程列表...");

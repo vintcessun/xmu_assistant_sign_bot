@@ -113,6 +113,7 @@ mod tests {
     use anyhow::Result;
 
     #[tokio::test]
+    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test() -> Result<()> {
         let castgc = "TGT-4217253-xbc8sI9hkW3Zy7mhq0FpB8NVfFIjmHobl3I7AUfadKSYerFmOpRsPpwAdjSVuI1V--0null_main";
         let session = castgc_get_session(castgc).await?;
