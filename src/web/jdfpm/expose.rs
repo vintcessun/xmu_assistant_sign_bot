@@ -42,17 +42,11 @@ struct QueryRequest {
 struct CertificateRequest {
     /// 计算结果唯一ID（GpaRecordDetail::wid）
     wid: String,
-    #[serde(default = "default_show_rank")]
-    show_rank: bool,
 }
 
 #[derive(Deserialize)]
 struct PdfQuery {
     wid: String,
-}
-
-const fn default_show_rank() -> bool {
-    true
 }
 
 #[derive(Serialize)]
@@ -98,9 +92,13 @@ struct RecordView {
 struct QueryResponse {
     message: String,
     record: RecordView,
+    /// 绩点证明：排名只在这里面，所以查询时就一并取回，不再让用户多点一次。
+    /// 取不到时为 null，并在 certificate_error 里说明原因。
+    certificate: Option<CertificateResponse>,
+    certificate_error: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct CertificateResponse {
     wid: String,
     /// 证明 PDF 的完整正文
@@ -108,6 +106,43 @@ struct CertificateResponse {
     /// 从正文里抽出的关键字段（排名等只有证明里才有的信息）
     facts: CertificateFacts,
     pdf_url: String,
+}
+
+/// 下载证明 PDF 并提取正文；结果缓存在会话里，供页面直接下载 PDF。
+///
+/// 排名（“绩点排名20”）教务的 JSON 接口一律返回 `*`，只有这份证明里才写明，
+/// 所以查询绩点时必须顺带把它取回来，否则页面上就是没有排名。
+async fn build_certificate(
+    session: &Arc<JdfpmSession>,
+    token: &GuardToken,
+    wid: &str,
+) -> anyhow::Result<CertificateResponse> {
+    let cached = match session.cached_certificate(wid) {
+        Some(cached) => cached,
+        None => {
+            let pdf = GpaCertificate::download_from_client(&session.client, wid, true).await?;
+            let text = GpaCertificate::extract_text(pdf.clone()).await?;
+            let cached = CachedCertificate {
+                wid: wid.to_owned(),
+                pdf,
+                text,
+            };
+            session.cache_certificate(cached.clone());
+            cached
+        }
+    };
+
+    Ok(CertificateResponse {
+        facts: extract_facts(&cached.text),
+        pdf_url: format!(
+            "/jdfpm/{}/certificate.pdf?wid={}&token={}",
+            session.id,
+            urlencoding::encode(&cached.wid),
+            urlencoding::encode(&token.0)
+        ),
+        wid: cached.wid,
+        text: cached.text,
+    })
 }
 
 /// 教务侧调用失败：区别于本地 4xx，用 502 表达“上游出错”。
@@ -212,11 +247,7 @@ async fn query_handler(
 
     // 已有有效结果时不再重复申请（教务对重复申请是直接报错的）。
     if let Some(row) = GpaRecord::find_valid(&rows, &payload.range_wid) {
-        return Json(QueryResponse {
-            message: "已有有效的绩点计算结果".to_owned(),
-            record: to_record_view(row),
-        })
-        .into_response();
+        return query_response(&session, &token, "已有有效的绩点计算结果", row).await;
     }
 
     let outcome = match GpaApply::submit_from_client(
@@ -239,11 +270,7 @@ async fn query_handler(
             Err(e) => return upstream("获取绩点计算记录失败", e),
         };
         if let Some(row) = GpaRecord::find_valid(&rows, &payload.range_wid) {
-            return Json(QueryResponse {
-                message: outcome.as_str().to_owned(),
-                record: to_record_view(row),
-            })
-            .into_response();
+            return query_response(&session, &token, outcome.as_str(), row).await;
         }
         trace!(attempt = attempt, "绩点计算结果尚未生成，继续等待");
     }
@@ -253,6 +280,38 @@ async fn query_handler(
         Json(serde_json::json!({ "detail": "教务仍在计算，请稍后重新查询" })),
     )
         .into_response()
+}
+
+/// 组装查询结果：绩点数据 + 证明正文里的排名。
+///
+/// 证明取不到不算查询失败——绩点本身已经拿到了，把原因一并回给页面即可。
+async fn query_response(
+    session: &Arc<JdfpmSession>,
+    token: &GuardToken,
+    message: &str,
+    row: &GpaRecordResponse,
+) -> Response {
+    let (certificate, certificate_error) = match row.print_wid() {
+        Some(wid) => match build_certificate(session, token, wid).await {
+            Ok(certificate) => (Some(certificate), None),
+            Err(e) => {
+                warn!(wid = wid, error = ?e, "生成绩点证明失败，仅返回绩点数据");
+                (None, Some(format!("生成绩点证明失败，排名无法读取：{e}")))
+            }
+        },
+        None => (
+            None,
+            Some("教务尚未给出该次计算的结果编号，暂时无法生成证明".to_owned()),
+        ),
+    };
+
+    Json(QueryResponse {
+        message: message.to_owned(),
+        record: to_record_view(row),
+        certificate,
+        certificate_error,
+    })
+    .into_response()
 }
 
 /// 下载绩点证明 PDF 并提取正文；PDF 本身缓存在会话里供页面下载。
@@ -266,47 +325,10 @@ async fn certificate_handler(
         Err(resp) => return *resp,
     };
 
-    let cached = match session.cached_certificate(&payload.wid) {
-        Some(cached) => cached,
-        None => {
-            let pdf = match GpaCertificate::download_from_client(
-                &session.client,
-                &payload.wid,
-                payload.show_rank,
-            )
-            .await
-            {
-                Ok(pdf) => pdf,
-                Err(e) => return upstream("下载绩点证明失败", e),
-            };
-
-            let text = match GpaCertificate::extract_text(pdf.clone()).await {
-                Ok(text) => text,
-                Err(e) => return upstream("提取绩点证明正文失败", e),
-            };
-
-            let cached = CachedCertificate {
-                wid: payload.wid.clone(),
-                pdf,
-                text,
-            };
-            session.cache_certificate(cached.clone());
-            cached
-        }
-    };
-
-    Json(CertificateResponse {
-        facts: extract_facts(&cached.text),
-        pdf_url: format!(
-            "/jdfpm/{}/certificate.pdf?wid={}&token={}",
-            session.id,
-            urlencoding::encode(&cached.wid),
-            urlencoding::encode(&token.0)
-        ),
-        wid: cached.wid,
-        text: cached.text,
-    })
-    .into_response()
+    match build_certificate(&session, &token, &payload.wid).await {
+        Ok(certificate) => Json(certificate).into_response(),
+        Err(e) => upstream("生成绩点证明失败", e),
+    }
 }
 
 /// 直接下载已缓存的 PDF。浏览器导航加不了请求头，令牌走查询串。

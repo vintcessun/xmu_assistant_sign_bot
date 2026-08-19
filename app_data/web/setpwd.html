@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设置访问口令</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background:#f2f4f7; margin:0; padding:24px; color:#1f2933; }
+  .card { max-width:520px; margin:0 auto; background:#fff; border-radius:14px; padding:24px; box-shadow:0 8px 24px rgba(0,0,0,.08); }
+  h1 { font-size:20px; margin:0 0 12px; }
+  .sub { color:#6b7280; font-size:13px; margin:0 0 16px; }
+  input[type=password], input[type=text] { width:100%; box-sizing:border-box; border:1px solid #d1d5db; border-radius:8px; padding:10px; font-size:15px; }
+  input + input { margin-top:10px; }
+  button { margin-top:10px; width:100%; padding:11px; border:0; border-radius:8px; background:#2563eb; color:#fff; font-size:15px; cursor:pointer; }
+  button.ghost { background:#e5e7eb; color:#1f2933; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; gap:10px; }
+  .row button { flex:1; }
+  .msg { margin-top:12px; padding:10px 12px; border-radius:8px; font-size:13px; white-space:pre-line; display:none; }
+  .msg.ok { display:block; background:#ecfdf5; color:#065f46; }
+  .msg.err { display:block; background:#fef2f2; color:#991b1b; }
+  .msg.info { display:block; background:#eff6ff; color:#1e40af; }
+  .hidden { display:none; }
+  .note { color:#6b7280; font-size:12px; line-height:1.7; margin-top:16px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1 id="title">设置访问口令</h1>
+  <p class="sub" id="sub">正在读取链接状态…</p>
+
+  <div id="form" class="hidden">
+    <input type="password" id="pwd1" placeholder="访问口令" autocomplete="new-password">
+    <input type="password" id="pwd2" placeholder="再输一次" autocomplete="new-password">
+    <div class="row">
+      <button id="genBtn" class="ghost">随机生成</button>
+      <button id="revealBtn" class="ghost">显示口令</button>
+    </div>
+    <button id="saveBtn">保存</button>
+  </div>
+
+  <div id="msg" class="msg"></div>
+
+  <p class="note" id="note"></p>
+</div>
+
+<script>
+  const SETUP_ID = __SETUP_ID_JS__;
+  const $ = (id) => document.getElementById(id);
+  let MIN_LEN = 6;
+
+  function show(text, kind) {
+    $('msg').textContent = text;
+    $('msg').className = 'msg ' + kind;
+  }
+
+  async function api(method, url, body) {
+    const options = { method, headers: {} };
+    if (body !== undefined) {
+      options.headers['Content-Type'] = 'application/json';
+      options.body = JSON.stringify(body);
+    }
+    const resp = await fetch(url, options);
+    const text = await resp.text();
+    let data = null;
+    if (text) { try { data = JSON.parse(text); } catch (e) { data = { detail: text }; } }
+    if (!resp.ok) throw new Error((data && data.detail) || ('请求失败：HTTP ' + resp.status));
+    return data;
+  }
+
+  async function init() {
+    try {
+      const state = await api('GET', '/guard/setup/' + SETUP_ID + '/state');
+      MIN_LEN = state.min_password_len;
+      $('form').classList.remove('hidden');
+      $('title').textContent = state.refresh ? '刷新访问口令' : '设置访问口令';
+      $('sub').textContent = 'QQ：__QQ_ID__ · '
+        + (state.refresh
+            ? '你之前已经设过口令，保存后旧口令立即失效'
+            : '这是你的长期口令，设一次就一直有效')
+        + ' · 本链接 ' + Math.max(0, Math.floor(state.seconds_left / 60)) + ' 分钟内有效';
+      $('pwd1').placeholder = '访问口令（至少 ' + MIN_LEN + ' 位）';
+      $('note').textContent = '口令服务端只保存摘要（随机盐 + 10 万轮 SHA-256），明文不落盘、不进日志。'
+        + '保存后本链接立即作废；以后所有需要口令的页面都用这一个口令解锁，'
+        + '要更换口令就重新发送 /setpwd。';
+    } catch (e) {
+      show(e.message, 'err');
+      $('sub').textContent = '链接不可用';
+    }
+  }
+
+  // 口令在浏览器本地生成，不必先向服务端讨一个。
+  $('genBtn').onclick = () => {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    const bytes = new Uint32Array(14);
+    crypto.getRandomValues(bytes);
+    const pwd = Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
+    $('pwd1').value = pwd;
+    $('pwd2').value = pwd;
+    $('pwd1').type = 'text';
+    $('pwd2').type = 'text';
+    $('revealBtn').textContent = '隐藏口令';
+    show('已生成随机口令，请先记下来再保存。', 'info');
+  };
+
+  $('revealBtn').onclick = () => {
+    const shown = $('pwd1').type === 'text';
+    $('pwd1').type = shown ? 'password' : 'text';
+    $('pwd2').type = shown ? 'password' : 'text';
+    $('revealBtn').textContent = shown ? '显示口令' : '隐藏口令';
+  };
+
+  $('saveBtn').onclick = async () => {
+    const p1 = $('pwd1').value;
+    const p2 = $('pwd2').value;
+    if (p1.length < MIN_LEN) { show('口令至少 ' + MIN_LEN + ' 位', 'err'); return; }
+    if (p1 !== p2) { show('两次输入的口令不一致', 'err'); return; }
+
+    $('saveBtn').disabled = true;
+    try {
+      const data = await api('POST', '/guard/setup/' + SETUP_ID + '/save', { password: p1 });
+      $('form').classList.add('hidden');
+      $('sub').textContent = '完成';
+      show(data.message, 'ok');
+    } catch (e) {
+      show(e.message, 'err');
+      $('saveBtn').disabled = false;
+    }
+  };
+
+  $('pwd2').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') $('saveBtn').click(); });
+
+  init();
+</script>
+</body>
+</html>

@@ -1,14 +1,18 @@
-use crate::web::guard::task::{Guard, MIN_PASSWORD_LEN, get_guard, verify};
+use crate::web::guard::task::{
+    Guard, MIN_PASSWORD_LEN, get_guard, get_setup, secret_updated_at, verify,
+};
 use axum::{
     Json, Router,
     extract::{FromRequestParts, Path},
     http::{StatusCode, request::Parts},
-    response::IntoResponse,
+    response::{Html, IntoResponse},
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::trace;
+
+include!(concat!(env!("OUT_DIR"), "/web_data.rs"));
 
 /// 从 `Authorization: Bearer <token>` 或 `?token=<token>` 里取出访问令牌。
 ///
@@ -47,7 +51,7 @@ impl<S: Send + Sync> FromRequestParts<S> for GuardToken {
 }
 
 #[derive(Deserialize)]
-struct GuardPath {
+struct IdPath {
     id: String,
 }
 
@@ -57,18 +61,23 @@ struct PasswordRequest {
 }
 
 #[derive(Serialize)]
-struct StateResponse {
+struct SetupStateResponse {
     qq: i64,
-    /// 口令是否已经被设置过：false 时前端渲染「设置口令」，true 时渲染「输入口令」。
-    configured: bool,
+    /// true = 这次是刷新（该 QQ 之前设过口令），false = 首次设置。
+    refresh: bool,
+    seconds_left: u64,
+    min_password_len: usize,
+}
+
+#[derive(Serialize)]
+struct GuardStateResponse {
+    qq: i64,
     unlocked: bool,
     locked: bool,
     seconds_left: u64,
-    /// 还剩多久必须完成口令设置。
-    setup_seconds_left: u64,
     lock_seconds_left: u64,
-    /// 口令最短长度，供前端做即时校验。
-    min_password_len: usize,
+    /// 口令最近一次设置时间；页面用它提示"口令是什么时候设的"。
+    password_updated_at: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -79,50 +88,58 @@ struct UnlockResponse {
     seconds_left: u64,
 }
 
-fn gone() -> (StatusCode, Json<serde_json::Value>) {
+fn gone(detail: &str) -> (StatusCode, Json<serde_json::Value>) {
     (
         StatusCode::GONE,
-        Json(serde_json::json!({ "detail": "页面口令不存在或已过期，请重新申请" })),
+        Json(serde_json::json!({ "detail": detail })),
     )
 }
 
-/// 锁屏状态：只暴露“是否已解锁 / 是否被锁定 / 还剩多久”，不泄漏任何口令信息。
-async fn state_handler(Path(params): Path<GuardPath>) -> impl IntoResponse {
-    trace!(guard_id = params.id, "查询页面口令状态");
-    let Some(guard) = get_guard(&params.id) else {
-        return gone().into_response();
+// ------------------------------------------------------------ 设置口令页面
+
+async fn setup_page_handler(Path(params): Path<IdPath>) -> impl IntoResponse {
+    match get_setup(&params.id) {
+        Some(task) => Html(
+            SETPWD_HTML
+                .replace("__QQ_ID__", &task.qq.to_string())
+                .replace(
+                    "__SETUP_ID_JS__",
+                    &serde_json::to_string(&task.id).unwrap_or_else(|_| "\"\"".into()),
+                ),
+        )
+        .into_response(),
+        None => (StatusCode::NOT_FOUND, Html(NOT_FOUND_HTML)).into_response(),
+    }
+}
+
+async fn setup_state_handler(Path(params): Path<IdPath>) -> impl IntoResponse {
+    let Some(task) = get_setup(&params.id) else {
+        return gone("这个设置链接不存在、已用过或已过期，请重新发送 /setpwd").into_response();
     };
 
-    let status = guard.status();
-    Json(StateResponse {
-        qq: guard.qq,
-        configured: status.configured,
-        unlocked: status.unlocked,
-        locked: status.locked,
-        seconds_left: status.seconds_left,
-        setup_seconds_left: status.setup_seconds_left,
-        lock_seconds_left: status.lock_seconds_left,
+    Json(SetupStateResponse {
+        qq: task.qq,
+        refresh: task.refresh,
+        seconds_left: task.seconds_left(),
         min_password_len: MIN_PASSWORD_LEN,
     })
     .into_response()
 }
 
-/// 首次设置访问口令。只能成功一次，设置者当场拿到令牌。
-async fn setup_handler(
-    Path(params): Path<GuardPath>,
+/// 保存永久口令。链接一次性，保存成功即失效。
+async fn setup_save_handler(
+    Path(params): Path<IdPath>,
     Json(payload): Json<PasswordRequest>,
 ) -> impl IntoResponse {
-    let Some(guard) = get_guard(&params.id) else {
-        return gone().into_response();
+    let Some(task) = get_setup(&params.id) else {
+        return gone("这个设置链接不存在、已用过或已过期，请重新发送 /setpwd").into_response();
     };
 
-    match guard.setup(&payload.password).await {
-        Ok(token) => Json(UnlockResponse {
-            ok: true,
-            message: "口令已设置，本页面现在归你".to_owned(),
-            token: token.to_string(),
-            seconds_left: guard.seconds_left(),
-        })
+    match task.save(&payload.password).await {
+        Ok(()) => Json(serde_json::json!({
+            "ok": true,
+            "message": "口令已保存，长期有效。以后所有需要口令的页面都用它解锁；要更换请重新发送 /setpwd。"
+        }))
         .into_response(),
         Err(e) => (
             StatusCode::CONFLICT,
@@ -132,13 +149,34 @@ async fn setup_handler(
     }
 }
 
+// -------------------------------------------------------------- 受保护页面
+
+/// 锁屏状态：只暴露"是否已解锁 / 是否被锁定 / 还剩多久"，不泄漏任何口令信息。
+async fn state_handler(Path(params): Path<IdPath>) -> impl IntoResponse {
+    trace!(guard_id = params.id, "查询页面口令状态");
+    let Some(guard) = get_guard(&params.id) else {
+        return gone("页面不存在或已过期，请重新申请").into_response();
+    };
+
+    let status = guard.status();
+    Json(GuardStateResponse {
+        qq: guard.qq,
+        unlocked: status.unlocked,
+        locked: status.locked,
+        seconds_left: status.seconds_left,
+        lock_seconds_left: status.lock_seconds_left,
+        password_updated_at: secret_updated_at(guard.qq),
+    })
+    .into_response()
+}
+
 /// 校验口令并签发访问令牌；成功会顶掉上一位访问者手里的令牌。
 async fn unlock_handler(
-    Path(params): Path<GuardPath>,
+    Path(params): Path<IdPath>,
     Json(payload): Json<PasswordRequest>,
 ) -> impl IntoResponse {
     let Some(guard) = get_guard(&params.id) else {
-        return gone().into_response();
+        return gone("页面不存在或已过期，请重新申请").into_response();
     };
 
     match guard.unlock(&payload.password).await {
@@ -158,7 +196,7 @@ async fn unlock_handler(
 }
 
 /// 主动退出：注销当前令牌，页面回到锁屏。
-async fn lock_handler(Path(params): Path<GuardPath>, token: GuardToken) -> impl IntoResponse {
+async fn lock_handler(Path(params): Path<IdPath>, token: GuardToken) -> impl IntoResponse {
     let Some(guard) = verify(&params.id, &token.0) else {
         return (
             StatusCode::UNAUTHORIZED,
@@ -181,12 +219,12 @@ pub fn require(id: &str, token: &str) -> Result<Arc<Guard>, (StatusCode, Json<se
 
 pub fn task_router(router: Router) -> Router {
     router
-        // 锁屏状态查询
+        // 设置 / 刷新永久口令（一次性链接）
+        .route("/setup/{id}", get(setup_page_handler))
+        .route("/setup/{id}/state", get(setup_state_handler))
+        .route("/setup/{id}/save", post(setup_save_handler))
+        // 受保护页面的锁屏
         .route("/{id}/state", get(state_handler))
-        // 首次设置访问口令
-        .route("/{id}/setup", post(setup_handler))
-        // 口令校验并换取访问令牌
         .route("/{id}/unlock", post(unlock_handler))
-        // 主动注销访问令牌
         .route("/{id}/lock", post(lock_handler))
 }

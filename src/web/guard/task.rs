@@ -1,16 +1,18 @@
+use crate::api::storage::ColdTable;
 use anyhow::{Result, bail};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use dashmap::DashMap;
 use rand::RngExt;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, info, warn};
 
-/// 受保护页面的总有效期，与 /flushvpn、/timetable 的一次性链接保持同一量级。
+/// 设置/刷新口令的一次性链接有效期。口令本身是永久的，只有这个链接短命。
+const SETUP_EXPIRE_SECS: u64 = 15 * 60;
+/// 受保护页面（如绩点查询）的有效期。
 const GUARD_EXPIRE_SECS: u64 = 30 * 60;
-/// 认领窗口：链接是公开发在群里的，口令没人设置就一直敞着风险太大。
-const SETUP_WINDOW_SECS: u64 = 10 * 60;
 /// 连续输错多少次后临时锁定。
 const MAX_FAILS: u32 = 5;
 /// 触发锁定后的冷却时长。
@@ -22,47 +24,59 @@ const DERIVE_DOMAIN: &[u8] = b"xmu-assistant-bot/web-guard/v1";
 /// 口令的最短长度。
 pub const MIN_PASSWORD_LEN: usize = 6;
 
+/// 每个 QQ 一份、**永久有效**的访问口令摘要。只有重新走一次设置链接才会被覆盖。
+///
+/// 用 ColdTable 而不是 HotTable：HotTable 的后台写入协程是一个永不返回的
+/// `spawn_blocking`，`#[tokio::test]` 结束时 runtime 析构会一直等它，测试会挂死
+/// （所以 md 模块的用例才叫 `..._without_db`）。口令读写量极小，直接落盘足够。
+static SECRETS: LazyLock<ColdTable<i64, AccountSecret>> =
+    LazyLock::new(|| ColdTable::new("web_guard_secret"));
+/// 设置/刷新口令的一次性链接。
+static SETUPS: LazyLock<DashMap<String, Arc<SetupTask>>> = LazyLock::new(DashMap::new);
+/// 受保护页面。
 static GUARDS: LazyLock<DashMap<String, Arc<Guard>>> = LazyLock::new(DashMap::new);
 
-/// 一个受口令保护的页面。
-///
-/// 口令不再经过聊天窗口：`/jdpm` 只发链接，口令由**第一个打开页面的人**在网页上设置
-/// （可以手输，也可以让页面随机生成）。明文口令不落盘也不进日志，只留盐和摘要。
-pub struct Guard {
-    pub id: String,
-    /// 发起该页面的 QQ，仅用于页面展示与日志。
-    pub qq: i64,
-    pub expire_at: u64,
-    /// 口令设置（认领）的截止时间。
-    pub setup_deadline: u64,
-    state: Mutex<GuardState>,
-}
-
-/// 已设置的口令：随机盐 + 多轮摘要。
-struct Secret {
+/// 落盘的口令摘要。明文永不保存、也永不进日志。
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AccountSecret {
     salt: [u8; 16],
     digest: [u8; 32],
+    /// 设置（或最近一次刷新）的时间戳。
+    pub updated_at: u64,
+}
+
+/// 一条「设置或刷新口令」的一次性链接。
+pub struct SetupTask {
+    pub id: String,
+    pub qq: i64,
+    /// true 表示这是刷新（该 QQ 之前已经设过口令）。
+    pub refresh: bool,
+    pub expire_at: u64,
+    used: Mutex<bool>,
+}
+
+/// 一个受口令保护的页面。口令不属于页面，属于 QQ 账号。
+pub struct Guard {
+    pub id: String,
+    pub qq: i64,
+    pub expire_at: u64,
+    state: Mutex<GuardState>,
 }
 
 #[derive(Default)]
 struct GuardState {
-    /// 尚未设置口令时为 None。
-    secret: Option<Secret>,
     /// 当前唯一有效的访问令牌。重新输入口令会轮换它，等价于把上一位访问者踢下线。
     token: Option<Arc<str>>,
     fails: u32,
     locked_until: u64,
 }
 
-/// 页面当前状态，用于前端决定渲染「设置口令」还是「输入口令」。
+/// 页面当前状态，用于前端渲染锁屏。
 #[derive(Debug, Clone, Copy)]
 pub struct GuardStatus {
-    /// 口令是否已经设置过。
-    pub configured: bool,
     pub unlocked: bool,
     pub locked: bool,
     pub seconds_left: u64,
-    pub setup_seconds_left: u64,
     pub lock_seconds_left: u64,
 }
 
@@ -71,12 +85,6 @@ fn now_ts() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
-}
-
-/// 清理过期条目，避免被遗弃的链接在内存里堆积（沿用 vpn/task.rs 的做法）。
-fn sweep() {
-    let now = now_ts();
-    GUARDS.retain(|_, guard| guard.expire_at > now);
 }
 
 fn random_bytes<const N: usize>() -> [u8; N] {
@@ -113,30 +121,150 @@ fn constant_time_eq(a: &[u8; 32], b: &[u8; 32]) -> bool {
     a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-fn check_password_shape(password: &str) -> Result<()> {
+/// 迭代摘要是纯 CPU 工作，放到阻塞线程池，避免拖住 axum 的工作线程。
+async fn derive_off_thread(salt: [u8; 16], password: &str) -> Result<[u8; 32]> {
+    let password = password.to_owned();
+    tokio::task::spawn_blocking(move || derive(&salt, &password))
+        .await
+        .map_err(|e| anyhow::anyhow!("口令计算任务异常退出: {e}"))
+}
+
+// ---------------------------------------------------------------- 账号口令
+
+/// 该 QQ 是否已经设置过口令。
+pub fn has_secret(qq: i64) -> bool {
+    load_secret(qq).is_some()
+}
+
+/// 该 QQ 口令的最近设置时间。
+pub fn secret_updated_at(qq: i64) -> Option<u64> {
+    load_secret(qq).map(|secret| secret.updated_at)
+}
+
+/// 读取口令摘要。读不出来一律当成"没设过"，让调用方去引导用户重设。
+fn load_secret(qq: i64) -> Option<AccountSecret> {
+    match SECRETS.get(&qq) {
+        Ok(secret) => secret,
+        Err(e) => {
+            warn!(qq = qq, error = ?e, "读取访问口令摘要失败");
+            None
+        }
+    }
+}
+
+/// 写入（或覆盖）该 QQ 的永久口令。
+async fn save_secret(qq: i64, password: &str) -> Result<()> {
     if password.chars().count() < MIN_PASSWORD_LEN {
         bail!("访问口令至少 {MIN_PASSWORD_LEN} 位");
     }
+
+    let salt = random_bytes::<16>();
+    let digest = derive_off_thread(salt, password).await?;
+
+    SECRETS
+        .insert(
+            &qq,
+            &AccountSecret {
+                salt,
+                digest,
+                updated_at: now_ts(),
+            },
+        )
+        .await?;
+    // 只记录发生了什么，绝不记录口令本身。
+    info!(qq = qq, "访问口令已保存（永久有效，直到再次刷新）");
     Ok(())
 }
 
+/// 校验该 QQ 的口令。
+async fn check_secret(qq: i64, password: &str) -> Result<bool> {
+    let Some(secret) = load_secret(qq) else {
+        bail!("该账号还没有设置访问口令，请先发送 /setpwd");
+    };
+    let digest = derive_off_thread(secret.salt, password).await?;
+    Ok(constant_time_eq(&digest, &secret.digest))
+}
+
+// ------------------------------------------------------------ 设置口令链接
+
+impl SetupTask {
+    pub fn seconds_left(&self) -> u64 {
+        self.expire_at.saturating_sub(now_ts())
+    }
+
+    fn is_used(&self) -> bool {
+        *self.used.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// 保存口令并让本链接立即失效。
+    pub async fn save(&self, password: &str) -> Result<()> {
+        if self.expire_at <= now_ts() {
+            bail!("这个设置链接已过期，请重新发送 /setpwd");
+        }
+        {
+            let used = self.used.lock().unwrap_or_else(|e| e.into_inner());
+            if *used {
+                bail!("这个设置链接已经用过了，请重新发送 /setpwd");
+            }
+        }
+
+        save_secret(self.qq, password).await?;
+
+        let mut used = self.used.lock().unwrap_or_else(|e| e.into_inner());
+        *used = true;
+        drop(used);
+        SETUPS.remove(&self.id);
+        Ok(())
+    }
+}
+
+/// 新建一条设置/刷新口令的一次性链接。
+pub fn create_setup(qq: i64) -> Arc<SetupTask> {
+    let now = now_ts();
+    SETUPS.retain(|_, task| task.expire_at > now && !task.is_used());
+
+    let task = Arc::new(SetupTask {
+        id: uuid::Uuid::new_v4().to_string(),
+        qq,
+        refresh: has_secret(qq),
+        expire_at: now + SETUP_EXPIRE_SECS,
+        used: Mutex::new(false),
+    });
+    SETUPS.insert(task.id.clone(), task.clone());
+    info!(qq = qq, refresh = task.refresh, setup_id = %task.id, "创建口令设置链接");
+    task
+}
+
+pub fn get_setup(id: &str) -> Option<Arc<SetupTask>> {
+    let task = SETUPS.get(id)?.clone();
+    if task.expire_at <= now_ts() || task.is_used() {
+        SETUPS.remove(id);
+        return None;
+    }
+    Some(task)
+}
+
+// -------------------------------------------------------------- 受保护页面
+
 impl Guard {
-    /// 新建一个「还没有口令」的受保护页面。口令由第一个打开页面的人设置。
-    pub fn create(qq: i64) -> Arc<Self> {
-        sweep();
+    /// 新建一个受保护页面。要求该 QQ 已经设置过永久口令。
+    pub fn create(qq: i64) -> Result<Arc<Self>> {
+        if !has_secret(qq) {
+            bail!("请先发送 /setpwd 设置访问口令");
+        }
 
         let now = now_ts();
+        GUARDS.retain(|_, guard| guard.expire_at > now);
+
         let guard = Arc::new(Self {
             id: uuid::Uuid::new_v4().to_string(),
             qq,
             expire_at: now + GUARD_EXPIRE_SECS,
-            setup_deadline: now + SETUP_WINDOW_SECS,
             state: Mutex::new(GuardState::default()),
         });
-
         GUARDS.insert(guard.id.clone(), guard.clone());
-        info!(guard_id = %guard.id, qq = qq, "创建待设置口令的受保护页面");
-        guard
+        info!(guard_id = %guard.id, qq = qq, "创建受口令保护的页面");
+        Ok(guard)
     }
 
     pub fn seconds_left(&self) -> u64 {
@@ -147,50 +275,16 @@ impl Guard {
         let now = now_ts();
         let state = self.lock_state();
         GuardStatus {
-            configured: state.secret.is_some(),
             unlocked: state.token.is_some(),
             locked: state.locked_until > now,
             seconds_left: self.expire_at.saturating_sub(now),
-            setup_seconds_left: self.setup_deadline.saturating_sub(now),
             lock_seconds_left: state.locked_until.saturating_sub(now),
         }
     }
 
-    /// 首次设置访问口令。只能成功一次，成功后直接把令牌发给设置者。
-    ///
-    /// 链接公开在群里，所以这一步是「先到先得」：谁先设置口令，谁就拿到这个页面。
-    pub async fn setup(&self, password: &str) -> Result<Arc<str>> {
-        check_password_shape(password)?;
-
-        {
-            let state = self.lock_state();
-            if state.secret.is_some() {
-                bail!("本页面的访问口令已经被设置过了，请直接输入口令");
-            }
-            if self.setup_deadline <= now_ts() {
-                bail!("设置口令的时间窗口已过期，请重新发送 /jdpm");
-            }
-        }
-
-        let salt = random_bytes::<16>();
-        let digest = self.derive_off_thread(salt, password).await?;
-
-        let mut state = self.lock_state();
-        // 并发保护：派生期间可能已经有人抢先设置好了。
-        if state.secret.is_some() {
-            bail!("本页面的访问口令刚刚已被设置，请直接输入口令");
-        }
-        state.secret = Some(Secret { salt, digest });
-        let token = Self::issue_token(&mut state);
-        drop(state);
-
-        info!(guard_id = %self.id, qq = self.qq, "访问口令设置完成，已签发令牌");
-        Ok(token)
-    }
-
-    /// 校验口令并换取访问令牌。成功时会轮换令牌，之前拿到令牌的人立即失效。
+    /// 用账号的永久口令解锁。成功会轮换令牌，之前拿到令牌的人立即失效。
     pub async fn unlock(&self, password: &str) -> Result<Arc<str>> {
-        let salt = {
+        {
             let state = self.lock_state();
             let now = now_ts();
             if state.locked_until > now {
@@ -199,21 +293,10 @@ impl Guard {
                     state.locked_until - now
                 );
             }
-            match state.secret.as_ref() {
-                Some(secret) => secret.salt,
-                None => bail!("本页面还没有设置访问口令，请先在页面上设置"),
-            }
-        };
+        }
 
-        let digest = self.derive_off_thread(salt, password).await?;
-
-        let mut state = self.lock_state();
-        let expected = match state.secret.as_ref() {
-            Some(secret) => secret.digest,
-            None => bail!("本页面还没有设置访问口令，请先在页面上设置"),
-        };
-
-        if !constant_time_eq(&digest, &expected) {
+        if !check_secret(self.qq, password).await? {
+            let mut state = self.lock_state();
             state.fails += 1;
             if state.fails >= MAX_FAILS {
                 state.locked_until = now_ts() + LOCK_SECS;
@@ -229,8 +312,11 @@ impl Guard {
             bail!("口令不正确（还可再试 {left} 次）");
         }
 
+        let mut state = self.lock_state();
         let rotated = state.token.is_some();
-        let token = Self::issue_token(&mut state);
+        let token: Arc<str> = Arc::from(URL_SAFE_NO_PAD.encode(random_bytes::<32>()));
+        state.token = Some(token.clone());
+        state.fails = 0;
         drop(state);
 
         info!(guard_id = %self.id, qq = self.qq, rotated = rotated, "口令校验通过，已签发访问令牌");
@@ -252,22 +338,6 @@ impl Guard {
     pub fn revoke_token(&self) {
         self.lock_state().token = None;
         debug!(guard_id = %self.id, "访问令牌已注销");
-    }
-
-    /// 迭代摘要是纯 CPU 工作，放到阻塞线程池，避免拖住 axum 的工作线程。
-    async fn derive_off_thread(&self, salt: [u8; 16], password: &str) -> Result<[u8; 32]> {
-        let password = password.to_owned();
-        tokio::task::spawn_blocking(move || derive(&salt, &password))
-            .await
-            .map_err(|e| anyhow::anyhow!("口令校验任务异常退出: {e}"))
-    }
-
-    /// 签发新令牌并顶掉旧的。
-    fn issue_token(state: &mut GuardState) -> Arc<str> {
-        let token: Arc<str> = Arc::from(URL_SAFE_NO_PAD.encode(random_bytes::<32>()));
-        state.token = Some(token.clone());
-        state.fails = 0;
-        token
     }
 
     /// `Mutex` 只包着几个字段的短临界区；中毒时直接取回内部值继续用。
@@ -292,6 +362,12 @@ pub fn verify(id: &str, token: &str) -> Option<Arc<Guard>> {
     guard.check_token(token).then_some(guard)
 }
 
+/// 删除某个 QQ 的永久口令（目前仅测试清理用）。
+#[cfg(test)]
+pub(crate) async fn forget_secret(qq: i64) -> Result<()> {
+    SECRETS.remove(&qq).await
+}
+
 /// 页面结束（任务已完成或已过期）时主动移除。
 pub fn remove_guard(id: &str) {
     GUARDS.remove(id);
@@ -303,63 +379,94 @@ mod tests {
 
     const PASSWORD: &str = "hunter2!";
 
-    #[tokio::test]
-    async fn setup_then_unlock_and_rotate() -> Result<()> {
-        let guard = Guard::create(10001);
-        assert!(!guard.status().configured);
-        assert!(!guard.status().unlocked);
+    /// 口令是**落盘**的，固定 QQ 会让上一次 `cargo test` 的残留污染这一次。
+    /// 用随机负数 QQ（真实 QQ 都是正数），跑多少次都互不干扰。
+    fn test_qq() -> i64 {
+        -rand::rng().random_range(1..1_000_000_000i64)
+    }
 
-        // 设置口令的人当场拿到令牌，不必再输一次。
-        let first = guard.setup(PASSWORD).await?;
-        assert!(guard.status().configured);
-        assert!(guard.check_token(&first));
-        assert!(verify(&guard.id, &first).is_some());
+    /// 每个测试用不同 QQ，避免共用同一张持久化表互相干扰。
+    // 用到落盘的 HotTable，其懒初始化会阻塞，单线程 runtime 上会把自己堵死。
+    #[tokio::test(flavor = "multi_thread")]
+    async fn setup_link_saves_permanent_password() -> Result<()> {
+        let qq = test_qq();
+        assert!(!has_secret(qq));
+        // 没设口令就不能建受保护页面
+        assert!(Guard::create(qq).is_err());
 
-        // 口令只能设置一次。
-        assert!(guard.setup("another-password").await.is_err());
+        let setup = create_setup(qq);
+        assert!(!setup.refresh);
+        setup.save(PASSWORD).await?;
+        assert!(has_secret(qq));
+        // 一次性：同一条链接不能再用
+        assert!(get_setup(&setup.id).is_none());
 
-        // 再次输入正确口令会轮换令牌，把上一位访问者踢下线。
+        // 口令是永久的：新建页面直接就能用它解锁
+        let guard = Guard::create(qq)?;
+        let token = guard.unlock(PASSWORD).await?;
+        assert!(guard.check_token(&token));
+
+        // 再建一个页面，仍然是同一个口令
+        let another = Guard::create(qq)?;
+        assert!(another.unlock(PASSWORD).await.is_ok());
+
+        remove_guard(&guard.id);
+        remove_guard(&another.id);
+        forget_secret(qq).await?;
+        Ok(())
+    }
+
+    // 用到落盘的 HotTable，其懒初始化会阻塞，单线程 runtime 上会把自己堵死。
+    #[tokio::test(flavor = "multi_thread")]
+    async fn refresh_replaces_old_password() -> Result<()> {
+        let qq = test_qq();
+        create_setup(qq).save(PASSWORD).await?;
+
+        let refresh = create_setup(qq);
+        assert!(refresh.refresh, "第二次应被标记为刷新");
+        refresh.save("brand-new-password").await?;
+
+        let guard = Guard::create(qq)?;
+        assert!(guard.unlock(PASSWORD).await.is_err(), "旧口令应失效");
+        assert!(guard.unlock("brand-new-password").await.is_ok());
+
+        remove_guard(&guard.id);
+        forget_secret(qq).await?;
+        Ok(())
+    }
+
+    // 用到落盘的 HotTable，其懒初始化会阻塞，单线程 runtime 上会把自己堵死。
+    #[tokio::test(flavor = "multi_thread")]
+    async fn wrong_password_locks_out_and_token_rotates() -> Result<()> {
+        let qq = test_qq();
+        create_setup(qq).save(PASSWORD).await?;
+        let guard = Guard::create(qq)?;
+
+        let first = guard.unlock(PASSWORD).await?;
         let second = guard.unlock(PASSWORD).await?;
         assert_ne!(first, second);
-        assert!(!guard.check_token(&first));
-        assert!(guard.check_token(&second));
-
-        guard.revoke_token();
-        assert!(!guard.check_token(&second));
-        remove_guard(&guard.id);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn unlock_before_setup_is_refused() -> Result<()> {
-        let guard = Guard::create(10002);
-        assert!(guard.unlock(PASSWORD).await.is_err());
-        remove_guard(&guard.id);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn wrong_password_is_rejected_and_locks_out() -> Result<()> {
-        let guard = Guard::create(10003);
-        guard.setup(PASSWORD).await?;
+        assert!(!guard.check_token(&first), "旧令牌应被顶下线");
 
         for _ in 0..MAX_FAILS {
             assert!(guard.unlock("wrong-password").await.is_err());
         }
         assert!(guard.status().locked);
-        // 锁定期间即便口令正确也拒绝。
-        assert!(guard.unlock(PASSWORD).await.is_err());
+        assert!(guard.unlock(PASSWORD).await.is_err(), "锁定期内正确口令也拒绝");
 
         remove_guard(&guard.id);
+        forget_secret(qq).await?;
         Ok(())
     }
 
-    #[tokio::test]
+    // 用到落盘的 HotTable，其懒初始化会阻塞，单线程 runtime 上会把自己堵死。
+    #[tokio::test(flavor = "multi_thread")]
     async fn short_password_is_refused() -> Result<()> {
-        let guard = Guard::create(10004);
-        assert!(guard.setup("ab").await.is_err());
-        assert!(!guard.status().configured);
-        remove_guard(&guard.id);
+        let qq = test_qq();
+        let setup = create_setup(qq);
+        assert!(setup.save("ab").await.is_err());
+        assert!(!has_secret(qq), "失败不应写入");
+        // 失败不消耗链接
+        assert!(get_setup(&setup.id).is_some());
         Ok(())
     }
 }

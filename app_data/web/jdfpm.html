@@ -42,13 +42,8 @@
 <div class="card hidden" id="gateCard">
   <h1>绩点与排名查询</h1>
   <p class="sub" id="gateSub">正在检查页面状态…</p>
-
-  <input type="password" id="password" placeholder="访问口令" autocomplete="new-password">
-  <div class="row hidden" id="genRow">
-    <button id="genBtn" class="ghost">随机生成一个口令</button>
-    <button id="revealBtn" class="ghost">显示口令</button>
-  </div>
-  <button id="gateBtn">设置口令</button>
+  <input type="password" id="password" placeholder="访问口令" autocomplete="current-password">
+  <button id="gateBtn">解锁</button>
   <div id="lockMsg" class="msg"></div>
   <p class="sub" style="margin:14px 0 0;" id="gateHint"></p>
 </div>
@@ -72,18 +67,13 @@
     <h2>计算结果</h2>
     <p class="sub" id="resultSub"></p>
     <div class="stats" id="resultStats"></div>
-    <button id="certBtn" class="secondary">生成绩点证明并提取排名</button>
     <div id="certMsg" class="msg"></div>
   </div>
 
   <div class="card hidden" id="certCard">
-    <h2>绩点证明（含排名）</h2>
-    <p class="sub">以下内容来自教务生成的证明 PDF；排名与专业人数只在证明里公开。</p>
-    <div class="stats" id="certStats"></div>
-    <details style="margin-top:14px;">
-      <summary style="cursor:pointer;color:#2563eb;font-size:14px;">查看证明正文原文</summary>
-      <pre id="certText"></pre>
-    </details>
+    <h2>绩点证明正文</h2>
+    <p class="sub">以下是教务生成的证明 PDF 的完整正文，排名就写在里面。</p>
+    <pre id="certText"></pre>
     <a id="pdfLink" href="#" target="_blank" rel="noopener">下载证明 PDF</a>
   </div>
 
@@ -136,31 +126,14 @@
     return Math.max(0, Math.floor(seconds / 60));
   }
 
-  // 页面有两态：口令还没设过 -> 设置；已经设过 -> 输入解锁。
-  let CONFIGURED = false;
-  let MIN_LEN = 6;
-
   async function refreshGate(message, kind) {
     try {
       const state = await api('GET', '/guard/' + SESSION_ID + '/state');
-      CONFIGURED = state.configured;
-      MIN_LEN = state.min_password_len;
-
       $('gateCard').classList.remove('hidden');
-      $('genRow').classList.toggle('hidden', CONFIGURED);
-      $('gateBtn').textContent = CONFIGURED ? '解锁' : '设置口令并进入';
-      $('password').placeholder = CONFIGURED ? '访问口令' : '设置一个至少 ' + MIN_LEN + ' 位的口令';
-
-      if (CONFIGURED) {
-        $('gateSub').textContent = 'QQ：__QQ_ID__ · 本页面已设置访问口令，请输入口令继续';
-        $('gateHint').textContent = '口令只在本页内存中保留，刷新或换设备都要重新输入；'
-          + '重新输入口令会把上一位访问者顶下线。';
-      } else {
-        $('gateSub').textContent = 'QQ：__QQ_ID__ · 本页面尚未设置访问口令，'
-          + '请在 ' + fmtMinutes(state.setup_seconds_left) + ' 分钟内完成设置';
-        $('gateHint').textContent = '链接在群里是公开的，谁先设置口令谁就拿到这个页面。'
-          + '口令只能设置一次，服务端只保存它的摘要。';
-      }
+      $('gateSub').textContent = 'QQ：__QQ_ID__ · 请输入你用 /setpwd 设置的访问口令';
+      $('gateHint').textContent = '口令是长期有效的，绑定在你的 QQ 上；'
+        + '忘了或想更换请在群里重新发送 /setpwd。'
+        + '重新输入口令会把上一位访问者顶下线。';
       if (state.locked) {
         show($('lockMsg'), '口令连续输错过多，请 ' + state.lock_seconds_left + ' 秒后再试', 'err');
       } else if (message) {
@@ -173,37 +146,14 @@
     }
   }
 
-  // 口令在浏览器本地生成，不必先向服务端讨一个。
-  $('genBtn').onclick = () => {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-    const bytes = new Uint32Array(14);
-    crypto.getRandomValues(bytes);
-    $('password').value = Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
-    $('password').type = 'text';
-    $('revealBtn').textContent = '隐藏口令';
-    show($('lockMsg'), '已生成随机口令，请先自行记下来，再点“设置口令并进入”。', 'info');
-  };
-
-  $('revealBtn').onclick = () => {
-    const shown = $('password').type === 'text';
-    $('password').type = shown ? 'password' : 'text';
-    $('revealBtn').textContent = shown ? '显示口令' : '隐藏口令';
-  };
-
   $('gateBtn').onclick = async () => {
     const password = $('password').value;
     if (!password) { show($('lockMsg'), '请输入口令', 'err'); return; }
-    if (!CONFIGURED && password.length < MIN_LEN) {
-      show($('lockMsg'), '口令至少 ' + MIN_LEN + ' 位', 'err');
-      return;
-    }
     $('gateBtn').disabled = true;
     try {
-      const path = CONFIGURED ? '/unlock' : '/setup';
-      const data = await api('POST', '/guard/' + SESSION_ID + path, { password });
+      const data = await api('POST', '/guard/' + SESSION_ID + '/unlock', { password });
       TOKEN = data.token;
       $('password').value = '';
-      $('password').type = 'password';
       $('gateCard').classList.add('hidden');
       $('app').classList.remove('hidden');
       $('sessionSub').textContent = 'QQ：__QQ_ID__ · 本次访问剩余约 ' + fmtMinutes(data.seconds_left) + ' 分钟';
@@ -211,9 +161,7 @@
       await loadRanges();
       await loadRecords();
     } catch (e) {
-      // 口令可能刚被别人抢先设置，刷新一次状态好切到“输入口令”态。
-      $('app').classList.add('hidden');
-      await refreshGate(e.message, 'err');
+      show($('lockMsg'), e.message, 'err');
     } finally {
       $('gateBtn').disabled = false;
     }
@@ -277,8 +225,6 @@
     }
   }
 
-  let CURRENT_WID = null;
-
   function stat(key, value) {
     const div = document.createElement('div');
     div.className = 'stat';
@@ -295,79 +241,51 @@
 
   function renderResult(data) {
     const detail = data.record.detail;
+    const cert = data.certificate;
+    const facts = cert ? cert.facts : null;
+
     $('resultCard').classList.remove('hidden');
-    $('certCard').classList.add('hidden');
     hide($('certMsg'));
 
     if (!detail) {
       $('resultSub').textContent = data.message + '（教务尚未返回计算明细）';
       $('resultStats').innerHTML = '';
-      $('certBtn').classList.add('hidden');
-      CURRENT_WID = null;
+      $('certCard').classList.add('hidden');
       return;
     }
 
-    CURRENT_WID = detail.wid;
-    $('certBtn').classList.remove('hidden');
     $('resultSub').textContent = data.message + ' · ' + detail.range_name +
       ' · 成绩截止 ' + detail.data_deadline + ' · 申请时间 ' + data.record.apply_time +
       ' · 有效期至 ' + data.record.expire_time;
 
     const stats = $('resultStats');
     stats.innerHTML = '';
-    stats.appendChild(stat('平均学分绩点 GPA', detail.gpa));
-    stats.appendChild(stat('加权平均分', detail.weighted_average));
+
+    // 排名只在证明 PDF 里（教务 JSON 一律返回 *），所以优先用证明里提取到的。
+    const rank = (facts && facts.rank) || (detail.rank_visible ? detail.gpa_rank : null);
+    const majorSize = (facts && facts.major_size) || detail.major_size;
+    if (rank) {
+      stats.appendChild(stat('专业绩点排名', majorSize ? (rank + ' / ' + majorSize) : rank));
+    }
+
+    stats.appendChild(stat('平均学分绩点 GPA', (facts && facts.gpa) || detail.gpa));
+    stats.appendChild(stat('加权平均分', (facts && facts.weighted_average) || detail.weighted_average));
     stats.appendChild(stat('算术平均分', detail.arithmetic_average));
     stats.appendChild(stat('参与计算门数', detail.course_count));
-    stats.appendChild(stat('专业人数', detail.major_size));
-    if (detail.rank_visible) {
-      stats.appendChild(stat('专业绩点排名', detail.gpa_rank));
-      stats.appendChild(stat('加权均分排名', detail.weighted_rank));
-      stats.appendChild(stat('算术均分排名', detail.arithmetic_rank));
+    if (!rank) stats.appendChild(stat('专业人数', majorSize));
+
+    if (cert) {
+      $('certCard').classList.remove('hidden');
+      $('certText').textContent = cert.text;
+      $('pdfLink').href = cert.pdf_url;
+      if (!rank) {
+        show($('certMsg'), '证明已生成，但正文里没有找到排名，请对照下方原文确认。', 'info');
+      }
     } else {
-      show($('certMsg'), '接口未公开排名（返回 *），点击下方按钮从绩点证明 PDF 里读取排名。', 'info');
+      $('certCard').classList.add('hidden');
+      show($('certMsg'), data.certificate_error || '未能生成绩点证明，因此没有排名。', 'err');
     }
   }
-
-  $('certBtn').onclick = async () => {
-    if (!CURRENT_WID) return;
-    const btn = $('certBtn');
-    btn.disabled = true;
-    btn.textContent = '正在生成并解析证明…';
-    try {
-      const data = await api('POST', '/jdfpm/api/' + SESSION_ID + '/certificate', {
-        wid: CURRENT_WID,
-        show_rank: true,
-      });
-      $('certCard').classList.remove('hidden');
-      $('certText').textContent = data.text;
-
-      const f = data.facts;
-      const box = $('certStats');
-      box.innerHTML = '';
-      const fields = [
-        ['专业绩点排名', f.rank],
-        ['所在专业总人数', f.major_size],
-        ['平均学分绩点', f.gpa],
-        ['加权平均分', f.weighted_average],
-        ['成绩截止日期', f.deadline],
-      ];
-      let missing = 0;
-      for (const [key, value] of fields) {
-        if (value === null || value === undefined) { missing++; continue; }
-        box.appendChild(stat(key, value));
-      }
-      $('pdfLink').href = data.pdf_url;
-      show($('certMsg'), missing
-        ? ('证明已生成，但有 ' + missing + ' 个字段未能从正文中识别，请看下方原文。')
-        : '证明已生成，排名等信息已从证明正文中提取。', missing ? 'info' : 'ok');
-    } catch (e) {
-      show($('certMsg'), e.message, 'err');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = '生成绩点证明并提取排名';
-    }
-  };
 
   async function loadRecords() {
     hide($('recordMsg'));
