@@ -2,10 +2,9 @@ use crate::{
     api::network::SessionClient,
     web::{
         URL,
-        guard::{Guard, PasswordMode, remove_guard},
+        guard::{Guard, remove_guard},
     },
 };
-use anyhow::Result;
 use bytes::Bytes;
 use dashmap::DashMap;
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
@@ -78,15 +77,11 @@ impl JdfpmSession {
     }
 }
 
-/// 新建一次受口令保护的绩点查询会话，返回会话与需要交给用户的明文口令。
-pub fn create_session(
-    qq: i64,
-    client: SessionClient,
-    mode: PasswordMode,
-) -> Result<(Arc<JdfpmSession>, String)> {
+/// 新建一次绩点查询会话。口令不在这里产生——由第一个打开页面的人在网页上设置。
+pub fn create_session(qq: i64, client: SessionClient) -> Arc<JdfpmSession> {
     sweep();
 
-    let (guard, password) = Guard::create(qq, mode)?;
+    let guard = Guard::create(qq);
     let session = Arc::new(JdfpmSession {
         id: guard.id.clone(),
         qq,
@@ -97,7 +92,7 @@ pub fn create_session(
     });
 
     SESSIONS.insert(session.id.clone(), session.clone());
-    Ok((session, password))
+    session
 }
 
 pub fn get_session(id: &str) -> Option<Arc<JdfpmSession>> {

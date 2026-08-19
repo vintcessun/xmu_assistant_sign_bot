@@ -26,13 +26,15 @@ impl UserInfo {
 
 #[cfg(test)]
 mod tests {
+    use crate::api::xmu_service::testenv;
     use super::*;
     use anyhow::Result;
 
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test() -> Result<()> {
-        let castgc = "TGT-2435869-O8Wwbqik8mV2AiaFWm2RKkKG8nq1zARLvjuN2XWuYtBMaXNrSUaZDng4bJZj-3FfQrsnull_main";
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
         let user_info = UserInfo::call(castgc).await?;
         println!("UserInfo API Response: {:?}", user_info);
         Ok(())

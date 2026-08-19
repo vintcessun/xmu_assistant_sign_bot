@@ -206,15 +206,17 @@ pub struct SubmissionsId;
 
 #[cfg(test)]
 mod tests {
+    use crate::api::xmu_service::testenv;
     use crate::api::xmu_service::login::castgc_get_session;
 
     use super::*;
     use anyhow::Result;
 
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test_request() -> Result<()> {
-        let castgc = "TGT-3852721-5F6eRNQT3hKL70kX3mDbLKQOpeUcKCYbCwJUZNW-btgCA45jHAWRs6iRLEeNzYP3-1cnull_main";
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
         let session = castgc_get_session(castgc).await?;
         let data = SubmissionsId::get(&session, 18543, 1007385).await?;
         println!("SubmissionsId: {:?}", data);
@@ -225,6 +227,9 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_parse() -> Result<()> {
+        if !testenv::network_enabled() {
+            return testenv::skipped_network(module_path!());
+        }
         let mut parsed: SubmissionResponse = serde_json::from_str(DATA)?;
         let client = SessionClient::new();
         let parsed = parsed.parse(client).await?;

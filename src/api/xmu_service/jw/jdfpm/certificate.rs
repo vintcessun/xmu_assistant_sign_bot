@@ -165,6 +165,7 @@ fn between(text: &str, start: &str, end: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::api::xmu_service::testenv;
     use super::*;
 
     /// 真实证明 PDF 的提取结果（姓名/学号已脱敏，排版换行原样保留）。
@@ -228,11 +229,15 @@ mod tests {
         assert_eq!(extract_facts("厦门大学本科学分绩点排名证明").rank, None);
     }
 
+    /// 有真实证明样本时才跑；样本由下面的联网测试自动落盘。
     #[tokio::test]
-    #[ignore = "需要真实的绩点证明 PDF 样本：\
-                把文件放到 data/temp/gpa_certificate.pdf 后 cargo test -- --ignored"]
     async fn extract_sample_pdf() -> Result<()> {
-        let pdf = Bytes::from(tokio::fs::read("data/temp/gpa_certificate.pdf").await?);
+        const SAMPLE_PATH: &str = "data/temp/gpa_certificate.pdf";
+        let Ok(bytes) = tokio::fs::read(SAMPLE_PATH).await else {
+            println!("[skip] 没有 {SAMPLE_PATH}，跳过真实样本提取测试");
+            return Ok(());
+        };
+        let pdf = Bytes::from(bytes);
         let text = GpaCertificate::extract_text(pdf).await?;
         println!("提取正文:\n{text}");
         println!("关键字段: {:#?}", extract_facts(&text));
@@ -242,13 +247,15 @@ mod tests {
 
     /// 端到端跑一遍：列范围 → 申请/取结果 → 下载证明 → 提取正文。
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行:                 XMU_TEST_CASTGC=TGT-... cargo test -- --ignored"]
     async fn download_and_extract() -> Result<()> {
         use crate::api::xmu_service::jw::{
             GpaApply, GpaRange, GpaRecord, GpaRecordResponse, get_castgc_client,
         };
 
-        let client = get_castgc_client(&super::super::test_castgc());
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
+        let client = get_castgc_client(castgc);
 
         let ranges = GpaRange::get_from_client(&client).await?;
         println!("成绩范围: {ranges:#?}");

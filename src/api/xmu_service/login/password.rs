@@ -122,6 +122,7 @@ pub async fn login_password(
 
 #[cfg(test)]
 mod tests {
+    use crate::api::xmu_service::testenv;
     use crate::api::network::SessionClient;
     use crate::api::xmu_service::jw::Zzy;
     use crate::api::xmu_service::lnt::Profile;
@@ -149,6 +150,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_qrcode() -> Result<()> {
+        if !testenv::network_enabled() {
+            return testenv::skipped_network(module_path!());
+        }
         let session = SessionClient::new();
 
         let username = input("请输入用户名：");

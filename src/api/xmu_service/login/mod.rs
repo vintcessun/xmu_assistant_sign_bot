@@ -153,13 +153,15 @@ pub async fn castgc_get_session(castgc: &str) -> anyhow::Result<String> {
 
 #[cfg(test)]
 mod session_test {
+    use crate::api::xmu_service::testenv;
     use super::*;
     use anyhow::Result;
 
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test_castgc_get_session() -> Result<()> {
-        let castgc = "TGT-2287042-KTGUC02s8q1yH06BAFT1cT6bV01mv3-M9MOczLVnOzMesYVhCZcU8-VMD6d2ZFBgRBcnull_main";
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
         let session = castgc_get_session(castgc).await?;
         println!("LNT Session: {}", session);
         Ok(())
@@ -253,6 +255,11 @@ mod regex_tests_execution {
 
     #[tokio::test]
     async fn consistence() {
+        use crate::api::xmu_service::testenv;
+        if !testenv::network_enabled() {
+            testenv::note_skipped(module_path!(), testenv::NETWORK_ENV);
+            return;
+        }
         let client = SessionClient::new();
         let resp = client.get("https://lnt.xmu.edu.cn/").await.unwrap();
         let html = resp.text().await.unwrap();
@@ -268,6 +275,11 @@ mod regex_tests_execution {
 
     #[tokio::test]
     async fn speed() {
+        use crate::api::xmu_service::testenv;
+        if !testenv::network_enabled() {
+            testenv::note_skipped(module_path!(), testenv::NETWORK_ENV);
+            return;
+        }
         let client = SessionClient::new();
         // 建议增加重试或超时处理，确保测试稳定性
         let resp = client
@@ -328,6 +340,11 @@ mod regex_tests_salt {
 
     #[tokio::test]
     async fn consistence() {
+        use crate::api::xmu_service::testenv;
+        if !testenv::network_enabled() {
+            testenv::note_skipped(module_path!(), testenv::NETWORK_ENV);
+            return;
+        }
         let client = SessionClient::new();
         let resp = client.get("https://lnt.xmu.edu.cn/").await.unwrap();
         let html = resp.text().await.unwrap();
@@ -343,6 +360,11 @@ mod regex_tests_salt {
 
     #[tokio::test]
     async fn speed() {
+        use crate::api::xmu_service::testenv;
+        if !testenv::network_enabled() {
+            testenv::note_skipped(module_path!(), testenv::NETWORK_ENV);
+            return;
+        }
         let client = SessionClient::new();
         // 建议增加重试或超时处理，确保测试稳定性
         let resp = client

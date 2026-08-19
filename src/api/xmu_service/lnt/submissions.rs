@@ -30,15 +30,17 @@ pub struct Submissions;
 
 #[cfg(test)]
 mod tests {
+    use crate::api::xmu_service::testenv;
     use crate::api::xmu_service::login::castgc_get_session;
 
     use super::*;
     use anyhow::Result;
 
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test() -> Result<()> {
-        let castgc = "TGT-3852561-uVVRgspS8GunYAC5ZSN-ile4Lpdkekl5ECPmCF1UjAvQTlVPYQ-XvFcaiuo-erBPtFonull_main";
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
         let session = castgc_get_session(castgc).await?;
         let data = Submissions::get(&session, 18543).await?;
         println!("Submissions: {:?}", data);

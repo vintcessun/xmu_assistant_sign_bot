@@ -37,15 +37,17 @@ impl FileUrl {
 
 #[cfg(test)]
 mod tests {
+    use crate::api::xmu_service::testenv;
     use crate::api::xmu_service::login::castgc_get_session;
 
     use super::*;
     use anyhow::Result;
 
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test() -> Result<()> {
-        let castgc = "TGT-2429305-Eve-ZtWBy2QVcUeWcX0uP15HlBl1Dn4omVAXlbn4U6KTC2-tN00wjFwoAp65XLB4jrMnull_main";
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
         let session = castgc_get_session(castgc).await?;
         let data = FileUrlWithoutDownload::get(&session, 3036828).await?;
         println!("MyCourses: {:?}", data);

@@ -1,4 +1,4 @@
-use crate::web::guard::task::{Guard, get_guard, verify};
+use crate::web::guard::task::{Guard, MIN_PASSWORD_LEN, get_guard, verify};
 use axum::{
     Json, Router,
     extract::{FromRequestParts, Path},
@@ -52,19 +52,23 @@ struct GuardPath {
 }
 
 #[derive(Deserialize)]
-struct UnlockRequest {
+struct PasswordRequest {
     password: String,
 }
 
 #[derive(Serialize)]
 struct StateResponse {
     qq: i64,
-    /// 口令是机器人生成的还是用户自定义的。
-    generated: bool,
+    /// 口令是否已经被设置过：false 时前端渲染「设置口令」，true 时渲染「输入口令」。
+    configured: bool,
     unlocked: bool,
     locked: bool,
     seconds_left: u64,
+    /// 还剩多久必须完成口令设置。
+    setup_seconds_left: u64,
     lock_seconds_left: u64,
+    /// 口令最短长度，供前端做即时校验。
+    min_password_len: usize,
 }
 
 #[derive(Serialize)]
@@ -92,19 +96,46 @@ async fn state_handler(Path(params): Path<GuardPath>) -> impl IntoResponse {
     let status = guard.status();
     Json(StateResponse {
         qq: guard.qq,
-        generated: guard.generated,
+        configured: status.configured,
         unlocked: status.unlocked,
         locked: status.locked,
         seconds_left: status.seconds_left,
+        setup_seconds_left: status.setup_seconds_left,
         lock_seconds_left: status.lock_seconds_left,
+        min_password_len: MIN_PASSWORD_LEN,
     })
     .into_response()
+}
+
+/// 首次设置访问口令。只能成功一次，设置者当场拿到令牌。
+async fn setup_handler(
+    Path(params): Path<GuardPath>,
+    Json(payload): Json<PasswordRequest>,
+) -> impl IntoResponse {
+    let Some(guard) = get_guard(&params.id) else {
+        return gone().into_response();
+    };
+
+    match guard.setup(&payload.password).await {
+        Ok(token) => Json(UnlockResponse {
+            ok: true,
+            message: "口令已设置，本页面现在归你".to_owned(),
+            token: token.to_string(),
+            seconds_left: guard.seconds_left(),
+        })
+        .into_response(),
+        Err(e) => (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({ "detail": e.to_string() })),
+        )
+            .into_response(),
+    }
 }
 
 /// 校验口令并签发访问令牌；成功会顶掉上一位访问者手里的令牌。
 async fn unlock_handler(
     Path(params): Path<GuardPath>,
-    Json(payload): Json<UnlockRequest>,
+    Json(payload): Json<PasswordRequest>,
 ) -> impl IntoResponse {
     let Some(guard) = get_guard(&params.id) else {
         return gone().into_response();
@@ -152,6 +183,8 @@ pub fn task_router(router: Router) -> Router {
     router
         // 锁屏状态查询
         .route("/{id}/state", get(state_handler))
+        // 首次设置访问口令
+        .route("/{id}/setup", post(setup_handler))
         // 口令校验并换取访问令牌
         .route("/{id}/unlock", post(unlock_handler))
         // 主动注销访问令牌

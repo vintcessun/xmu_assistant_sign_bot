@@ -86,15 +86,17 @@ impl CourseData {
 
 #[cfg(test)]
 mod tests {
+    use crate::api::xmu_service::testenv;
     use crate::api::xmu_service::login::castgc_get_session;
 
     use super::*;
     use anyhow::Result;
 
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test_error() -> Result<()> {
-        let castgc = "TGT-2435869-O8Wwbqik8mV2AiaFWm2RKkKG8nq1zARLvjuN2XWuYtBMaXNrSUaZDng4bJZj-3FfQrsnull_main";
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
         let session = castgc_get_session(castgc).await?;
         let course_data = CourseData::get(&session, 71211).await?;
         println!("CourseData: {:?}", course_data);
@@ -102,9 +104,10 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test_success() -> Result<()> {
-        let castgc = "TGT-4073508-WHsRVSCV2-j9q5z3D2VXbcR8-ZFkHzsltAKa7aioXRvKY8fRACTJatRxjSdJtdbsRiInull_main";
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
         let session = castgc_get_session(castgc).await?;
         let course_data = CourseData::get(&session, 71211).await?;
         println!("CourseData: {:?}", course_data);

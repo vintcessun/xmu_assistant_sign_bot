@@ -4,6 +4,8 @@ pub mod lnt;
 pub mod location;
 pub mod login;
 pub mod securelink;
+#[cfg(test)]
+pub mod testenv;
 pub mod time;
 
 pub use jw::IDS_URL;

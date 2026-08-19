@@ -28,13 +28,15 @@ pub struct ScheduleTimeRequest<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::api::xmu_service::testenv;
     use super::*;
     use anyhow::Result;
 
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test() -> Result<()> {
-        let castgc = "TGT-3689174-yqV2dqeExUYDOIabL8BdMNCkm-EUrfWocQ18HO03gqA4EUdlwOCCgO9UlWhoSi48p4gnull_main";
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
         let data = ScheduleTimeRequest {
             semester: "20252",
             student_id: "",

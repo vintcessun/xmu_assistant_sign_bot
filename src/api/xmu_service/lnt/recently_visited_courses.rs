@@ -33,15 +33,17 @@ pub struct RecentlyVisitedCourses;
 
 #[cfg(test)]
 mod tests {
+    use crate::api::xmu_service::testenv;
     use crate::api::xmu_service::login::castgc_get_session;
 
     use super::*;
     use anyhow::Result;
 
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test() -> Result<()> {
-        let castgc = "TGT-2419114-JaGfIKFdGy9ybEIpdz5ksKDoT042olbnEnXdJVex1BgrqiCpwSX-2JxqT8k6CzU-3jUnull_main";
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
         let session = castgc_get_session(castgc).await?;
         let data = RecentlyVisitedCourses::get(&session).await?;
         println!("RecentlyVisitedCourses: {:?}", data);

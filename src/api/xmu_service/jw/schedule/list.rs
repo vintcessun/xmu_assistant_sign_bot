@@ -42,13 +42,15 @@ pub struct ScheduleListRequest {}
 
 #[cfg(test)]
 mod tests {
+    use crate::api::xmu_service::testenv;
     use super::*;
     use anyhow::Result;
 
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test() -> Result<()> {
-        let castgc = "TGT-3689523-tqSGK8uMKkyZVNAjG5H1ss4yc0Rsbdeac8Cwq7T5YKUxMQ3XU2L0cCe5FGiYHO6Z7EUnull_main";
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
         let data = ScheduleListRequest {};
         let schedule_list = ScheduleList::call(castgc, &data).await?;
         println!("ScheduleList API Response: {:?}", schedule_list);

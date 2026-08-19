@@ -119,6 +119,7 @@ pub async fn get_qrcode_id(session: &SessionClient) -> Result<(String, LoginRequ
 
 #[cfg(test)]
 mod tests {
+    use crate::api::xmu_service::testenv;
     use std::sync::Arc;
 
     use crate::api::network::SessionClient;
@@ -132,6 +133,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_qrcode() -> Result<()> {
+        if !testenv::network_enabled() {
+            return testenv::skipped_network(module_path!());
+        }
         let session = SessionClient::new();
 
         let data = get_qrcode(&session).await?;

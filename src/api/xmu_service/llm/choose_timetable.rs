@@ -88,15 +88,17 @@ impl ChooseTimetable {
 
 #[cfg(test)]
 mod tests {
+    use crate::api::xmu_service::testenv;
     use crate::api::xmu_service::jw::get_castgc_client;
 
     use super::*;
     use anyhow::Result;
 
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test() -> Result<()> {
-        let castgc = "TGT-2617600-NgLMdw1qkKnP6DPnW4fVkK54-p9izXoeSbv-06qGEvVM2NaZ03FCLqgfaRvpoJ1Umzknull_main";
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
         let session = get_castgc_client(castgc);
         let data = ChooseTimetable::get_from_client(&session, "上学期的第9周课表").await?;
         println!("Timetable: {:?}", data);

@@ -327,6 +327,7 @@ async fn download_parallel_benchmarked(
 
 #[cfg(test)]
 mod tests {
+    use crate::api::xmu_service::testenv;
     use super::*;
 
     #[test]
@@ -343,6 +344,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_download() -> Result<()> {
+        if !testenv::network_enabled() {
+            return testenv::skipped_network(module_path!());
+        }
         let client = SessionClient::new();
         let url = "https://download.samplelib.com/png/sample-boat-400x300.png";
         let filename = "sample-boat-400x300.png";

@@ -33,13 +33,15 @@ pub struct GpaRangeRequest {}
 
 #[cfg(test)]
 mod tests {
+    use crate::api::xmu_service::testenv;
     use super::*;
 
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行:                 XMU_TEST_CASTGC=TGT-... cargo test -- --ignored"]
     async fn test() -> Result<()> {
-        let castgc = super::super::test_castgc();
-        let rows = GpaRange::get(&castgc).await?;
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
+        let rows = GpaRange::get(castgc).await?;
         println!("GpaRange rows: {:#?}", rows);
         Ok(())
     }

@@ -53,7 +53,7 @@
 | `/test` | `/test <描述>` | 查询指定课程的测试/作业信息（大模型识别课程）。 |
 | `/gettest` | `/gettest <ID>` | 查询指定小测的题目内容，`<ID>` 通过 `/test` 获取。 |
 | `/testans` | `/testans <ID>` | 查询指定小测的答案（以教师公布为准）。 |
-| `/jdpm` | `/jdpm [自定义口令]` | 创建一个受访问口令保护的绩点/排名查询网页。口令可自定义（至少 4 位，仅私聊有效；群聊里打出的口令视为已泄露会被作废并改用随机口令），不填则随机生成；群聊内使用时链接与口令改走私聊。网页上可列出成绩范围、申请绩点计算（先查后申，已有有效结果不重复提交）、生成绩点证明 PDF，并从证明正文中提取出**专业绩点排名、专业总人数、平均学分绩点、加权平均分、成绩截止日期**——其中排名与专业人数教务 JSON 接口一律返回 `*`，只有证明 PDF 里才公开。链接与口令 30 分钟内有效。 |
+| `/jdpm` | `/jdpm` | 创建绩点/排名查询网页并发送链接。**口令不经过聊天窗口**：打开链接后在网页上设置访问口令（可手输，也可点「随机生成」），保存即生效并当场进入；此后每次访问都要输入该口令，重新输入会把上一位访问者顶下线。链接在群里是公开的，谁先设置口令谁就拿到该页面，口令须在 10 分钟内设置完成、网页 30 分钟后整体失效。网页上可列出成绩范围、申请绩点计算（先查后申，已有有效结果不重复提交）、生成绩点证明 PDF，并从证明正文中提取出**专业绩点排名、专业总人数、平均学分绩点、加权平均分、成绩截止日期**——其中排名与专业人数教务 JSON 接口一律返回 `*`，只有证明 PDF 里才公开。 |
 
 ### 校园网
 
@@ -112,6 +112,29 @@ pwsh scripts/cargo.ps1 build --release
 pwsh scripts/cargo.ps1 check --message-format=short
 pwsh scripts/cargo.ps1 test -- --nocapture
 ```
+
+### 联网测试
+
+需要真实凭证或真实出网的测试**默认自动跳过**，不再依赖 `#[ignore]`；带上环境变量即可一次跑全部：
+
+```bash
+# 需要统一身份认证凭证的测试（教务 / 学习通 / LLM 选择器等）
+XMU_TEST_CASTGC=TGT-xxx cargo test --lib -- --test-threads=1
+
+# 不需要凭证、但要真的出网的测试（下载、登录页正则一致性等）
+XMU_TEST_NETWORK=1 cargo test --lib -- --test-threads=1
+
+# 需要本机 Chrome/Chromium 的测试（课表渲染）
+XMU_TEST_CHROME=1 cargo test --lib
+```
+
+CASTGC 可以从浏览器登录 <https://ids.xmu.edu.cn> 后的 `CASTGC` Cookie 里取，有效期很短。
+凭证只从环境变量读，不写进仓库。
+
+必须加 `--test-threads=1`：全局 `SessionClient` 的连接池挂在最先创建它的 tokio runtime 上，
+而每个 `#[tokio::test]` 各有一个 runtime，并发跑会撞上 `runtime dropped the dispatch task`。
+
+不设这些变量时 `cargo test` 只跑纯离线用例，全程不出网。
 
 ### 发布构建（Alibaba Cloud Linux 3 目标）
 

@@ -419,6 +419,8 @@ impl SessionClient {
 
 #[cfg(test)]
 mod tests {
+    use crate::api::xmu_service::testenv;
+
     use super::*;
     use futures_util::StreamExt;
     use std::time::Duration;
@@ -509,6 +511,9 @@ mod tests {
 
     #[tokio::test]
     async fn bench_download_mode() -> Result<()> {
+        if !testenv::network_enabled() {
+            return testenv::skipped_network(module_path!());
+        }
         let test_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         let client = get_client().await?;
@@ -527,6 +532,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_post_json() -> Result<()> {
+        if !testenv::network_enabled() {
+            return testenv::skipped_network(module_path!());
+        }
         let client = SessionClient::new();
         let url = "https://httpbin.org/post";
 

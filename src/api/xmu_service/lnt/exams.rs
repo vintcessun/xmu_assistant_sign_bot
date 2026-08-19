@@ -107,15 +107,17 @@ impl Exams {
 
 #[cfg(test)]
 mod tests {
+    use crate::api::xmu_service::testenv;
     use crate::api::xmu_service::login::castgc_get_session;
 
     use super::*;
     use anyhow::Result;
 
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test() -> Result<()> {
-        let castgc = "TGT-4217253-xbc8sI9hkW3Zy7mhq0FpB8NVfFIjmHobl3I7AUfadKSYerFmOpRsPpwAdjSVuI1V--0null_main";
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
         let session = castgc_get_session(castgc).await?;
         let data = Exams::get(&session, 78180).await?;
         println!("Exams: {:?}", data);

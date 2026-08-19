@@ -71,6 +71,7 @@ pub struct ScheduleRequest<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::api::xmu_service::testenv;
     use crate::{
         abi::utils::SmartJsonExt,
         api::xmu_service::jw::{ScheduleCourseTime, ScheduleList, ScheduleListRequest},
@@ -80,9 +81,10 @@ mod tests {
     use anyhow::Result;
 
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test_location_vintcessun() -> Result<()> {
-        let castgc = "TGT-4506885-hZ1EnCYrj6-6nx7Q7StF6WeTJye89IKSJcnGaCirrYRAbbO7-AQLV0Iz5Xin-5jChZMnull_main";
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
         let data = ScheduleListRequest {};
         let schedule_list = ScheduleList::call(castgc, &data).await?;
         for item in schedule_list.datas.kfdxnxqcx.rows {
@@ -101,9 +103,10 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test_location_dianzige() -> Result<()> {
-        let castgc = "TGT-3689884-PTrQv9OKBhrc2RNRIoUz6fYzZqC08Zc9utxS0wxeMHDCMWKQ-KRSUxEjjVTcKiPQSf0null_main";
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
         let data = ScheduleListRequest {};
         let schedule_list = ScheduleList::call(castgc, &data).await?;
         for item in schedule_list.datas.kfdxnxqcx.rows {
@@ -122,9 +125,10 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test_location_lih() -> Result<()> {
-        let castgc = "TGT-3689952-fGlR02k8pDvqfPNL-F-lyY8-bpus2ZHBZRqFbmEcmomCsp0D9laQQItngiL-K3UAumonull_main";
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
         let data = ScheduleListRequest {};
         let schedule_list = ScheduleList::call(castgc, &data).await?;
         for item in schedule_list.datas.kfdxnxqcx.rows {
@@ -143,9 +147,10 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test_location_axol() -> Result<()> {
-        let castgc = "TGT-2288325-P177wkI8xWr8WNjs6QfA23HpnFTZH6Ac8U-zUHtVbWsxx5vVxWOTZ3VifZiELK0EDSInull_main";
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
         let data = ScheduleListRequest {};
         let schedule_list = ScheduleList::call(castgc, &data).await?;
         for item in schedule_list.datas.kfdxnxqcx.rows {
@@ -164,9 +169,10 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     async fn test_detail() -> Result<()> {
-        let castgc = "TGT-3689523-tqSGK8uMKkyZVNAjG5H1ss4yc0Rsbdeac8Cwq7T5YKUxMQ3XU2L0cCe5FGiYHO6Z7EUnull_main";
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
         let client = crate::api::xmu_service::jw::get_castgc_client(castgc);
         client.get(Schedule::APP_ENTRANCE).await?;
         let data = ScheduleRequest {

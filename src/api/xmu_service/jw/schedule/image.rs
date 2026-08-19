@@ -558,6 +558,7 @@ impl ScheduleRenderer {
 
 #[cfg(test)]
 mod tests {
+    use crate::api::xmu_service::testenv;
     use std::time::Duration;
 
     use crate::api::xmu_service::jw::ScheduleList;
@@ -566,6 +567,11 @@ mod tests {
 
     #[test]
     pub fn test_chrome_launch() {
+        use crate::api::xmu_service::testenv;
+        if !testenv::chrome_enabled() {
+            testenv::note_skipped(module_path!(), testenv::CHROME_ENV);
+            return;
+        }
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let run = async {
@@ -626,9 +632,10 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "需要有效 CASTGC(TGT)，网络+凭证依赖，手动运行: cargo test -- --ignored"]
     pub async fn test() -> Result<()> {
-        let castgc = "TGT-5205798-NK0oXgq45hvHea7P3Uh2Xa0LYmqw64m-AGxvUWcR3-iGLwPHM57b1cVe8jlzLLjmoe8null_main";
+        let Some(castgc) = testenv::castgc() else {
+            return testenv::skipped(module_path!());
+        };
         println!("[1/4] 获取课程列表...");
         let schedule_list = ScheduleList::get(castgc).await?;
         println!("[2/4] 获取课程详情...");
