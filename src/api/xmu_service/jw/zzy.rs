@@ -169,9 +169,15 @@ mod tests {
         let Some(castgc) = testenv::castgc() else {
             return testenv::skipped(module_path!());
         };
+        // 学号必须是这个 CASTGC 本人的，写死别人的只会查出空结果。
+        let student_id = crate::api::xmu_service::jw::UserInfo::get(castgc)
+            .await?
+            .user_id;
+        println!("学号: {student_id}");
+
         let data = ZzyRequest {
             batch_code: "01",
-            student_id: "13720192200474",
+            student_id: &student_id,
             tag: "-CZSJ,+ZYXH",
             page_size: 10,
             page_number: 1,

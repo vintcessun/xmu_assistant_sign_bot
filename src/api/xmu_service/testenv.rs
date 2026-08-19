@@ -23,6 +23,8 @@ pub const CASTGC_ENV: &str = "XMU_TEST_CASTGC";
 pub const NETWORK_ENV: &str = "XMU_TEST_NETWORK";
 /// 需要本机 Chrome/Chromium 的测试开关。
 pub const CHROME_ENV: &str = "XMU_TEST_CHROME";
+/// 需要真人参与（手输账号密码、扫码）的测试开关。这类测试无人值守时**永远**过不了。
+pub const INTERACTIVE_ENV: &str = "XMU_TEST_INTERACTIVE";
 
 fn read(key: &str) -> Option<String> {
     std::env::var(key)
@@ -34,6 +36,7 @@ fn read(key: &str) -> Option<String> {
 static CASTGC: LazyLock<Option<String>> = LazyLock::new(|| read(CASTGC_ENV));
 static NETWORK: LazyLock<bool> = LazyLock::new(|| read(NETWORK_ENV).is_some());
 static CHROME: LazyLock<bool> = LazyLock::new(|| read(CHROME_ENV).is_some());
+static INTERACTIVE: LazyLock<bool> = LazyLock::new(|| read(INTERACTIVE_ENV).is_some());
 
 /// 取联网测试用的 CASTGC；未设置时返回 `None`，调用方应当跳过该测试。
 ///
@@ -67,4 +70,15 @@ pub fn skipped_network(module: &str) -> Result<()> {
 /// 依赖本机 Chrome/Chromium 的测试是否已打开。
 pub fn chrome_enabled() -> bool {
     *CHROME
+}
+
+/// 需要真人参与的测试是否已打开。
+pub fn interactive_enabled() -> bool {
+    *INTERACTIVE
+}
+
+/// 未打开交互开关时的跳过返回值。
+pub fn skipped_interactive(module: &str) -> Result<()> {
+    note_skipped(module, INTERACTIVE_ENV);
+    Ok(())
 }

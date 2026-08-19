@@ -133,8 +133,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_qrcode() -> Result<()> {
-        if !testenv::network_enabled() {
-            return testenv::skipped_network(module_path!());
+        // 这个用例要真人手输账号密码 / 扫码，无人值守时永远过不了。
+        if !testenv::interactive_enabled() {
+            return testenv::skipped_interactive(module_path!());
         }
         let session = SessionClient::new();
 

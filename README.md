@@ -127,6 +127,9 @@ XMU_TEST_NETWORK=1 cargo test --lib
 
 # 需要本机 Chrome/Chromium 的测试（课表渲染）
 XMU_TEST_CHROME=1 cargo test --lib
+
+# 需要真人参与的测试（手输账号密码、扫码），无人值守时永远过不了
+XMU_TEST_INTERACTIVE=1 cargo test --lib -- --nocapture
 ```
 
 CASTGC 可以从浏览器登录 <https://ids.xmu.edu.cn> 后的 `CASTGC` Cookie 里取，有效期很短。
@@ -142,8 +145,12 @@ CASTGC 可以从浏览器登录 <https://ids.xmu.edu.cn> 后的 `CASTGC` Cookie 
 - `lnt::submissions_id::tests::test_parse` 在 `html.rs` 里 panic；
 - `session::tests::bench_download_mode` 用的 c-media 链接早已过期；
 - `session::tests::test_post_json` 依赖公网的 httpbin.org，该服务经常 503；
+- `lnt::distribute::tests::test` 里写死的考试 id `71211` 已经 404；
 - `schedule::image::tests::test_chrome_launch` 需要本机 Chrome 能以
   `--single-process --no-zygote` 启动，部分环境会以 `ExitStatus(21)` 失败。
+
+最近一次带凭证的全量运行：84 passed / 5 failed / 3 ignored，
+5 个失败全部是上面这些既有问题。
 
 ### 发布构建（Alibaba Cloud Linux 3 目标）
 
