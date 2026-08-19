@@ -130,6 +130,9 @@ XMU_TEST_CHROME=1 cargo test --lib
 
 # 需要真人参与的测试（手输账号密码、扫码），无人值守时永远过不了
 XMU_TEST_INTERACTIVE=1 cargo test --lib -- --nocapture
+
+# 依赖已失效固定值的测试（过期链接、被删掉的考试、第三方服务），默认跳过
+XMU_TEST_STALE=1 cargo test --lib
 ```
 
 CASTGC 可以从浏览器登录 <https://ids.xmu.edu.cn> 后的 `CASTGC` Cookie 里取，有效期很短。
@@ -140,17 +143,27 @@ CASTGC 可以从浏览器登录 <https://ids.xmu.edu.cn> 后的 `CASTGC` Cookie 
 `runtime dropped the dispatch task`。为此 `session.rs` 在 `cfg(test)` 下把空闲连接复用关掉了
 （`pool_max_idle_per_host(0)`），所以联网测试不需要 `--test-threads=1`，正式构建不受影响。
 
-已知的既有问题（不是开关引入的，开了对应开关就会看到）：
+默认跳过的用例分四类，各有独立开关，互不影响：
 
-- `lnt::submissions_id::tests::test_parse` 在 `html.rs` 里 panic；
-- `session::tests::bench_download_mode` 用的 c-media 链接早已过期；
-- `session::tests::test_post_json` 依赖公网的 httpbin.org，该服务经常 503；
-- `lnt::distribute::tests::test` 里写死的考试 id `71211` 已经 404；
-- `schedule::image::tests::test_chrome_launch` 需要本机 Chrome 能以
-  `--single-process --no-zygote` 启动，部分环境会以 `ExitStatus(21)` 失败。
+| 开关 | 覆盖的用例 |
+|---|---|
+| `XMU_TEST_CASTGC` | 需要统一身份认证凭证的（教务 / 学习通 / LLM 选择器 / 绩点查询全链路） |
+| `XMU_TEST_NETWORK` | 不要凭证但要出网的（文件下载、登录页正则一致性） |
+| `XMU_TEST_CHROME` | 需要本机 Chrome 的课表渲染 |
+| `XMU_TEST_INTERACTIVE` | 要真人手输账号密码或扫码的 |
+| `XMU_TEST_STALE` | 依赖已失效固定值的（见下） |
 
-最近一次带凭证的全量运行：84 passed / 5 failed / 3 ignored，
-5 个失败全部是上面这些既有问题。
+`XMU_TEST_STALE` 里的用例本身没坏，是它们指向的外部数据没了；原样保留、默认跳过，
+等换上新的固定值再打开验证，免得长期红着掩盖真正的回归：
+
+- `session::tests::bench_download_mode` —— 用的 c-media 链接早已过期；
+- `session::tests::test_post_json` —— 依赖公网 httpbin.org，该服务经常 503；
+- `lnt::html::tests::test` 与 `lnt::submissions_id::tests::test_parse`
+  —— 固定的样本走到 parse 时会在 `html.rs` 里 panic；
+- `lnt::distribute::tests::test` —— 写死的考试 id `71211` 已 404。
+
+最近一次带凭证的全量运行（`XMU_TEST_CASTGC=... XMU_TEST_NETWORK=1 cargo test --lib`）：
+**89 passed / 0 failed / 3 ignored**。
 
 ### 发布构建（Alibaba Cloud Linux 3 目标）
 

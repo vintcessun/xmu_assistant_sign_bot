@@ -520,8 +520,9 @@ mod tests {
 
     #[tokio::test]
     async fn bench_download_mode() -> Result<()> {
-        if !testenv::network_enabled() {
-            return testenv::skipped_network(module_path!());
+        // TEST_URL 是一条早已过期的 c-media 链接。
+        if !testenv::stale_enabled() {
+            return testenv::skipped_stale(module_path!());
         }
         let test_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
@@ -541,8 +542,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_post_json() -> Result<()> {
-        if !testenv::network_enabled() {
-            return testenv::skipped_network(module_path!());
+        // 依赖公网的 httpbin.org，该服务经常 503。
+        if !testenv::stale_enabled() {
+            return testenv::skipped_stale(module_path!());
         }
         let client = SessionClient::new();
         let url = "https://httpbin.org/post";
