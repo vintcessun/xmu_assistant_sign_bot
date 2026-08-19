@@ -152,6 +152,38 @@ impl<
         }
     }
 
+    /// 无视当前会话目标，直接私聊指定用户。
+    /// 用于把口令这类敏感内容从群聊里挪走。
+    pub async fn send_private_message(&self, user_id: i64, message: MessageSend) -> Result<()> {
+        let message = Arc::new(message);
+        trace!(user_id = ?user_id, message = ?message, "准备发送定向私聊消息");
+        let params = api::SendPrivateMessageParams::new(user_id, message);
+        let call = self.client.call_api(&params, Echo::new()).await?;
+        let res = call.wait_echo().await?;
+        trace!(response = ?res, "定向私聊消息 API 返回");
+        match res.status {
+            api::Status::Ok => {
+                info!(user_id = ?user_id, "定向私聊消息发送成功");
+                Ok(())
+            }
+            api::Status::Failed => {
+                error!(
+                    user_id = ?user_id,
+                    error_message = ?res.message,
+                    "发送定向私聊消息失败"
+                );
+                Err(anyhow::anyhow!(
+                    "发送私聊消息失败: {:?}",
+                    res.message.unwrap_or("未知错误".to_string())
+                ))
+            }
+            api::Status::Async => {
+                warn!(user_id = ?user_id, "发送定向私聊消息异步处理中");
+                Err(anyhow::anyhow!("发送私聊消息异步处理中"))
+            }
+        }
+    }
+
     pub fn send_message_async(&mut self, message: MessageSend) {
         self.message_list.push(message);
     }

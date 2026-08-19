@@ -53,6 +53,7 @@
 | `/test` | `/test <描述>` | 查询指定课程的测试/作业信息（大模型识别课程）。 |
 | `/gettest` | `/gettest <ID>` | 查询指定小测的题目内容，`<ID>` 通过 `/test` 获取。 |
 | `/testans` | `/testans <ID>` | 查询指定小测的答案（以教师公布为准）。 |
+| `/jdpm` | `/jdpm [自定义口令]` | 创建一个受访问口令保护的绩点/排名查询网页。口令可自定义（至少 4 位，仅私聊有效；群聊里打出的口令视为已泄露会被作废并改用随机口令），不填则随机生成；群聊内使用时链接与口令改走私聊。网页上可列出成绩范围、申请绩点计算（先查后申，已有有效结果不重复提交）、生成绩点证明 PDF，并从证明正文中提取出**专业绩点排名、专业总人数、平均学分绩点、加权平均分、成绩截止日期**——其中排名与专业人数教务 JSON 接口一律返回 `*`，只有证明 PDF 里才公开。链接与口令 30 分钟内有效。 |
 
 ### 校园网
 
@@ -89,7 +90,7 @@ xmu_sign_qr 仓库的 GitHub Actions 会构建 Android APK 与 iOS IPA，可在�
 ## 架构概览
 
 - `src/logic`：指令处理。每个指令是一个带 `#[handler(...)]` 过程宏的异步函数，由 `build.rs` 在编译期扫描注册，`help_msg` 亦在编译期聚合为 `/help`。
-- `src/web`：基于 `axum` 的 Web 暴露子系统，`build.rs` 按目录自动组装路由。主要模块：`file`（大文件流式下载）、`md`（Markdown 预览与 PDF 导出）、`login` / `vpn`（登录与 SecureLink 登录页）、`timetable`、`rollcall`。
+- `src/web`：基于 `axum` 的 Web 暴露子系统，`build.rs` 按目录自动组装路由。主要模块：`file`（大文件流式下载）、`md`（Markdown 预览与 PDF 导出）、`login` / `vpn`（登录与 SecureLink 登录页）、`timetable`、`rollcall`、`guard`（页面访问口令：盐 + 多轮 SHA-256 摘要、令牌轮换、失败锁定）、`jdfpm`（绩点与排名查询页，受 `guard` 保护）。
 - `src/api`：学校服务客户端（`xmu_service` 下的统一认证 / 学习通 / 教务）、网络层 `SessionClient`（自管理 Cookie 与重定向）、存储（`redb`）、二维码与视频处理等。
 - `src/abi`：OneBot 接入层，通过 WebSocket 与 NapCat 通信（事件流 + API 流）。
 - 大模型：通过 `genai` + `llm_xml_caster` 使用 DeepSeek，仅用于课程/资料/课表等结构化选择，不用于闲聊。

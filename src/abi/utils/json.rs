@@ -37,3 +37,16 @@ impl SmartJsonExt for Response {
         }
     }
 }
+
+/// 把显式的 `null` 当作 `Default::default()` 处理。
+///
+/// 教务（jw）系列接口在“写操作成功”时会返回 `{"code":"0","datas":{"addJdjssq":null}}`，
+/// 即 `datas` 下的动态字段是 `null` 而不是对象；配合 `#[serde(default)]` 才能同时覆盖
+/// “字段缺失”（错误响应里根本没有 `datas`）和“字段为 null”两种情况。
+pub fn null_to_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de> + Default,
+{
+    Ok(<Option<T> as serde::Deserialize>::deserialize(deserializer)?.unwrap_or_default())
+}

@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>绩点与排名查询</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background:#f2f4f7; margin:0; padding:24px; color:#1f2933; }
+  .card { max-width:720px; margin:0 auto 18px; background:#fff; border-radius:14px; padding:24px; box-shadow:0 8px 24px rgba(0,0,0,.08); }
+  h1 { font-size:20px; margin:0 0 12px; }
+  h2 { font-size:16px; margin:0 0 10px; }
+  .sub { color:#6b7280; font-size:13px; margin:0 0 16px; }
+  input[type=password], input[type=text] { width:100%; box-sizing:border-box; border:1px solid #d1d5db; border-radius:8px; padding:10px; font-size:15px; }
+  button { margin-top:10px; width:100%; padding:11px; border:0; border-radius:8px; background:#2563eb; color:#fff; font-size:15px; cursor:pointer; }
+  button.secondary { background:#0891b2; }
+  button.ghost { background:#e5e7eb; color:#1f2933; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  button:active { opacity:.85; }
+  .msg { margin-top:12px; padding:10px 12px; border-radius:8px; font-size:13px; white-space:pre-line; display:none; }
+  .msg.ok { display:block; background:#ecfdf5; color:#065f46; }
+  .msg.err { display:block; background:#fef2f2; color:#991b1b; }
+  .msg.info { display:block; background:#eff6ff; color:#1e40af; }
+  .hidden { display:none; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid #eef0f3; }
+  th { color:#6b7280; font-weight:600; }
+  .range-row td:last-child { width:96px; }
+  .range-row button { margin:0; padding:6px 10px; font-size:13px; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-top:8px; }
+  .stat { background:#f8fafc; border-radius:10px; padding:12px; }
+  .stat .k { color:#6b7280; font-size:12px; }
+  .stat .v { font-size:20px; font-weight:600; margin-top:4px; word-break:break-all; }
+  pre { background:#f8fafc; border-radius:10px; padding:12px; font-size:13px; line-height:1.6; white-space:pre-wrap; word-break:break-all; max-height:420px; overflow:auto; }
+  a { color:#2563eb; word-break:break-all; }
+  .foot { color:#9ca3af; font-size:12px; text-align:center; }
+</style>
+</head>
+<body>
+
+<div class="card" id="lockCard">
+  <h1>绩点与排名查询</h1>
+  <p class="sub">QQ：__QQ_ID__ · 本页面由访问口令保护，请输入机器人发给你的口令</p>
+  <input type="password" id="password" placeholder="访问口令" autocomplete="off">
+  <button id="unlockBtn">解锁</button>
+  <div id="lockMsg" class="msg"></div>
+  <p class="sub" style="margin:14px 0 0;">口令仅在本页内存中保留，刷新或换设备都需要重新输入；重新输入口令会把上一位访问者顶下线。</p>
+</div>
+
+<div id="app" class="hidden">
+  <div class="card">
+    <h1>绩点与排名查询</h1>
+    <p class="sub" id="sessionSub">QQ：__QQ_ID__</p>
+    <button id="lockBtn" class="ghost">锁定并退出</button>
+  </div>
+
+  <div class="card">
+    <h2>成绩范围</h2>
+    <p class="sub">选一个范围申请绩点计算；已有有效结果时会直接取回。</p>
+    <table id="rangeTable"><tbody></tbody></table>
+    <button id="reloadRangeBtn" class="secondary">刷新成绩范围</button>
+    <div id="rangeMsg" class="msg"></div>
+  </div>
+
+  <div class="card hidden" id="resultCard">
+    <h2>计算结果</h2>
+    <p class="sub" id="resultSub"></p>
+    <div class="stats" id="resultStats"></div>
+    <button id="certBtn" class="secondary">生成绩点证明并提取排名</button>
+    <div id="certMsg" class="msg"></div>
+  </div>
+
+  <div class="card hidden" id="certCard">
+    <h2>绩点证明（含排名）</h2>
+    <p class="sub">以下内容来自教务生成的证明 PDF；排名与专业人数只在证明里公开。</p>
+    <div class="stats" id="certStats"></div>
+    <details style="margin-top:14px;">
+      <summary style="cursor:pointer;color:#2563eb;font-size:14px;">查看证明正文原文</summary>
+      <pre id="certText"></pre>
+    </details>
+    <a id="pdfLink" href="#" target="_blank" rel="noopener">下载证明 PDF</a>
+  </div>
+
+  <div class="card">
+    <h2>历史申请记录</h2>
+    <table id="recordTable"><tbody></tbody></table>
+    <button id="reloadRecordBtn" class="ghost">刷新记录</button>
+    <div id="recordMsg" class="msg"></div>
+  </div>
+</div>
+
+<p class="foot">链接与口令均有时效，过期后请重新发送 /jdpm</p>
+
+<script>
+  const SESSION_ID = __SESSION_ID_JS__;
+  let TOKEN = null;
+
+  const $ = (id) => document.getElementById(id);
+
+  function show(el, text, kind) {
+    el.textContent = text;
+    el.className = 'msg ' + kind;
+  }
+
+  function hide(el) {
+    el.className = 'msg';
+    el.textContent = '';
+  }
+
+  async function api(method, url, body) {
+    const options = { method, headers: {} };
+    if (TOKEN) options.headers['Authorization'] = 'Bearer ' + TOKEN;
+    if (body !== undefined) {
+      options.headers['Content-Type'] = 'application/json';
+      options.body = JSON.stringify(body);
+    }
+    const resp = await fetch(url, options);
+    const text = await resp.text();
+    let data = null;
+    if (text) {
+      try { data = JSON.parse(text); } catch (e) { data = { detail: text }; }
+    }
+    if (!resp.ok) {
+      throw new Error((data && data.detail) || ('请求失败：HTTP ' + resp.status));
+    }
+    return data;
+  }
+
+  function fmtMinutes(seconds) {
+    return Math.max(0, Math.floor(seconds / 60));
+  }
+
+  $('unlockBtn').onclick = async () => {
+    const password = $('password').value;
+    if (!password) { show($('lockMsg'), '请输入口令', 'err'); return; }
+    $('unlockBtn').disabled = true;
+    try {
+      const data = await api('POST', '/guard/' + SESSION_ID + '/unlock', { password });
+      TOKEN = data.token;
+      $('password').value = '';
+      $('lockCard').classList.add('hidden');
+      $('app').classList.remove('hidden');
+      $('sessionSub').textContent = 'QQ：__QQ_ID__ · 本次访问剩余约 ' + fmtMinutes(data.seconds_left) + ' 分钟';
+      await loadRanges();
+      await loadRecords();
+    } catch (e) {
+      show($('lockMsg'), e.message, 'err');
+    } finally {
+      $('unlockBtn').disabled = false;
+    }
+  };
+
+  $('password').addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') $('unlockBtn').click();
+  });
+
+  $('lockBtn').onclick = async () => {
+    try { await api('POST', '/guard/' + SESSION_ID + '/lock'); } catch (e) { /* 已失效也无所谓 */ }
+    TOKEN = null;
+    $('app').classList.add('hidden');
+    $('lockCard').classList.remove('hidden');
+    show($('lockMsg'), '已退出，如需继续请重新输入口令', 'info');
+  };
+
+  async function loadRanges() {
+    hide($('rangeMsg'));
+    const body = $('rangeTable').querySelector('tbody');
+    body.innerHTML = '<tr><td>正在加载成绩范围…</td></tr>';
+    try {
+      const rows = await api('GET', '/jdfpm/api/' + SESSION_ID + '/ranges');
+      body.innerHTML = '';
+      if (!rows.length) { body.innerHTML = '<tr><td>教务没有返回可用的成绩范围</td></tr>'; return; }
+      for (const row of rows) {
+        const tr = document.createElement('tr');
+        tr.className = 'range-row';
+        const name = document.createElement('td');
+        name.textContent = row.name;
+        const action = document.createElement('td');
+        const btn = document.createElement('button');
+        btn.textContent = '查询';
+        btn.onclick = () => queryRange(row, btn);
+        action.appendChild(btn);
+        tr.appendChild(name);
+        tr.appendChild(action);
+        body.appendChild(tr);
+      }
+    } catch (e) {
+      body.innerHTML = '';
+      show($('rangeMsg'), e.message, 'err');
+    }
+  }
+
+  async function queryRange(row, btn) {
+    hide($('rangeMsg'));
+    btn.disabled = true;
+    btn.textContent = '查询中…';
+    try {
+      const data = await api('POST', '/jdfpm/api/' + SESSION_ID + '/query', {
+        range_wid: row.wid,
+        range_name: row.name,
+      });
+      renderResult(data);
+      await loadRecords();
+    } catch (e) {
+      show($('rangeMsg'), e.message, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '查询';
+    }
+  }
+
+  let CURRENT_WID = null;
+
+  function stat(key, value) {
+    const div = document.createElement('div');
+    div.className = 'stat';
+    const k = document.createElement('div');
+    k.className = 'k';
+    k.textContent = key;
+    const v = document.createElement('div');
+    v.className = 'v';
+    v.textContent = value;
+    div.appendChild(k);
+    div.appendChild(v);
+    return div;
+  }
+
+  function renderResult(data) {
+    const detail = data.record.detail;
+    $('resultCard').classList.remove('hidden');
+    $('certCard').classList.add('hidden');
+    hide($('certMsg'));
+
+    if (!detail) {
+      $('resultSub').textContent = data.message + '（教务尚未返回计算明细）';
+      $('resultStats').innerHTML = '';
+      $('certBtn').classList.add('hidden');
+      CURRENT_WID = null;
+      return;
+    }
+
+    CURRENT_WID = detail.wid;
+    $('certBtn').classList.remove('hidden');
+    $('resultSub').textContent = data.message + ' · ' + detail.range_name +
+      ' · 成绩截止 ' + detail.data_deadline + ' · 申请时间 ' + data.record.apply_time +
+      ' · 有效期至 ' + data.record.expire_time;
+
+    const stats = $('resultStats');
+    stats.innerHTML = '';
+    stats.appendChild(stat('平均学分绩点 GPA', detail.gpa));
+    stats.appendChild(stat('加权平均分', detail.weighted_average));
+    stats.appendChild(stat('算术平均分', detail.arithmetic_average));
+    stats.appendChild(stat('参与计算门数', detail.course_count));
+    stats.appendChild(stat('专业人数', detail.major_size));
+    if (detail.rank_visible) {
+      stats.appendChild(stat('专业绩点排名', detail.gpa_rank));
+      stats.appendChild(stat('加权均分排名', detail.weighted_rank));
+      stats.appendChild(stat('算术均分排名', detail.arithmetic_rank));
+    } else {
+      show($('certMsg'), '接口未公开排名（返回 *），点击下方按钮从绩点证明 PDF 里读取排名。', 'info');
+    }
+  }
+
+  $('certBtn').onclick = async () => {
+    if (!CURRENT_WID) return;
+    const btn = $('certBtn');
+    btn.disabled = true;
+    btn.textContent = '正在生成并解析证明…';
+    try {
+      const data = await api('POST', '/jdfpm/api/' + SESSION_ID + '/certificate', {
+        wid: CURRENT_WID,
+        show_rank: true,
+      });
+      $('certCard').classList.remove('hidden');
+      $('certText').textContent = data.text;
+
+      const f = data.facts;
+      const box = $('certStats');
+      box.innerHTML = '';
+      const fields = [
+        ['专业绩点排名', f.rank],
+        ['所在专业总人数', f.major_size],
+        ['平均学分绩点', f.gpa],
+        ['加权平均分', f.weighted_average],
+        ['成绩截止日期', f.deadline],
+      ];
+      let missing = 0;
+      for (const [key, value] of fields) {
+        if (value === null || value === undefined) { missing++; continue; }
+        box.appendChild(stat(key, value));
+      }
+      $('pdfLink').href = data.pdf_url;
+      show($('certMsg'), missing
+        ? ('证明已生成，但有 ' + missing + ' 个字段未能从正文中识别，请看下方原文。')
+        : '证明已生成，排名等信息已从证明正文中提取。', missing ? 'info' : 'ok');
+    } catch (e) {
+      show($('certMsg'), e.message, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '生成绩点证明并提取排名';
+    }
+  };
+
+  async function loadRecords() {
+    hide($('recordMsg'));
+    const body = $('recordTable').querySelector('tbody');
+    body.innerHTML = '<tr><td>正在加载记录…</td></tr>';
+    try {
+      const rows = await api('GET', '/jdfpm/api/' + SESSION_ID + '/records');
+      body.innerHTML = '';
+      if (!rows.length) { body.innerHTML = '<tr><td>暂无申请记录</td></tr>'; return; }
+      const head = document.createElement('tr');
+      for (const title of ['成绩范围', 'GPA', '加权均分', '申请时间', '状态']) {
+        const th = document.createElement('th');
+        th.textContent = title;
+        head.appendChild(th);
+      }
+      body.appendChild(head);
+      for (const row of rows) {
+        const tr = document.createElement('tr');
+        const cells = [
+          row.detail ? row.detail.range_name : '—',
+          row.detail ? row.detail.gpa : '—',
+          row.detail ? row.detail.weighted_average : '—',
+          row.apply_time,
+          row.expired ? '已失效' : (row.valid ? '有效' : '无效'),
+        ];
+        for (const text of cells) {
+          const td = document.createElement('td');
+          td.textContent = text;
+          tr.appendChild(td);
+        }
+        body.appendChild(tr);
+      }
+    } catch (e) {
+      body.innerHTML = '';
+      show($('recordMsg'), e.message, 'err');
+    }
+  }
+
+  $('reloadRangeBtn').onclick = loadRanges;
+  $('reloadRecordBtn').onclick = loadRecords;
+</script>
+</body>
+</html>

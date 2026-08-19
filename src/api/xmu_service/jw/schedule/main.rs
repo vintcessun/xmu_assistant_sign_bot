@@ -92,7 +92,7 @@ mod tests {
                 student_id: "",
             };
             let schedule = Schedule::call(castgc, &data).await?;
-            println!("{} Schedule API Response: {:?}\n\n", &item.xnxqdm, schedule);
+            println!("{} Schedule API Response: {:?}\n\n", item.xnxqdm, schedule);
             let parse_result = ScheduleCourseTime::new_partial(schedule);
             println!("Parsed Schedule Course Time: {:?}\n\n", parse_result);
         }
@@ -113,7 +113,7 @@ mod tests {
                 student_id: "",
             };
             let schedule = Schedule::call(castgc, &data).await?;
-            println!("{} Schedule API Response: {:?}\n\n", &item.xnxqdm, schedule);
+            println!("{} Schedule API Response: {:?}\n\n", item.xnxqdm, schedule);
             let parse_result = ScheduleCourseTime::new_partial(schedule);
             println!("Parsed Schedule Course Time: {:?}\n\n", parse_result);
         }
@@ -134,7 +134,7 @@ mod tests {
                 student_id: "",
             };
             let schedule = Schedule::call(castgc, &data).await?;
-            println!("{} Schedule API Response: {:?}\n\n", &item.xnxqdm, schedule);
+            println!("{} Schedule API Response: {:?}\n\n", item.xnxqdm, schedule);
             let parse_result = ScheduleCourseTime::new_partial(schedule);
             println!("Parsed Schedule Course Time: {:?}\n\n", parse_result);
         }
@@ -155,7 +155,7 @@ mod tests {
                 student_id: "",
             };
             let schedule = Schedule::call(castgc, &data).await?;
-            println!("{} Schedule API Response: {:?}\n\n", &item.xnxqdm, schedule);
+            println!("{} Schedule API Response: {:?}\n\n", item.xnxqdm, schedule);
             let parse_result = ScheduleCourseTime::new_partial(schedule);
             println!("Parsed Schedule Course Time: {:?}\n\n", parse_result);
         }

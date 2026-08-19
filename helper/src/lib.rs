@@ -483,6 +483,8 @@ struct JwApiArgs {
     wrapper_name: String,
     wrap_response: WrapState,
     auto_row: bool,
+    /// `datas.<字段>` 直接是数组（而非 `{rows: [...]}` 包装）时置 true。
+    list: bool,
     call_type: CallType,
 }
 
@@ -494,6 +496,7 @@ impl Parse for JwApiArgs {
         let mut wrap_response = WrapState::Normal;
         let mut wrapper_name: Option<String> = None;
         let mut auto_row = true;
+        let mut list = false;
         let mut call_type = CallType::Post;
 
         for meta in vars {
@@ -530,6 +533,14 @@ impl Parse for JwApiArgs {
                     {
                         auto_row = b.value;
                     }
+                } else if nv.path.is_ident("list") {
+                    if let syn::Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Bool(b),
+                        ..
+                    }) = nv.value
+                    {
+                        list = b.value;
+                    }
                 } else if nv.path.is_ident("call_type") {
                     if let syn::Expr::Lit(syn::ExprLit {
                         lit: syn::Lit::Str(s),
@@ -551,7 +562,7 @@ impl Parse for JwApiArgs {
                 } else {
                     return Err(syn::Error::new_spanned(
                         nv.path,
-                        "Unknown attribute key, expected 'url', 'app', 'wrap_response', 'wrapper_name', 'auto_row', or 'call_type'",
+                        "Unknown attribute key, expected 'url', 'app', 'wrap_response', 'wrapper_name', 'auto_row', 'list', or 'call_type'",
                     ));
                 }
             }
@@ -600,6 +611,13 @@ impl Parse for JwApiArgs {
             },
         };
 
+        if list && !auto_row {
+            return Err(syn::Error::new(
+                input.span(),
+                "`list = true` 已隐含逐行结构体，不能与 `auto_row = false` 同时使用",
+            ));
+        }
+
         Ok(JwApiArgs {
             url,
             app,
@@ -607,6 +625,7 @@ impl Parse for JwApiArgs {
             wrap_response,
             wrapper_name,
             auto_row,
+            list,
             call_type,
         })
     }
@@ -634,7 +653,15 @@ pub fn jw_api(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let dynamic_field_ident = format_ident!("{}", field_name_from_url);
 
-    let field_quote = if args.auto_row {
+    let field_quote = if args.list {
+        // `datas.<字段>` 直接是数组，不再有 `{rows: [...]}` 这一层包装。
+        quote! {
+            #[derive(Serialize, Deserialize, Debug, Clone, Default)]
+            #[serde(rename_all = "UPPERCASE")]
+            #vis struct #response_item_ident
+            #fields
+        }
+    } else if args.auto_row {
         quote! {
             #[derive(Serialize, Deserialize, Debug, Clone, Default)]
             #[serde(rename_all = "UPPERCASE")]
@@ -668,16 +695,32 @@ pub fn jw_api(args: TokenStream, input: TokenStream) -> TokenStream {
             }
     };
 
+    // `list = true` 时动态字段直接是 Vec<Item>，否则是 `{rows: [...]}` / 自定义对象。
+    let dynamic_field_ty = if args.list {
+        quote! { Vec<#response_item_ident> }
+    } else {
+        quote! { #data_api_ident }
+    };
+
     let original_quote = match args.wrap_response {
         WrapState::Normal => quote! {
+            // 动态字段名直接取自接口路径（如 `getCurrentUser`），不遵循 snake_case。
+            #[allow(non_snake_case)]
             #[derive(Serialize, Deserialize, Debug, Clone, Default)]
             #vis struct #datas_ident {
-                pub #dynamic_field_ident: #data_api_ident,
+                // 写操作成功时该字段可能是显式 null（如 `{"datas":{"addJdjssq":null}}`），
+                // 错误响应里则整个 `datas` 都不存在，两种情况都要退化为 Default。
+                #[serde(default, deserialize_with = "crate::abi::utils::null_to_default")]
+                pub #dynamic_field_ident: #dynamic_field_ty,
             }
 
             #[derive(Serialize, Deserialize, Debug, Clone, Default)]
             #vis struct #original_ident {
                 pub code: String,
+                /// 教务接口在 `code != "0"` 时用 `msg` 说明失败原因。
+                #[serde(default, skip_serializing_if = "Option::is_none")]
+                pub msg: Option<String>,
+                #[serde(default)]
                 pub #data_name: #datas_ident,
             }
         },
@@ -703,7 +746,9 @@ pub fn jw_api(args: TokenStream, input: TokenStream) -> TokenStream {
             impl #original_ident {
                 pub async fn call_client(client: &crate::api::network::SessionClient) -> Result<#original_ident> {
                     let res_auth = client.get(#original_ident::APP_ENTRANCE).await?;
-                    let resp = client.get(#original_ident::URL_DATA).await?.json_smart().await?;
+                    let res = client.get(#original_ident::URL_DATA).await?;
+                    crate::api::xmu_service::jw::ensure_json_response(&res)?;
+                    let resp = res.json_smart().await?;
                     Ok(resp)
                 }
 
@@ -717,7 +762,9 @@ pub fn jw_api(args: TokenStream, input: TokenStream) -> TokenStream {
             impl #original_ident {
                 pub async fn call_client<D: Serialize + Sync>(client: &crate::api::network::SessionClient, data: &D) -> Result<#original_ident> {
                     let res_auth = client.get(#original_ident::APP_ENTRANCE).await?;
-                    let resp = client.post(#original_ident::URL_DATA, data).await?.json_smart().await?;
+                    let res = client.post(#original_ident::URL_DATA, data).await?;
+                    crate::api::xmu_service::jw::ensure_json_response(&res)?;
+                    let resp = res.json_smart().await?;
                     Ok(resp)
                 }
 
@@ -729,6 +776,44 @@ pub fn jw_api(args: TokenStream, input: TokenStream) -> TokenStream {
         },
     };
 
+    // 只有带 `code`/`msg` 的常规包装才有“业务返回码”可判。
+    let code_check_quote = match args.wrap_response {
+        WrapState::Normal => quote! {
+            impl #original_ident {
+                /// 业务返回码是否成功（教务系统用 `"0"` 表示成功）。
+                #[allow(dead_code)]
+                pub fn is_ok(&self) -> bool {
+                    self.code == "0"
+                }
+
+                /// 取失败原因；成功时为 `None`。
+                #[allow(dead_code)]
+                pub fn error_message(&self) -> Option<&str> {
+                    if self.is_ok() {
+                        None
+                    } else {
+                        Some(self.msg.as_deref().unwrap_or("教务接口返回了未知错误"))
+                    }
+                }
+
+                /// `code != "0"` 时带上 `msg` 报错，便于把教务的中文提示直接透传给用户。
+                #[allow(dead_code)]
+                pub fn ensure_ok(&self) -> Result<()> {
+                    match self.error_message() {
+                        None => Ok(()),
+                        Some(msg) => Err(anyhow::anyhow!(
+                            "{} 返回失败(code={}): {}",
+                            #url_val,
+                            self.code,
+                            msg
+                        )),
+                    }
+                }
+            }
+        },
+        WrapState::Query => quote! {},
+    };
+
     let expanded = quote! {
         #field_quote
 
@@ -737,6 +822,8 @@ pub fn jw_api(args: TokenStream, input: TokenStream) -> TokenStream {
         #original_quote
 
         #impl_quote
+
+        #code_check_quote
     };
 
     TokenStream::from(expanded)

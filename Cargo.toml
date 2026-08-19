@@ -112,6 +112,8 @@ cbc = { version = "0.1", features = ["alloc"] }
 rand_compat = { package = "rand", version = "0.8" }
 # /flushvpn 扫码页：把 SSO 登录链接渲染成二维码 SVG。
 qrcode = "0.14"
+# 绩点证明 PDF 的正文提取（/jdpm 网页把排名等信息回显到页面）。
+pdf-extract = "0.12"
 
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
