@@ -40,6 +40,15 @@ static GLOBAL_CLIENT: LazyLock<Client> = LazyLock::new(|| {
         .redirect(reqwest::redirect::Policy::none()) // 必须手动处理重定向，才能跨请求同步 Cookie
         .pool_max_idle_per_host(100);
 
+    // 单测里每个 #[tokio::test] 各起一个 runtime，而这个 Client 是全局 LazyLock：
+    // 连接池会把上一个测试 runtime 上建立的连接留给下一个测试用，命中就报
+    // “dispatch task is gone / runtime dropped the dispatch task”。
+    // 关掉空闲连接复用，让联网测试怎么跑都稳定；只影响本 crate 的单测编译。
+    #[cfg(test)]
+    {
+        builder = builder.pool_max_idle_per_host(0);
+    }
+
     // *.xmu.edu.cn 经本地 SOCKS5 出去（隐匿真实 IP），其余直连；由 Proxy::custom 按 host 判定。
     if let Some(proxy_url) = xmu_socks5_proxy() {
         info!(proxy = %proxy_url, "*.xmu.edu.cn 将通过 SOCKS5 代理路由");

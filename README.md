@@ -119,22 +119,30 @@ pwsh scripts/cargo.ps1 test -- --nocapture
 
 ```bash
 # 需要统一身份认证凭证的测试（教务 / 学习通 / LLM 选择器等）
-XMU_TEST_CASTGC=TGT-xxx cargo test --lib -- --test-threads=1
+XMU_TEST_CASTGC=TGT-xxx cargo test --lib
 
 # 不需要凭证、但要真的出网的测试（下载、登录页正则一致性等）
-XMU_TEST_NETWORK=1 cargo test --lib -- --test-threads=1
+XMU_TEST_NETWORK=1 cargo test --lib
 
 # 需要本机 Chrome/Chromium 的测试（课表渲染）
 XMU_TEST_CHROME=1 cargo test --lib
 ```
 
 CASTGC 可以从浏览器登录 <https://ids.xmu.edu.cn> 后的 `CASTGC` Cookie 里取，有效期很短。
-凭证只从环境变量读，不写进仓库。
+凭证只从环境变量读，不写进仓库。不设这些变量时 `cargo test` 只跑纯离线用例，全程不出网。
 
-必须加 `--test-threads=1`：全局 `SessionClient` 的连接池挂在最先创建它的 tokio runtime 上，
-而每个 `#[tokio::test]` 各有一个 runtime，并发跑会撞上 `runtime dropped the dispatch task`。
+全局 `SessionClient` 用的是一个 `LazyLock<Client>`，而每个 `#[tokio::test]` 各起一个 runtime，
+连接池会把上一个测试 runtime 上建立的连接留给下一个测试，命中就报
+`runtime dropped the dispatch task`。为此 `session.rs` 在 `cfg(test)` 下把空闲连接复用关掉了
+（`pool_max_idle_per_host(0)`），所以联网测试不需要 `--test-threads=1`，正式构建不受影响。
 
-不设这些变量时 `cargo test` 只跑纯离线用例，全程不出网。
+已知的既有问题（不是开关引入的，开了对应开关就会看到）：
+
+- `lnt::submissions_id::tests::test_parse` 在 `html.rs` 里 panic；
+- `session::tests::bench_download_mode` 用的 c-media 链接早已过期；
+- `session::tests::test_post_json` 依赖公网的 httpbin.org，该服务经常 503；
+- `schedule::image::tests::test_chrome_launch` 需要本机 Chrome 能以
+  `--single-process --no-zygote` 启动，部分环境会以 `ExitStatus(21)` 失败。
 
 ### 发布构建（Alibaba Cloud Linux 3 目标）
 
