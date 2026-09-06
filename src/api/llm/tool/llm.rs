@@ -10,8 +10,9 @@ use serde::de::DeserializeOwned;
 use std::sync::LazyLock;
 use tracing::{debug, info, trace, warn};
 
-/// 用于必要的 LLM 选择（课程/文件/课表等结构化选择）的模型，使用 DeepSeek。
-const MODEL: &str = "deepseek-v4-flash";
+/// 用于必要的 LLM 选择（课程/文件/课表等结构化选择）的模型。
+/// 固定为 llmux 网关的 `auto`：由网关自己跑整条链选后端，客户端不钉死某一家。
+const MODEL: &str = "auto";
 
 pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
     info!(model = MODEL, "初始化 LLM 客户端");
@@ -100,5 +101,51 @@ where
             }
         }
         i += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::xmu_service::llm::choose_timetable::TimetableChoiceResponseLlm;
+    use crate::api::xmu_service::testenv;
+
+    const EXAMPLE: &str = r#"
+<TimetableChoiceResponseLlm>
+    <semester>20261</semester>
+</TimetableChoiceResponseLlm>"#;
+
+    /// genai -> llmux 网关 -> `auto` 这条链的最小实跑验证。
+    ///
+    /// `auto` 不是 genai 认得的模型名前缀，端点和 adapter 全靠 `ServiceTargetResolver`
+    /// 强行改写，通不通只能真发一次请求才知道。网关只监听部署机的 127.0.0.1:8787，
+    /// 本机跑之前先开隧道：`ssh -N -L 8787:127.0.0.1:8787 root@vintces.icu`。
+    #[tokio::test]
+    async fn test_ask_as_via_llmux() -> Result<()> {
+        if !testenv::network_enabled() {
+            return testenv::skipped_network(module_path!());
+        }
+
+        let messages = vec![
+            ChatMessage::system("根据用户需求，从下面的学期里选一个，按要求返回学年学期代码"),
+            ChatMessage::system(
+                "<data>学期名称: 2025-2026学年第三学期, 学年学期代码: 20253</data>",
+            ),
+            ChatMessage::system(
+                "<data>学期名称: 2026-2027学年第一学期, 学年学期代码: 20261</data>",
+            ),
+            ChatMessage::user("最新学期的课表"),
+        ];
+
+        // ask_as 内部会一直重试，连不上时不设上限会挂死，这里给整体加个闸。
+        let response = tokio::time::timeout(
+            std::time::Duration::from_secs(120),
+            ask_as::<TimetableChoiceResponseLlm>(messages, EXAMPLE),
+        )
+        .await??;
+
+        println!("llmux 返回: {:?}", response);
+        assert_eq!(response.semester.trim(), "20261");
+        Ok(())
     }
 }

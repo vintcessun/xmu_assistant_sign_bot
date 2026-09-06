@@ -7,7 +7,7 @@ use num_traits::FromPrimitive;
 static START_DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 9, 7).unwrap();
 
 //NOTICE: 使用北京时间对准
-static TIME_ZONE: chrono::FixedOffset = chrono::FixedOffset::east_opt(8 * 3600).unwrap();
+pub static TIME_ZONE: chrono::FixedOffset = chrono::FixedOffset::east_opt(8 * 3600).unwrap();
 
 fn get_week_number(start_date: NaiveDate, target_date: NaiveDate) -> (i32, Weekday) {
     let duration = target_date.signed_duration_since(start_date);
