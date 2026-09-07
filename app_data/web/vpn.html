@@ -85,7 +85,7 @@
       });
       const j = await r.json();
       let t = j.message;
-      t += '\n出口 IP：' + (j.exit_ip ? j.exit_ip : '获取失败（隧道可能未连上）');
+      if (j.exit_ip) t += '\n出口 IP：' + j.exit_ip;
       if (j.remotes && j.remotes.length) t += '\nVPN 远端：' + j.remotes.join(', ');
       show(info, t, j.ok);
     } catch (e) { show(info, '请求失败：' + e, false); }

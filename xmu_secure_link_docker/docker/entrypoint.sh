@@ -118,8 +118,14 @@ log "original default route: gw=${ORIG_DEFAULT_GW:-<none>} dev=${ORIG_DEFAULT_DE
 # --- 3b. resolve the XMU domains BEFORE the VPN starts -----------------------
 # Resolve via the normal (pre-VPN) uplink to capture the real public IPs, then
 # pin them to the tun once it is up so their traffic goes through the VPN.
-XMU_ROUTE_DOMAINS=""
-XMU_ROUTE_STATIC_IPS="121.192.180.236 59.77.5.59 219.229.81.200"
+# NOTE: svpnlink.xmu.edu.cn (the SecureLink server itself) must NEVER be listed
+# here — pinning it would route the VPN's own uplink into its own tunnel.
+XMU_ROUTE_DOMAINS="ids.xmu.edu.cn lnt.xmu.edu.cn jw.xmu.edu.cn c-identity.xmu.edu.cn c-media.xmu.edu.cn"
+# Static fallback: resolve_xmu_domains runs once at startup, before the tun is up.
+# A DNS hiccup there would silently leak every campus request to eth0, so the IPs
+# the bot actually needs are hardcoded too. 219.229.81.240 currently serves
+# ids/lnt/jw/c-identity/c-media; .200 is the www site.
+XMU_ROUTE_STATIC_IPS="121.192.180.236 59.77.5.59 219.229.81.200 219.229.81.240"
 XMU_ROUTE_IPS=""
 
 resolve_xmu_domains() {
