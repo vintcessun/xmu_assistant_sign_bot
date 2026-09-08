@@ -121,19 +121,21 @@ pub fn download_to_backend_sync<T: FileBackend + 'static>(
         let path = path_clone;
         debug!(url = %url, "开始获取下载元数据");
         // 2. 获取元数据（复用 SessionClient 自动处理 Cookie）
-        let head_resp = client.get(&url).await?;
-        let total_size = head_resp.content_length().ok_or_else(|| {
-            warn!(url = %url, "无法从响应头获取 Content-Length, 尝试单线程下载");
-            anyhow::anyhow!("无法获取 Content-Length")
-        })?;
-        debug!(
-            url = %url,
-            file_size = total_size,
-            "成功获取文件大小，启动并行下载"
-        );
-
-        // 3. 执行 11 协程并行下载
-        download_parallel_benchmarked(client, &url, &path, total_size).await?;
+        match probe_total_size(&client, &url).await? {
+            SizeProbe::Known(total_size) => {
+                debug!(
+                    url = %url,
+                    file_size = total_size,
+                    "成功获取文件大小，启动并行下载"
+                );
+                // 3. 执行分块并行下载
+                download_parallel_benchmarked(client, &url, &path, total_size).await?;
+            }
+            SizeProbe::Stream(resp) => {
+                // 3'. 拿不到长度：手上这个响应就是完整文件，直接流式落盘
+                download_single_stream(resp, &path).await?;
+            }
+        }
 
         debug!(path = ?path, "下载任务完成");
         // 保活后端到下载完成：TempFile 在此 drop 后延迟清理，File 无副作用。
@@ -165,37 +167,166 @@ pub async fn download_to_backend<T: FileBackend>(
         "开始调用下载任务 (Async 接口)"
     );
     // 1. 获取元数据（复用 SessionClient 自动处理 Cookie）
-    let head_resp = client.get(url).await?;
-    let total_size = head_resp.content_length().ok_or_else(|| {
-        warn!(url = url, "无法从响应头获取 Content-Length, 尝试单线程下载");
-        anyhow::anyhow!("无法获取 Content-Length")
-    })?;
-
-    debug!(
-        url = url,
-        file_size = total_size,
-        "成功获取文件大小，准备后端并启动并行下载"
-    );
+    let probe = probe_total_size(&client, url).await?;
 
     // 2. 准备后端（分配路径并创建占位）
     let backend = T::prepare(&safe_filename);
     let path = backend.get_path();
 
-    // 3. 执行 11 协程并行下载
-    download_parallel_benchmarked(client, url, path, total_size)
-        .await
-        .map_err(|e| {
-            error!(
+    match probe {
+        SizeProbe::Known(total_size) => {
+            debug!(
                 url = url,
-                path = %path.display(),
-                error = ?e,
-                "并行下载失败"
+                file_size = total_size,
+                "成功获取文件大小，启动并行下载"
             );
-            e
-        })?;
+            // 3. 执行分块并行下载
+            download_parallel_benchmarked(client, url, path, total_size)
+                .await
+                .map_err(|e| {
+                    error!(
+                        url = url,
+                        path = %path.display(),
+                        error = ?e,
+                        "并行下载失败"
+                    );
+                    e
+                })?;
+        }
+        SizeProbe::Stream(resp) => {
+            // 3'. 拿不到长度：手上这个响应就是完整文件，直接流式落盘
+            download_single_stream(resp, path).await.map_err(|e| {
+                error!(
+                    url = url,
+                    path = %path.display(),
+                    error = ?e,
+                    "单线程流式下载失败"
+                );
+                e
+            })?;
+        }
+    }
 
     debug!(path = %path.display(), "下载任务成功完成");
     Ok(backend)
+}
+
+/// 下载前探测到的文件长度。
+enum SizeProbe {
+    /// 已知总字节数，可以走分块并行下载。
+    Known(u64),
+    /// 长度未知，但手上这个响应体就是完整文件，直接流式落盘。
+    Stream(reqwest::Response),
+}
+
+/// 从 `Content-Range: bytes 0-0/4245024` 里取出总长度；`bytes 0-0/*` 之类拿不到就返回 None。
+fn parse_total_from_content_range(value: &str) -> Option<u64> {
+    let (_, total) = value.rsplit_once('/')?;
+    total.trim().parse().ok()
+}
+
+/// 探测文件总长度。
+///
+/// c-media.xmu.edu.cn 这类站点整体 GET 是流式吐数据的（HTTP/1.1 chunked、HTTP/2 干脆没有
+/// content-length），只认 Content-Length 会 100% 失败。但它们支持 Range，所以先用
+/// `Range: bytes=0-0` 探一下，从 `Content-Range` 里取总长；服务器忽略 Range 就退回
+/// Content-Length；两者都没有时把完整响应交给单线程流式下载，而不是直接报错。
+async fn probe_total_size(client: &SessionClient, url: &str) -> Result<SizeProbe> {
+    let resp = client.get_range(url, 0, 0).await?;
+    let status = resp.status();
+
+    if status == reqwest::StatusCode::PARTIAL_CONTENT {
+        if let Some(total) = resp
+            .headers()
+            .get(reqwest::header::CONTENT_RANGE)
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_total_from_content_range)
+        {
+            debug!(
+                url = url,
+                file_size = total,
+                "从 Content-Range 获取到文件大小"
+            );
+            return Ok(SizeProbe::Known(total));
+        }
+        warn!(
+            url = url,
+            "206 响应的 Content-Range 无法解析，回退到完整 GET"
+        );
+    } else if status.is_success() {
+        // 服务器忽略了 Range，手上这个响应即完整文件
+        if let Some(total) = resp.content_length() {
+            debug!(
+                url = url,
+                file_size = total,
+                "服务器忽略 Range，从 Content-Length 获取到文件大小"
+            );
+            return Ok(SizeProbe::Known(total));
+        }
+        warn!(
+            url = url,
+            "服务器忽略 Range 且无 Content-Length，改用单线程流式下载"
+        );
+        return Ok(SizeProbe::Stream(resp));
+    } else {
+        warn!(url = url, status = %status, "Range 探测返回非成功状态，回退到完整 GET");
+    }
+
+    // 回退：整体 GET
+    let resp = client.get(url).await?;
+    let status = resp.status();
+    if !status.is_success() {
+        error!(url = url, status = %status, "下载请求返回非成功状态");
+        bail!("下载请求失败，状态码 {status}");
+    }
+    match resp.content_length() {
+        Some(total) => {
+            debug!(
+                url = url,
+                file_size = total,
+                "从 Content-Length 获取到文件大小"
+            );
+            Ok(SizeProbe::Known(total))
+        }
+        None => {
+            warn!(url = url, "响应头没有 Content-Length，改用单线程流式下载");
+            Ok(SizeProbe::Stream(resp))
+        }
+    }
+}
+
+/// 单线程流式下载：长度未知时按响应体到达顺序顺序写盘。
+async fn download_single_stream(resp: reqwest::Response, path: &std::path::Path) -> Result<()> {
+    debug!(path = %path.display(), "长度未知，开始单线程流式下载");
+    let mut f = tokio::fs::File::create(path).await.map_err(|e| {
+        error!(path = %path.display(), error = ?e, "创建下载文件失败");
+        e
+    })?;
+
+    let mut stream = resp.bytes_stream();
+    let mut bytes_written: u64 = 0;
+    while let Some(item) = stream.next().await {
+        let chunk = item.map_err(|e| {
+            error!(path = %path.display(), error = ?e, "接收数据流失败");
+            e
+        })?;
+        f.write_all(&chunk).await.map_err(|e| {
+            error!(path = %path.display(), error = ?e, "写入数据到文件失败");
+            e
+        })?;
+        bytes_written += chunk.len() as u64;
+    }
+    f.flush().await.map_err(|e| {
+        error!(path = %path.display(), error = ?e, "文件 Flush 失败");
+        e
+    })?;
+
+    debug!(
+        path = %path.display(),
+        bytes_written = bytes_written,
+        "单线程流式下载完成"
+    );
+    Ok(())
 }
 
 async fn download_parallel_benchmarked(
@@ -329,6 +460,20 @@ async fn download_parallel_benchmarked(
 mod tests {
     use crate::api::xmu_service::testenv;
     use super::*;
+
+    #[test]
+    fn test_parse_total_from_content_range() {
+        assert_eq!(
+            parse_total_from_content_range("bytes 0-0/4245024"),
+            Some(4245024)
+        );
+        // 长度未知时服务器会给 `*`，解析不出来就得走流式回退
+        assert_eq!(parse_total_from_content_range("bytes 0-0/*"), None);
+        assert_eq!(
+            parse_total_from_content_range("bytes 0-99/1234"),
+            Some(1234)
+        );
+    }
 
     #[test]
     fn test_escape_filename_for_path_illegal_chars() {
