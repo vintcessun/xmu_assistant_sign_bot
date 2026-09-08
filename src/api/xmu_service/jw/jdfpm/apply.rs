@@ -27,7 +27,7 @@ impl GpaApplyOutcome {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Created => "已提交绩点计算申请",
-            Self::AlreadyExists => "该成绩范围已有有效结果",
+            Self::AlreadyExists => "教务不允许重算：上一次的计算结果仍在有效期内，本次沿用",
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::{
     api::xmu_service::jw::{
-        CertificateFacts, GpaApply, GpaCertificate, GpaRange, GpaRangeResponse, GpaRecord,
-        GpaRecordResponse, extract_facts,
+        CertificateFacts, GpaApply, GpaApplyOutcome, GpaCertificate, GpaRange, GpaRangeResponse,
+        GpaRecord, GpaRecordResponse, extract_facts,
     },
     web::{
         guard::{GuardToken, require},
@@ -240,16 +240,8 @@ async fn query_handler(
         Err(resp) => return *resp,
     };
 
-    let rows = match GpaRecord::get_from_client(&session.client).await {
-        Ok(rows) => rows,
-        Err(e) => return upstream("获取绩点计算记录失败", e),
-    };
-
-    // 已有有效结果时不再重复申请（教务对重复申请是直接报错的）。
-    if let Some(row) = GpaRecord::find_valid(&rows, &payload.range_wid) {
-        return query_response(&session, &token, "已有有效的绩点计算结果", row).await;
-    }
-
+    // 每次查询都重新申请一次，让教务按最新成绩重算；只有教务自己判定
+    // 「旧结果仍在有效期内」时才退回沿用，而不是本地看到有记录就直接给旧数据。
     let outcome = match GpaApply::submit_from_client(
         &session.client,
         &payload.range_wid,
@@ -261,6 +253,24 @@ async fn query_handler(
         Err(e) => return upstream("申请绩点计算失败", e),
     };
     info!(session_id = %session.id, range_wid = %payload.range_wid, outcome = ?outcome, "绩点计算申请完成");
+
+    // 教务在旧结果失效前不允许重算，这时只能把那条仍然有效的结果取回来。
+    if outcome == GpaApplyOutcome::AlreadyExists {
+        let rows = match GpaRecord::get_from_client(&session.client).await {
+            Ok(rows) => rows,
+            Err(e) => return upstream("获取绩点计算记录失败", e),
+        };
+        return match GpaRecord::find_valid(&rows, &payload.range_wid) {
+            Some(row) => query_response(&session, &token, outcome.as_str(), row).await,
+            None => (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({
+                    "detail": "教务称该成绩范围已有有效结果，但记录里没找到，请稍后重试"
+                })),
+            )
+                .into_response(),
+        };
+    }
 
     // 教务算完结果需要一点时间，轮询几次再放弃。
     for attempt in 1..=RESULT_POLL_TRIES {
