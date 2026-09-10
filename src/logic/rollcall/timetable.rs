@@ -1,4 +1,5 @@
 use super::super::BuildHelp;
+use super::data::LOGIN_DATA;
 use super::data::TIMETABLE_DATA as DATA;
 use super::data::TIMETABLE_GROUP;
 use super::time::{TIME_SIGN_TASK, get_today_courses};
@@ -36,6 +37,11 @@ pub async fn sign_time(ctx: Context) -> Result<()> {
     DATA.insert(id, course_time.clone())?;
     TIMETABLE_GROUP.insert(id, Arc::new(group_id))?;
     TIME_SIGN_TASK.force_update().await?;
+    // 更新课表往往意味着刚改过选课，顺手刷一次选课索引：
+    // 定时签到的同课蹲守要靠它把人分组，索引落后就会盯不到新加的课。
+    if let Some(login) = LOGIN_DATA.get(&id) {
+        crate::logic::rollcall::spawn_upsert(id, login.lnt.clone());
+    }
     let edit_url = crate::web::timetable::task::create_edit_task_url(id, &course_time);
 
     ctx.send_message_async(from_str(format!(

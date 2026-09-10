@@ -15,6 +15,7 @@ mod time;
 mod time_sign;
 mod timetable;
 mod utils;
+mod watch;
 
 pub use api::SignApiHandler;
 pub use auto_sign::AutoSignHandler;
