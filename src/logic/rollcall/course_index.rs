@@ -13,6 +13,7 @@ use super::data::LOGIN_DATA;
 use super::utils::uniform;
 use crate::api::scheduler::{TaskRunner, TimeTask};
 use crate::api::xmu_service::lnt::MyCourses;
+use crate::api::xmu_service::lnt::my_courses::Course;
 use ahash::RandomState;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -38,6 +39,9 @@ static FIRST_BUILD: AtomicBool = AtomicBool::new(true);
 pub struct CourseIndexInner {
     by_course: DashMap<i64, Vec<i64>, RandomState>,
     by_qq: DashMap<i64, Vec<i64>, RandomState>,
+    /// `course_code(＝教务 BJDM) -> course_id`。课表条目靠它精确落到某个教学班，
+    /// 只装当前学期的课，免得旧学期的同名班把它顶掉。
+    by_code: DashMap<Arc<str>, i64, RandomState>,
 }
 
 impl Default for CourseIndexInner {
@@ -51,6 +55,7 @@ impl CourseIndexInner {
         Self {
             by_course: DashMap::with_hasher(RandomState::default()),
             by_qq: DashMap::with_hasher(RandomState::default()),
+            by_code: DashMap::with_hasher(RandomState::default()),
         }
     }
 
@@ -74,15 +79,22 @@ impl CourseIndexInner {
         self.by_qq.get(&qq).map(|v| v.value().clone())
     }
 
+    /// 教务班级代码 -> lnt course_id。
+    pub fn id_of_class_code(&self, code: &str) -> Option<i64> {
+        self.by_code.get(code).map(|v| *v.value())
+    }
+
     /// 覆盖写入某用户的选课：先按反查表精确摘掉旧课，再写入新课。
-    pub fn set_user(&self, qq: i64, mut courses: Vec<i64>) {
-        courses.sort_unstable();
-        courses.dedup();
+    pub fn set_user(&self, qq: i64, mut courses: Vec<(i64, Arc<str>)>) {
+        courses.sort_unstable_by_key(|(id, _)| *id);
+        courses.dedup_by_key(|(id, _)| *id);
         self.detach(qq);
-        for c in &courses {
-            self.by_course.entry(*c).or_default().push(qq);
+        for (id, code) in &courses {
+            self.by_course.entry(*id).or_default().push(qq);
+            self.by_code.insert(code.clone(), *id);
         }
-        self.by_qq.insert(qq, courses);
+        self.by_qq
+            .insert(qq, courses.into_iter().map(|(id, _)| id).collect());
     }
 
     /// 把某用户从索引里彻底摘掉（登出）。
@@ -109,6 +121,34 @@ impl CourseIndexInner {
             }
         }
     }
+}
+
+/// lnt 课程 -> 索引里存的 `(course_id, course_code)`。
+fn coded(course: Course) -> (i64, Arc<str>) {
+    (course.id, Arc::from(course.course_code.as_str()))
+}
+
+/// 只保留“当前学期”的课。
+///
+/// `my-courses` 返回的是历年全部课程（线上实测某账号 60 门，其中当前学期只有 11 门；
+/// 全量索引是 79 人 2043 门）。早已结课的课永远不会再有签到，却会把定时签到
+/// “要覆盖的课程集合”撑爆——而且往年的课基本没有第二个人选，于是每个人都被迫
+/// 自己当哨兵，同课分组就白做了。
+///
+/// 判据用 lnt 自己给的 `semester.sort`：全校统一、随时间单调递增的序号，
+/// 取本轮抓到的最大值即当前学期。比按课程名猜、或按 `end_date` 猜都可靠
+/// （实测有历史课程的 `end_date` 也是 null，靠它筛会漏）。
+fn keep_current_semester(users: &mut [(i64, Vec<Course>)]) -> Option<String> {
+    let latest = users
+        .iter()
+        .flat_map(|(_, courses)| courses.iter())
+        .filter_map(|c| c.semester.as_ref())
+        .max_by_key(|s| s.sort)?
+        .clone();
+    for (_, courses) in users.iter_mut() {
+        courses.retain(|c| c.semester.as_ref().is_some_and(|s| s.sort == latest.sort));
+    }
+    Some(latest.code)
 }
 
 /// `Arc` 包一层，`TaskRunner` 的 Output 需要 Clone。
@@ -163,9 +203,13 @@ impl TimeTask for CourseIndexTask {
 
         let results = futures::future::join_all(tasks).await;
 
+        let mut fetched: Vec<(i64, Vec<Course>)> = results.into_iter().flatten().collect();
+        let raw_total: usize = fetched.iter().map(|(_, c)| c.len()).sum();
+        let semester = keep_current_semester(&mut fetched);
+
         let index = CourseIndexInner::new();
-        for (qq, courses) in results.into_iter().flatten() {
-            index.set_user(qq, courses.into_iter().map(|c| c.id).collect());
+        for (qq, courses) in fetched {
+            index.set_user(qq, courses.into_iter().map(coded).collect());
         }
 
         // 刻意不因“一个都没拉到”而报错：TaskRunner 的失败重试是 5 秒一轮且没有上限，
@@ -179,7 +223,9 @@ impl TimeTask for CourseIndexTask {
         info!(
             users = index.user_count(),
             courses = index.course_count(),
-            "选课索引刷新完成"
+            raw_courses = raw_total,
+            semester,
+            "选课索引刷新完成（只保留当前学期）"
         );
         Ok(Arc::new(index))
     }
@@ -210,8 +256,13 @@ pub async fn upsert_user(qq: i64, lnt: &str) {
     let Some(index) = current_index().await else {
         return;
     };
+    // 单人增量也只留当前学期，口径必须和整表重建一致。这里没有别人的数据可比，
+    // 就取这个人自己最新的那个学期——正常在读的学生，最新学期就是当前学期。
+    let mut one = vec![(qq, courses)];
+    keep_current_semester(&mut one);
+    let courses = one.pop().map(|(_, c)| c).unwrap_or_default();
     let len = courses.len();
-    index.set_user(qq, courses.into_iter().map(|c| c.id).collect());
+    index.set_user(qq, courses.into_iter().map(coded).collect());
     debug!(qq, courses = len, "已即时更新选课索引");
 }
 
@@ -240,18 +291,104 @@ pub fn spawn_remove(qq: i64) {
 pub fn spawn_background_tasks() {
     LazyLock::force(&super::time_sign::TIME_SIGN_TASK_RUNNER);
     LazyLock::force(&COURSE_INDEX_TASK);
-    info!("已在启动时触发定时签到与选课索引后台任务");
+    // 还留在 v3 课表上的人数。归零＝存量已被 `/signtime` 刷干净，
+    // 那时就可以把 legacy 模块、v3 表和这行日志一起删掉。
+    let legacy = super::timetable::legacy_v3_count();
+    info!(
+        legacy_v3_users = legacy,
+        "已在启动时触发定时签到与选课索引后台任务"
+    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    use crate::api::xmu_service::lnt::my_courses::Semester;
+
+    fn course(id: i64, sort: Option<i64>) -> Course {
+        Course {
+            id,
+            name: format!("课程{id}"),
+            course_code: format!("2026202711302200001{id:04}"),
+            semester: sort.map(|sort| Semester {
+                code: format!("2026-{sort}"),
+                sort,
+            }),
+        }
+    }
+
+    /// 线上真实形状：某账号 60 门课横跨 2024-1(sort 9) ~ 2026-1(sort 15)，
+    /// 当前学期只有 11 门。只留 sort 最大的那一档。
+    #[test]
+    fn keeps_only_the_latest_semester() {
+        let mut users = vec![
+            (
+                1,
+                vec![
+                    course(10, Some(15)),
+                    course(11, Some(9)),
+                    course(12, Some(13)),
+                ],
+            ),
+            (2, vec![course(20, Some(14)), course(21, Some(15))]),
+        ];
+        let latest = keep_current_semester(&mut users);
+
+        assert_eq!(latest.as_deref(), Some("2026-15"));
+        assert_eq!(
+            users[0].1.iter().map(|c| c.id).collect::<Vec<_>>(),
+            vec![10]
+        );
+        assert_eq!(
+            users[1].1.iter().map(|c| c.id).collect::<Vec<_>>(),
+            vec![21]
+        );
+    }
+
+    /// 实测有课程的 semester 是缺的；缺学期信息就不算当前学期，别猜。
+    #[test]
+    fn courses_without_semester_are_dropped() {
+        let mut users = vec![(1, vec![course(10, Some(15)), course(11, None)])];
+        keep_current_semester(&mut users);
+        assert_eq!(
+            users[0].1.iter().map(|c| c.id).collect::<Vec<_>>(),
+            vec![10]
+        );
+    }
+
+    /// 谁都没有学期信息时不做过滤（返回 None），退化成原样，不至于把索引清空。
+    #[test]
+    fn no_semester_anywhere_keeps_everything() {
+        let mut users = vec![(1, vec![course(10, None), course(11, None)])];
+        assert_eq!(keep_current_semester(&mut users), None);
+        assert_eq!(users[0].1.len(), 2);
+    }
+
+    /// 当前学期一门课都没有的用户（毕业 / 本学期没在 lnt 上课）会被清空，
+    /// 排班里就成了“索引查不到”，自己当哨兵——正确，他本来也没有课要分组。
+    #[test]
+    fn user_with_no_current_course_ends_up_empty() {
+        let mut users = vec![
+            (1, vec![course(10, Some(15))]),
+            (2, vec![course(20, Some(9)), course(21, Some(10))]),
+        ];
+        keep_current_semester(&mut users);
+        assert_eq!(users[0].1.len(), 1);
+        assert!(users[1].1.is_empty());
+    }
+
+    fn ids(list: &[i64]) -> Vec<(i64, Arc<str>)> {
+        list.iter()
+            .map(|id| (*id, Arc::from(format!("code-{id}").as_str())))
+            .collect()
+    }
+
     #[test]
     fn set_user_keeps_both_directions_in_sync() {
         let index = CourseIndexInner::new();
-        index.set_user(1, vec![10, 20]);
-        index.set_user(2, vec![20, 30]);
+        index.set_user(1, ids(&[10, 20]));
+        index.set_user(2, ids(&[20, 30]));
 
         assert_eq!(index.courses_of_qq(1), Some(vec![10, 20]));
         assert_eq!(index.qq_of_course(10), Some(vec![1]));
@@ -265,9 +402,9 @@ mod tests {
     #[test]
     fn set_user_replaces_old_courses() {
         let index = CourseIndexInner::new();
-        index.set_user(1, vec![10, 20]);
+        index.set_user(1, ids(&[10, 20]));
         // 退掉 10、改选 30
-        index.set_user(1, vec![20, 30]);
+        index.set_user(1, ids(&[20, 30]));
 
         assert_eq!(index.courses_of_qq(1), Some(vec![20, 30]));
         // 10 上再没有人，条目应当被清掉而不是留一个空 Vec
@@ -279,7 +416,7 @@ mod tests {
     #[test]
     fn set_user_dedups() {
         let index = CourseIndexInner::new();
-        index.set_user(1, vec![10, 10, 20]);
+        index.set_user(1, ids(&[10, 10, 20]));
         assert_eq!(index.courses_of_qq(1), Some(vec![10, 20]));
         assert_eq!(index.qq_of_course(10), Some(vec![1]));
     }
@@ -287,8 +424,8 @@ mod tests {
     #[test]
     fn remove_user_clears_everything() {
         let index = CourseIndexInner::new();
-        index.set_user(1, vec![10, 20]);
-        index.set_user(2, vec![20]);
+        index.set_user(1, ids(&[10, 20]));
+        index.set_user(2, ids(&[20]));
         index.remove_user(1);
 
         assert_eq!(index.courses_of_qq(1), None);
@@ -300,7 +437,7 @@ mod tests {
     #[test]
     fn remove_unknown_user_is_noop() {
         let index = CourseIndexInner::new();
-        index.set_user(1, vec![10]);
+        index.set_user(1, ids(&[10]));
         index.remove_user(999);
         assert_eq!(index.qq_of_course(10), Some(vec![1]));
         assert_eq!(index.user_count(), 1);

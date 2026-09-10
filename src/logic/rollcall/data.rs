@@ -1,11 +1,17 @@
 use crate::api::{
     storage::HotTable,
-    xmu_service::jw::{LocationStore, ScheduleCourseTime},
+    xmu_service::jw::{LocationStore, ScheduleCourseTime, legacy::ScheduleCourseTimeV3},
 };
 use smol_str::SmolStr;
 use std::sync::LazyLock;
 
+/// 课表主表（v4：`CourseTime` 带 `class_code`）。所有写入只落这张表。
 pub static TIMETABLE_DATA: LazyLock<HotTable<i64, ScheduleCourseTime>> =
+    LazyLock::new(|| HotTable::new("logic_command_sign_time_v4"));
+
+/// 旧版课表（v3，没有 `class_code`），**只读**，用于兼容还没重新跑过 `/signtime` 的用户。
+/// 用户下次 `/signtime` 时对应行会被删掉；等这张表空了，连同 `legacy` 模块一起移除。
+pub static TIMETABLE_DATA_V3: LazyLock<HotTable<i64, ScheduleCourseTimeV3>> =
     LazyLock::new(|| HotTable::new("logic_command_sign_time_v3"));
 
 pub static TIMETABLE_GROUP: LazyLock<HotTable<i64, i64>> =

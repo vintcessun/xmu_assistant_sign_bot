@@ -150,6 +150,75 @@ mod tests {
         duty_count
     }
 
+    /// 这条是整个改动能成立的前提，用真实数量级复现一遍。
+    ///
+    /// 线上实测：`my-courses` 返回历年全部课程（某账号 60 门，当前学期只有 11 门；
+    /// 全量索引 79 人 2043 门）。往年的课基本没有第二个人选——混进来，每个人都被迫
+    /// 自己当哨兵，分组彻底失效；只留当前学期，同班同学共用同一个 `course_id`，
+    /// 一个哨兵就能覆盖一整个班。
+    #[test]
+    fn current_semester_filter_collapses_the_cover() {
+        let active: Vec<i64> = (1..=8).collect();
+
+        // 不过滤：每人 1 门共同的当前课 + 25 门各不相同的往年课
+        let unfiltered: HashMap<i64, Vec<i64>> = active
+            .iter()
+            .map(|&qq| {
+                let mut all = vec![9000];
+                all.extend((0..25).map(|k| qq * 1000 + k));
+                (qq, all)
+            })
+            .collect();
+        // 过滤后：只剩那门当前学期的课
+        let filtered: HashMap<i64, Vec<i64>> = active.iter().map(|&qq| (qq, vec![9000])).collect();
+
+        let wide = plan_tick(&active, &unfiltered, &HashMap::new());
+        let narrow = plan_tick(&active, &filtered, &HashMap::new());
+
+        assert_eq!(
+            wide.scouts.len(),
+            8,
+            "混进往年课：没人共享，8 个人得派 8 个哨兵"
+        );
+        assert_eq!(
+            narrow.scouts.len(),
+            1,
+            "只留当前学期：同一门课 8 个人只要 1 个哨兵"
+        );
+        assert_eq!(narrow.members[&9000].len(), 8);
+    }
+
+    /// 核心要求：**每个类的哨兵要换人，不能永远是同一个**，而且要换得均匀。
+    ///
+    /// 实测同样 60 轮 6 个班共 360 次轮询，轮值挑法每人恰好 12 次；
+    /// 换成纯随机挑（只靠随机数决胜）均值一样是 12，但会落在 5~21——
+    /// 总有人被抽中三倍于别人。所以按“最久没当过班的先上”排，随机只用于同资历时打散。
+    #[test]
+    fn every_member_of_a_class_takes_a_turn() {
+        // 6 个班、每班 5 人
+        let active: Vec<i64> = (1..=30).collect();
+        let courses_of: HashMap<i64, Vec<i64>> = active
+            .iter()
+            .map(|&qq| (qq, vec![(qq - 1) / 5 * 10]))
+            .collect();
+
+        let duty = simulate(&active, &courses_of, 60);
+
+        for class in 0..6i64 {
+            let members: Vec<i64> = ((class * 5 + 1)..=(class * 5 + 5)).collect();
+            let counts: Vec<u64> = members.iter().map(|q| duty[q]).collect();
+            assert!(
+                counts.iter().all(|&n| n > 0),
+                "第 {class} 班有人整节课都没当过哨兵：{counts:?}"
+            );
+            let min = *counts.iter().min().unwrap();
+            let max = *counts.iter().max().unwrap();
+            assert!(max - min <= 1, "第 {class} 班的当班次数不均匀：{counts:?}");
+        }
+        // 每轮 6 个班各出一个哨兵，60 轮共 360 次；30 个人分摊，人均 12
+        assert_eq!(duty.values().sum::<u64>(), 360);
+    }
+
     #[test]
     fn one_scout_is_enough_when_everyone_shares_the_same_course() {
         let active = vec![1, 2, 3, 4, 5];

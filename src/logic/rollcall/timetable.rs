@@ -1,6 +1,7 @@
 use super::super::BuildHelp;
 use super::data::LOGIN_DATA;
 use super::data::TIMETABLE_DATA as DATA;
+use super::data::TIMETABLE_DATA_V3;
 use super::data::TIMETABLE_GROUP;
 use super::time::{TIME_SIGN_TASK, get_today_courses};
 use crate::logic::login::process::process_login_castgc;
@@ -34,7 +35,7 @@ pub async fn sign_time(ctx: Context) -> Result<()> {
     let course_time = ScheduleCourseTime::new(schedule)?;
     let course_time = Arc::new(course_time);
 
-    DATA.insert(id, course_time.clone())?;
+    write_sign_time(id, course_time.clone())?;
     TIMETABLE_GROUP.insert(id, Arc::new(group_id))?;
     TIME_SIGN_TASK.force_update().await?;
     // 更新课表往往意味着刚改过选课，顺手刷一次选课索引：
@@ -77,11 +78,53 @@ pub async fn remove_sign_time(qq: i64) -> Result<()> {
     TIMETABLE_GROUP.remove(&qq)?;
     TIME_SIGN_TASK.force_update().await?;
     DATA.remove(&qq)?;
+    TIMETABLE_DATA_V3.remove(&qq).ok();
     Ok(())
 }
 
+/// 读课表的**唯一入口**：先看 v4，没有再回落到 v3 并就地转换。
+///
+/// 所有读课表的地方都必须走这里，否则还没重新跑过 `/signtime` 的用户会凭空消失。
+/// v3 空了之后，这个函数缩回 `DATA.get(&qq)` 即可。
 pub fn query_sign_time(qq: i64) -> Option<Arc<ScheduleCourseTime>> {
-    DATA.get(&qq)
+    if let Some(v4) = DATA.get(&qq) {
+        return Some(v4);
+    }
+    let v3 = TIMETABLE_DATA_V3.get(&qq)?;
+    Some(Arc::new(ScheduleCourseTime::from((*v3).clone())))
+}
+
+/// 所有存了课表的用户（v4 与 v3 的并集）。遍历课表的地方都必须用它，
+/// 直接遍历 `DATA` 会把还没重新跑过 `/signtime` 的用户整个漏掉。
+/// v3 空了之后，这个函数缩回只遍历 `DATA` 即可。
+pub fn all_timetable_users() -> Vec<i64> {
+    let mut users: Vec<i64> = Vec::new();
+    for entry in &*DATA {
+        users.push(*entry.key());
+    }
+    for entry in &*TIMETABLE_DATA_V3 {
+        users.push(*entry.key());
+    }
+    users.sort_unstable();
+    users.dedup();
+    users
+}
+
+/// 还留在 v3 表上的用户数。归零就说明存量已经刷干净，可以删掉 v3 的表和代码了。
+pub fn legacy_v3_count() -> usize {
+    let mut n = 0;
+    for _ in &*TIMETABLE_DATA_V3 {
+        n += 1;
+    }
+    n
+}
+
+/// 写 v4 的同时把 v3 的旧行删掉，让 v3 表真的能被排空。
+fn write_sign_time(qq: i64, course_time: Arc<ScheduleCourseTime>) -> Result<()> {
+    DATA.insert(qq, course_time)?;
+    // v3 里没有这个人时 remove 也是无害的。
+    TIMETABLE_DATA_V3.remove(&qq).ok();
+    Ok(())
 }
 
 pub fn query_sign_group(qq: i64) -> Option<i64> {
@@ -95,7 +138,7 @@ pub fn is_sign_time_active_now(qq: i64) -> bool {
 }
 
 pub async fn update_sign_time(qq: i64, course_time: ScheduleCourseTime) -> Result<()> {
-    DATA.insert(qq, Arc::new(course_time))?;
+    write_sign_time(qq, Arc::new(course_time))?;
     TIME_SIGN_TASK.force_update().await?;
     Ok(())
 }

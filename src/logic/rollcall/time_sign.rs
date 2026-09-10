@@ -35,7 +35,11 @@ use crate::{
         scheduler::{TaskRunner, TimeTask},
         xmu_service::jw::ClockTime,
     },
-    logic::rollcall::{data::TIMETABLE_DATA, time::TIME_SIGN_TASK, utils::uniform},
+    logic::rollcall::{
+        time::{TIME_SIGN_TASK, class_codes_in_session_now},
+        timetable::all_timetable_users,
+        utils::uniform,
+    },
 };
 use anyhow::Result;
 use async_trait::async_trait;
@@ -86,6 +90,43 @@ static PROGRESS_CACHE: LazyLock<DashMap<i64, (Instant, usize, usize)>> =
 
 /// `qq -> 上次因索引落后而补拉选课的时刻`。
 static HEAL_TRIED: LazyLock<DashMap<i64, Instant>> = LazyLock::new(DashMap::new);
+
+/// 上一次播报过的 v3 存量人数，只在变化时才打日志，不刷屏。
+static LAST_LEGACY_COUNT: AtomicU64 = AtomicU64::new(u64::MAX);
+
+/// 播报还有多少人留在 v3 课表上。人数变化才打一条，归零时那条就是
+/// 「可以删掉 legacy 模块和 v3 表了」的信号。
+///
+/// v3 空了之后这个函数连同 `legacy_v3_count` 一起删掉。
+fn report_legacy_drain() {
+    let count = super::timetable::legacy_v3_count() as u64;
+    if LAST_LEGACY_COUNT.swap(count, Ordering::Relaxed) == count {
+        return;
+    }
+    if count == 0 {
+        info!(
+            legacy_v3_users = 0,
+            "v3 课表存量已清空，可以移除 legacy 兼容代码与 logic_command_sign_time_v3 表"
+        );
+    } else {
+        info!(
+            legacy_v3_users = count,
+            "仍有用户停留在 v3 课表，等他们重新 /signtime"
+        );
+    }
+}
+
+/// 通用的按人限流：距上次超过 `cooldown` 才放行，并记下这一次。
+fn log_cooldown_passed(table: &DashMap<i64, Instant>, qq: i64, cooldown: Duration) -> bool {
+    if table
+        .get(&qq)
+        .is_some_and(|t| t.value().elapsed() < cooldown)
+    {
+        return false;
+    }
+    table.insert(qq, Instant::now());
+    true
+}
 
 /// 轮次号，每跑一轮 +1，用来记录“谁上次是第几轮当的班”。
 static TICK_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -167,6 +208,7 @@ struct Gathered {
 
 async fn time_sign_task() -> Result<()> {
     prune_caches();
+    report_legacy_drain();
 
     let course_time = TIME_SIGN_TASK.get_latest().await?;
 
@@ -174,8 +216,7 @@ async fn time_sign_task() -> Result<()> {
     let now = ClockTime::now();
     let mut active: Vec<i64> = Vec::new();
     let mut groups: HashMap<i64, i64> = HashMap::new();
-    for val in &*TIMETABLE_DATA {
-        let qq = *val.key();
+    for qq in all_timetable_users() {
         let is_active = course_time
             .get(&qq)
             .map(|e| e.value().is_active(now))
@@ -202,14 +243,37 @@ async fn time_sign_task() -> Result<()> {
         return Ok(());
     }
 
-    // 只把「索引里查得到的活跃用户」交给排班，查不到的人会被排成自己盯自己。
-    let courses_of: HashMap<i64, Vec<i64>> = match current_index().await {
-        Some(idx) => active
-            .iter()
-            .filter_map(|&qq| idx.courses_of_qq(qq).map(|c| (qq, c)))
-            .collect(),
-        None => HashMap::new(),
-    };
+    let index = current_index().await;
+
+    // 要盯的课＝**此刻正处在自己蹲守窗口内的那几门**（每门课各自「上课时间前后十分钟」），
+    // 靠教务的班级代码精确落到 lnt 的教学班上。
+    //
+    // 不能拿这个人 lnt 上的全部课程来分组：`my-courses` 返回的是历年所有课
+    // （线上实测 79 人摊出 2043 门），往年的课基本没有第二个人选，混进来就会把
+    // 要覆盖的集合撑爆，逼得每个人都自己当哨兵，同课分组等于白做。
+    //
+    // 班级代码为空（还没重新跑过 `/signtime` 的 v3 存量数据）或课不在索引里的，
+    // 一律不进 courses_of —— 排班会让他自己当哨兵，他那条 rollcalls 照样能看到
+    // 自己全部的签到，不会漏签，只是省不掉这条请求。
+    let mut courses_of: HashMap<i64, Vec<i64>> = HashMap::new();
+    // 另存一份该用户在 lnt 上的**全部**当前学期课程，供“索引落后”的自愈判断用：
+    // 拿收窄后的集合去判断的话，任何一门不在上课的课都会被误当成索引落后。
+    let mut all_courses_of: HashMap<i64, Vec<i64>> = HashMap::new();
+    if let Some(idx) = &index {
+        for &qq in &active {
+            if let Some(all) = idx.courses_of_qq(qq) {
+                all_courses_of.insert(qq, all);
+            }
+            let watched: Vec<i64> = class_codes_in_session_now(qq)
+                .iter()
+                .filter_map(|code| idx.id_of_class_code(code))
+                .collect();
+            if watched.is_empty() {
+                continue;
+            }
+            courses_of.insert(qq, watched);
+        }
+    }
     let last_duty: HashMap<i64, u64> = active
         .iter()
         .filter_map(|&qq| SCOUT_DUTY.get(&qq).map(|v| (qq, *v.value())))
@@ -229,7 +293,7 @@ async fn time_sign_task() -> Result<()> {
 
     let mut gathered = Gathered::default();
     let outcomes = run_scouts(&plan.scouts).await;
-    gathered.absorb(outcomes, &courses_of);
+    gathered.absorb(outcomes, &courses_of, &all_courses_of);
 
     // 哨兵掉线意味着它盯的课本轮没人看，立刻从同课的其他活跃用户里补位一次，别整轮漏掉。
     let backups = pick_backups(&plan, &courses_of, &gathered);
@@ -239,7 +303,7 @@ async fn time_sign_task() -> Result<()> {
             SCOUT_DUTY.insert(qq, tick);
         }
         let outcomes = run_scouts(&backups).await;
-        gathered.absorb(outcomes, &courses_of);
+        gathered.absorb(outcomes, &courses_of, &all_courses_of);
     }
 
     let active_set: HashSet<i64> = active.iter().copied().collect();
@@ -249,10 +313,13 @@ async fn time_sign_task() -> Result<()> {
 
     for (rollcall_id, found) in gathered.found {
         // 先看还有谁需要签：都记过账就整场跳过，连进度都不用查。
-        let mut targets: Vec<i64> = plan
-            .members
-            .get(&found.course_id)
-            .cloned()
+        //
+        // 派发名单是**广**口径：直接问索引“谁选了这门课”，而不是用收窄后的
+        // plan.members。收窄只决定“本轮要派几个人去盯”，绝不能顺带缩小“发现签到后
+        // 该替谁签”——否则课表名字没对上的那些课，同班同学就被漏掉了。
+        let mut targets: Vec<i64> = index
+            .as_ref()
+            .and_then(|idx| idx.qq_of_course(found.course_id))
             .unwrap_or_default();
         if !targets.contains(&found.scout) {
             targets.push(found.scout);
@@ -324,7 +391,12 @@ async fn time_sign_task() -> Result<()> {
 }
 
 impl Gathered {
-    fn absorb(&mut self, outcomes: Vec<ScoutOutcome>, courses_of: &HashMap<i64, Vec<i64>>) {
+    fn absorb(
+        &mut self,
+        outcomes: Vec<ScoutOutcome>,
+        courses_of: &HashMap<i64, Vec<i64>>,
+        all_courses_of: &HashMap<i64, Vec<i64>>,
+    ) {
         for outcome in outcomes {
             let (qq, client, rollcalls) = match outcome {
                 ScoutOutcome::NotLogin { qq } => {
@@ -354,7 +426,7 @@ impl Gathered {
                 if !rollcall.is_number && !rollcall.is_radar {
                     continue;
                 }
-                heal_index_if_stale(qq, rollcall.course_id, courses_of);
+                heal_index_if_stale(qq, rollcall.course_id, all_courses_of);
                 self.found.entry(rollcall.rollcall_id).or_insert(Found {
                     course_id: rollcall.course_id,
                     scout: qq,
@@ -374,13 +446,9 @@ fn heal_index_if_stale(qq: i64, course_id: i64, courses_of: &HashMap<i64, Vec<i6
     if known.contains(&course_id) {
         return;
     }
-    let fresh = HEAL_TRIED
-        .get(&qq)
-        .is_some_and(|t| t.value().elapsed() < HEAL_COOLDOWN);
-    if fresh {
+    if !log_cooldown_passed(&HEAL_TRIED, qq, HEAL_COOLDOWN) {
         return;
     }
-    HEAL_TRIED.insert(qq, Instant::now());
     if let Some(lnt) = LOGIN_DATA.get(&qq).map(|e| e.lnt.clone()) {
         debug!(qq, course_id, "选课索引落后于实际，触发补拉");
         spawn_upsert(qq, lnt);
@@ -959,6 +1027,7 @@ mod tests {
                 rollcalls: vec![],
             }],
             &HashMap::from([(qq, vec![10])]),
+            &HashMap::from([(qq, vec![10])]),
         );
         assert!(!NOTLOGIN_REMINDED.contains(&qq));
         assert!(gathered.covered.contains(&10));
@@ -990,6 +1059,7 @@ mod tests {
                     },
                 ],
             }],
+            &HashMap::from([(-9006, vec![1, 2])]),
             &HashMap::from([(-9006, vec![1, 2])]),
         );
         assert!(!gathered.found.contains_key(&100), "二维码签到不进入派发");
@@ -1091,6 +1161,7 @@ mod tests {
                 ScoutOutcome::Failed { qq: 1 },
                 ScoutOutcome::NotLogin { qq: 2 },
             ],
+            &HashMap::new(),
             &HashMap::new(),
         );
         assert!(gathered.failed.contains(&1));

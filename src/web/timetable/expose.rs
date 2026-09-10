@@ -29,9 +29,13 @@ struct QqPath {
     qq: i64,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 struct CourseView {
     name: String,
+    /// 教务班级代码（＝ lnt 的 course_code）。编辑页不展示也不改它，
+    /// 只是原样带一趟，免得网页保存一次就把精确对班的依据弄丢了。
+    #[serde(default)]
+    class_code: String,
     location: Option<String>,
     /// 距午夜 0:00 的分钟数
     start: u16,
@@ -188,6 +192,7 @@ fn to_course_view(course: &CourseTime) -> CourseView {
     let (eh, em) = course.end.to_hm();
     CourseView {
         name: course.name.clone(),
+        class_code: course.class_code.clone(),
         location: course.location.location_str.clone(),
         start: (sh as u16) * 60 + (sm as u16),
         end: (eh as u16) * 60 + (em as u16),
@@ -226,6 +231,7 @@ fn parse_course_view(course: &CourseView) -> Result<CourseTime, String> {
 
     Ok(CourseTime {
         name: course.name.clone(),
+        class_code: course.class_code.clone(),
         location: Arc::new(LocationStore::from(course.location.clone())),
         start,
         end,

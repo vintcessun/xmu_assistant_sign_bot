@@ -12,7 +12,6 @@ use crate::{
         auto_sign_data::{
             AutoSignResponse, RadarType, auto_sign_response::qr::QRSignSuccessResult,
         },
-        data::TIMETABLE_DATA,
         sign_data::{RadarSign, SignData},
         utils::{generate_uuid, get_ts, string_similarity, uniform},
     },
@@ -316,8 +315,7 @@ impl AutoSignRequest {
     }
 
     async fn radar_timetable(&self, activity_id: i64) -> Result<AutoSignResponse> {
-        let data = TIMETABLE_DATA
-            .get(&self.qq)
+        let data = crate::logic::rollcall::query_sign_time(self.qq)
             .ok_or(anyhow!("未找到用户的课程表数据"))?;
         let course_info = CourseData::get_from_client(&self.client, self.course_id).await?;
 
@@ -374,7 +372,9 @@ impl AutoSignRequest {
         if let Ok(RollcallStatus::OnCallFine) = self.check_signed_state(activity_id).await {
             let course_info = CourseData::get_from_client(&self.client, self.course_id).await?;
             trace!(activity_id, "四种策略均失败，但服务端回查已签到");
-            return Ok(AutoSignResponse::radar_already_signed(course_info.name.clone()));
+            return Ok(AutoSignResponse::radar_already_signed(
+                course_info.name.clone(),
+            ));
         }
         bail!("所有尝试雷达签到失败")
     }

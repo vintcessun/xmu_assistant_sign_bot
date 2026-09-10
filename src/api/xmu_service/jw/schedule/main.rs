@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
     wrapper_name = "pkjgList"
 )]
 pub struct Schedule {
+    pub bjdm: String,          // 班级代码
     pub jasmc: Option<String>, // 教室名称
     pub zcbh: String,          // 周次编号
     pub kcmc: String,          // 课程名称
@@ -21,7 +22,6 @@ pub struct Schedule {
     pub jsjcdm: i64,           // 结束节次代码
     pub ksjcdm: i64,           // 开始节次代码
     pub xq: i64,               // 星期
-                               //pub bjdm: IgnoredAny,    // 班级代码
                                //pub bjmc: IgnoredAny,    // 班级名称
                                //pub jasdm: IgnoredAny,   // 教室代码
                                //pub jasywmc: IgnoredAny, // 教室英文名称
