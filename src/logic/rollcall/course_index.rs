@@ -136,7 +136,7 @@ fn coded(course: Course) -> (i64, Arc<str>) {
 /// 2024-1 学期里有一门课 `2024-08-07`（周三）就开课了，比正常开学早四周，
 /// 取最小值会把整个学期的周次算错四周；众数 `2024-09-02` 才是对的。
 /// 七个学期里众数全对，且与仓库历史上三次手改的值逐个吻合。
-fn refresh_semester_start(users: &[(i64, Vec<Course>)]) {
+fn refresh_semester_start(users: &[(i64, Vec<Course>)]) -> Option<NaiveDate> {
     let dates: Vec<NaiveDate> = users
         .iter()
         .flat_map(|(_, courses)| courses.iter())
@@ -144,10 +144,10 @@ fn refresh_semester_start(users: &[(i64, Vec<Course>)]) {
         .filter_map(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
         .collect();
     let Some(start) = most_common_date(&dates) else {
-        debug!("当前学期课程没有开课日期，学期第一天继续用兜底值");
-        return;
+        warn!("当前学期课程没有开课日期，学期第一天继续用兜底值");
+        return None;
     };
-    set_semester_start(start);
+    set_semester_start(start)
 }
 
 /// 出现次数最多的日期；次数相同取较早的那个。
@@ -250,7 +250,7 @@ impl TimeTask for CourseIndexTask {
         let semester = keep_current_semester(&mut fetched);
         // 顺手把学期第一天推算出来。这里天然就是"挑会话没过期的那些人"——
         // 拉失败的用户上面已经被跳过了，剩下的都是有效数据。
-        refresh_semester_start(&fetched);
+        let semester_start = refresh_semester_start(&fetched);
 
         let index = CourseIndexInner::new();
         for (qq, courses) in fetched {
@@ -265,11 +265,15 @@ impl TimeTask for CourseIndexTask {
             warn!(user_total, "选课索引重建后为空，本轮退化为逐人轮询");
         }
 
+        // semester_start 每轮都打出来，而不是只在变化时打：推算成功且与兜底值相同时，
+        // "推算对了"和"推算压根没跑"在日志上是分不清的——而这个值一旦悄悄用了过期的
+        // 兜底值，全员整学期签不上还看不出来。宁可每 6 小时多一个字段。
         info!(
             users = index.user_count(),
             courses = index.course_count(),
             raw_courses = raw_total,
             semester,
+            semester_start = semester_start.map(|d| d.to_string()),
             "选课索引刷新完成（只保留当前学期）"
         );
         Ok(Arc::new(index))
