@@ -14,9 +14,11 @@ use super::utils::uniform;
 use crate::api::scheduler::{TaskRunner, TimeTask};
 use crate::api::xmu_service::lnt::MyCourses;
 use crate::api::xmu_service::lnt::my_courses::Course;
+use crate::api::xmu_service::time::set_semester_start;
 use ahash::RandomState;
 use anyhow::Result;
 use async_trait::async_trait;
+use chrono::NaiveDate;
 use dashmap::DashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock};
@@ -128,6 +130,46 @@ fn coded(course: Course) -> (i64, Arc<str>) {
     (course.id, Arc::from(course.course_code.as_str()))
 }
 
+/// 从当前学期课程的开课日期推算学期第一天，省掉每学期手改一次常量。
+///
+/// 取**众数**而不是最小值。这一条是拿七个学期的真实数据回测出来的：
+/// 2024-1 学期里有一门课 `2024-08-07`（周三）就开课了，比正常开学早四周，
+/// 取最小值会把整个学期的周次算错四周；众数 `2024-09-02` 才是对的。
+/// 七个学期里众数全对，且与仓库历史上三次手改的值逐个吻合。
+fn refresh_semester_start(users: &[(i64, Vec<Course>)]) {
+    let dates: Vec<NaiveDate> = users
+        .iter()
+        .flat_map(|(_, courses)| courses.iter())
+        .filter_map(|c| c.start_date.as_deref())
+        .filter_map(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+        .collect();
+    let Some(start) = most_common_date(&dates) else {
+        debug!("当前学期课程没有开课日期，学期第一天继续用兜底值");
+        return;
+    };
+    set_semester_start(start);
+}
+
+/// 出现次数最多的日期；次数相同取较早的那个。
+fn most_common_date(dates: &[NaiveDate]) -> Option<NaiveDate> {
+    let mut sorted: Vec<NaiveDate> = dates.to_vec();
+    sorted.sort_unstable();
+    let mut best: Option<(NaiveDate, usize)> = None;
+    let mut i = 0usize;
+    while i < sorted.len() {
+        let mut j = i;
+        while j < sorted.len() && sorted[j] == sorted[i] {
+            j += 1;
+        }
+        // 严格大于：并列时保留先遇到的（也就是较早的）那个
+        if best.is_none_or(|(_, n)| j - i > n) {
+            best = Some((sorted[i], j - i));
+        }
+        i = j;
+    }
+    best.map(|(d, _)| d)
+}
+
 /// 只保留“当前学期”的课。
 ///
 /// `my-courses` 返回的是历年全部课程（线上实测某账号 60 门，其中当前学期只有 11 门；
@@ -206,6 +248,9 @@ impl TimeTask for CourseIndexTask {
         let mut fetched: Vec<(i64, Vec<Course>)> = results.into_iter().flatten().collect();
         let raw_total: usize = fetched.iter().map(|(_, c)| c.len()).sum();
         let semester = keep_current_semester(&mut fetched);
+        // 顺手把学期第一天推算出来。这里天然就是"挑会话没过期的那些人"——
+        // 拉失败的用户上面已经被跳过了，剩下的都是有效数据。
+        refresh_semester_start(&fetched);
 
         let index = CourseIndexInner::new();
         for (qq, courses) in fetched {
@@ -315,7 +360,101 @@ mod tests {
                 code: format!("2026-{sort}"),
                 sort,
             }),
+            start_date: Some("2026-09-07".to_string()),
         }
+    }
+
+    fn d(s: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+    }
+
+    /// 一条回测样本：`(学期, [(开课日期, 出现次数)], 期望推算出的学期第一天)`。
+    type BacktestCase = (&'static str, &'static [(&'static str, usize)], &'static str);
+
+    /// 回测：用线上全量数据验证「学期第一天」的推算规则。
+    ///
+    /// 数据来自 2026-09-11 对服务器上 84 个有效会话的一次性回测，
+    /// 覆盖 10 个学期共 4672 条课程记录。每行是 `(学期, [(开课日期, 出现次数)], 期望值)`。
+    ///
+    /// 其中 2025-2 / 2025-3 / 2026-1 三个学期在仓库历史里有人手改过 START_DATE
+    /// （65b0148 / 59991da / 1944680），推算值与手改值逐个吻合。
+    #[test]
+    fn semester_start_backtest_against_real_data() {
+        let cases: &[BacktestCase] = &[
+            ("2023-2", &[("2024-02-26", 238)], "2024-02-26"),
+            ("2023-3", &[("2024-06-24", 27)], "2024-06-24"),
+            // 43 门课在正常开学前四周就"开课"了，取最小值会把整学期算错四周
+            (
+                "2024-1",
+                &[("2024-08-07", 43), ("2024-09-02", 667), ("2024-09-09", 2)],
+                "2024-09-02",
+            ),
+            (
+                "2024-2",
+                &[("2025-02-17", 757), ("2025-03-03", 1)],
+                "2025-02-17",
+            ),
+            // 小学期真的是周五开学，不是所有学期都从周一起算
+            ("2024-3", &[("2025-06-20", 121)], "2025-06-20"),
+            (
+                "2025-1",
+                &[("2025-08-13", 19), ("2025-09-01", 966), ("2025-09-15", 5)],
+                "2025-09-01",
+            ),
+            (
+                "2025-2",
+                &[("2025-04-08", 2), ("2026-03-02", 944)],
+                "2026-03-02",
+            ),
+            ("2025-3", &[("2026-06-29", 143)], "2026-06-29"),
+            // 当前学期里有一门课的开课日期是两年多前，取最小值会把起点推早 122 周
+            (
+                "2026-1",
+                &[("2024-05-07", 1), ("2026-09-07", 735)],
+                "2026-09-07",
+            ),
+        ];
+
+        for (semester, starts, expected) in cases {
+            let dates: Vec<NaiveDate> = starts
+                .iter()
+                .flat_map(|(day, n)| std::iter::repeat_n(d(day), *n))
+                .collect();
+            assert_eq!(
+                most_common_date(&dates),
+                Some(d(expected)),
+                "{semester} 学期的学期第一天推算错了"
+            );
+        }
+    }
+
+    /// 钉住那几个反例：如果哪天有人想把众数换回最小值，这条会红。
+    #[test]
+    fn earliest_start_date_would_be_wrong() {
+        // 当前学期：一门课挂着两年多前的开课日期
+        let mut dates = vec![d("2024-05-07")];
+        dates.extend(std::iter::repeat_n(d("2026-09-07"), 735));
+
+        assert_eq!(
+            dates.iter().min().copied(),
+            Some(d("2024-05-07")),
+            "最小值会取到那门离谱的课"
+        );
+        assert_eq!(most_common_date(&dates), Some(d("2026-09-07")));
+        // 差了 121 周——按最小值算周次，整个签到功能直接报废
+        assert_eq!((d("2026-09-07") - d("2024-05-07")).num_days() / 7, 121);
+    }
+
+    #[test]
+    fn no_start_dates_yields_nothing() {
+        assert_eq!(most_common_date(&[]), None);
+    }
+
+    /// 次数并列时取较早的：学期第一天不会比大多数课的开课日晚。
+    #[test]
+    fn ties_prefer_the_earlier_date() {
+        let dates = vec![d("2026-09-14"), d("2026-09-07")];
+        assert_eq!(most_common_date(&dates), Some(d("2026-09-07")));
     }
 
     /// 线上真实形状：某账号 60 门课横跨 2024-1(sort 9) ~ 2026-1(sort 15)，

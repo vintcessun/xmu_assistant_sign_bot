@@ -25,6 +25,10 @@ pub struct Course {
     /// 同样不序列化，理由见 `course_code`。
     #[serde(skip_serializing, default)]
     pub semester: Option<Semester>,
+    /// 开课日期（`"2026-09-07"`）。同一学期的课基本都是学期第一天，
+    /// 用来自动推算学期起始日，省掉每学期手改一次常量。个别课程会是 null。
+    #[serde(skip_serializing, default)]
+    pub start_date: Option<String>,
     //pub academic_year: IgnoredAny,
     //pub compulsory: IgnoredAny,
     //pub course_attributes: IgnoredAny,
@@ -38,7 +42,6 @@ pub struct Course {
     //pub klass: IgnoredAny,
     //pub org: IgnoredAny,
     //pub org_id: IgnoredAny,
-    //pub start_date: IgnoredAny,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
