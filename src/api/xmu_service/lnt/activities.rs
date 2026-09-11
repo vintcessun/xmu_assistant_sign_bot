@@ -42,6 +42,20 @@ pub struct Upload {
 pub struct Activity {
     pub title: String,
     pub uploads: Vec<Upload>,
+    /// 活动是否已关闭。老师给活动设了截止时间，过期后就关闭，lnt 随即不再发放
+    /// 里面文件的下载地址（`/api/uploads/reference/{id}/url` 直接 403），
+    /// 但文件本身没被删（每个 upload 的 `deleted` 仍是 false）。
+    ///
+    /// 2026-09-11 实测：某课 62 个文件里，27 个来自已关闭活动、全部 403；
+    /// 35 个来自进行中活动、全部 200——`is_closed` 完全预测能不能下。
+    ///
+    /// 不序列化：这个结构体会被整个塞进 `choose_files` 给 LLM 的提示词，
+    /// 选文件的口径不因这个字段改变（用户要求「LLM 选 all 正常」）。
+    #[serde(default, skip_serializing)]
+    pub is_closed: bool,
+    /// 活动的截止时间，用来告诉用户是什么时候关的。
+    #[serde(default, skip_serializing)]
+    pub end_time: Option<String>,
     //pub announce_answer_and_explanation: IgnoredAny,
     //pub assign_group_ids: IgnoredAny,
     //pub assign_student_ids: IgnoredAny,
@@ -53,7 +67,6 @@ pub struct Activity {
     //pub created_at: IgnoredAny,
     //pub data: IgnoredAny,
     //pub enable_edit: IgnoredAny,
-    //pub end_time: IgnoredAny,
     //pub forum_count: IgnoredAny,
     //pub group_set_id: IgnoredAny,
     //pub group_set_name: IgnoredAny,
@@ -69,7 +82,6 @@ pub struct Activity {
     //pub intra_rubric_instance_id: IgnoredAny,
     //pub intra_score_map: IgnoredAny,
     //pub is_assigned_to_all: IgnoredAny,
-    //pub is_closed: IgnoredAny,
     //pub is_in_progress: IgnoredAny,
     //pub is_inter_review_by_submitter: IgnoredAny,
     //pub is_opened_catalog: IgnoredAny,
@@ -119,8 +131,8 @@ pub struct Activities;
 
 #[cfg(test)]
 mod tests {
-    use crate::api::xmu_service::testenv;
     use crate::api::xmu_service::login::castgc_get_session;
+    use crate::api::xmu_service::testenv;
 
     use super::*;
     use anyhow::Result;

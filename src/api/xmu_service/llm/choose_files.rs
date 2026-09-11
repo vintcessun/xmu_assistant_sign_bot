@@ -39,10 +39,14 @@ fn test_files_choice_response_valid_example() {
     );
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct File {
     pub reference_id: i64,
     pub name: String,
+    /// 所属活动的标题。活动已关闭时用来按活动归并提示，不必一个文件报一行。
+    pub activity_title: String,
+    /// 活动已关闭时的截止时间；`None` 表示活动还开着，可以正常下载。
+    pub closed_at: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -64,8 +68,21 @@ impl ChooseFiles {
         let mut activities_map = HashMap::new();
         for activity in &activities.activities {
             let title = &activity.title;
+            // 活动关了就把截止时间记下来：下载阶段据此直接跳过并给出准确原因，
+            // 不用再为注定 403 的文件各打一次请求。
+            let closed_at = activity
+                .is_closed
+                .then(|| activity.end_time.clone().unwrap_or_default());
             for upload in &activity.uploads {
-                activities_map.insert(upload.reference_id, format!("{}-{}", title, upload.name));
+                activities_map.insert(
+                    upload.reference_id,
+                    File {
+                        reference_id: upload.reference_id,
+                        name: format!("{}-{}", title, upload.name),
+                        activity_title: title.clone(),
+                        closed_at: closed_at.clone(),
+                    },
+                );
             }
         }
 
@@ -88,10 +105,7 @@ impl ChooseFiles {
                 anyhow::bail!("课程无文件可以下载");
             }
 
-            let files = activities_map
-                .into_iter()
-                .map(|(reference_id, name)| File { reference_id, name })
-                .collect();
+            let files = activities_map.into_values().collect();
 
             Ok(FilesChoiceResponse { files })
         } else {
@@ -100,11 +114,12 @@ impl ChooseFiles {
                     files: files
                         .into_iter()
                         .map(|reference_id| {
-                            let name = activities_map
-                                .get(&reference_id)
-                                .cloned()
-                                .unwrap_or_else(|| format!("file_{}", reference_id));
-                            File { reference_id, name }
+                            activities_map.get(&reference_id).cloned().unwrap_or(File {
+                                reference_id,
+                                name: format!("file_{}", reference_id),
+                                activity_title: String::new(),
+                                closed_at: None,
+                            })
                         })
                         .collect(),
                 }),
@@ -116,8 +131,8 @@ impl ChooseFiles {
 
 #[cfg(test)]
 mod tests {
-    use crate::api::xmu_service::testenv;
     use crate::api::xmu_service::login::castgc_get_session;
+    use crate::api::xmu_service::testenv;
 
     use super::*;
     use anyhow::Result;

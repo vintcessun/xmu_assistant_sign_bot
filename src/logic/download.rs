@@ -13,7 +13,15 @@ use crate::{
     web::file::task::ExposeFileTask,
 };
 use anyhow::{anyhow, bail};
+use std::collections::BTreeMap;
 use tracing::{debug, error, info, trace, warn};
+
+/// 把 lnt 的 `2026-07-17T07:42:00Z` 截成 `2026-07-17`。给用户看日期就够了；
+/// 解析不出形状就不显示，别把原始串糊到消息里。
+fn format_closed_at(raw: &str) -> Option<&str> {
+    let day = raw.split('T').next()?;
+    (day.len() == 10 && day.split('-').count() == 3).then_some(day)
+}
 
 #[handler(msg_type=Message,command="download",echo_cmd=true,
 help_msg=r#"用法:/download <描述>
@@ -48,6 +56,10 @@ pub async fn download(ctx: Context) -> Result<()> {
         "找到 {} 个文件，开始异步下载",
         files.len()
     );
+
+    // 活动一旦过了截止时间就会关闭，lnt 随即不再发放里面文件的下载地址（直接 403），
+    // 但文件并没有被删。这类先摘出来单独说明，不为注定失败的请求白跑一趟。
+    let (closed, files): (Vec<_>, Vec<_>) = files.into_iter().partition(|f| f.closed_at.is_some());
 
     let mut tasks = Vec::with_capacity(files.len());
 
@@ -102,16 +114,38 @@ pub async fn download(ctx: Context) -> Result<()> {
         }
     }
 
-    // 失败的汇总成一条发。一门课里动辄几十个没权限的文件，一个一条会把群刷爆。
+    // 已关闭活动的文件按活动归并成一条说明。一个「专题报告集锦」底下就有二十多个文件，
+    // 逐个报会把群刷爆，而且它们的原因完全相同。
+    if !closed.is_empty() {
+        let mut by_activity: BTreeMap<(String, String), usize> = BTreeMap::new();
+        for f in &closed {
+            let when = f.closed_at.clone().unwrap_or_default();
+            *by_activity
+                .entry((f.activity_title.clone(), when))
+                .or_default() += 1;
+        }
+        let detail = by_activity
+            .into_iter()
+            .map(|((title, when), n)| match format_closed_at(&when) {
+                Some(day) => format!("「{title}」已于 {day} 关闭，{n} 个文件"),
+                None => format!("「{title}」已关闭，{n} 个文件"),
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        info!(count = closed.len(), "跳过已关闭活动的文件");
+        ctx.send_message_async(from_str(format!(
+            "{} 个文件所在的活动已关闭，无法下载（文件还在，只是过了截止时间）:\n{}",
+            closed.len(),
+            detail
+        )));
+    }
+
+    // 其余失败也汇总成一条发，一个一条会把群刷爆。
     if !failures.is_empty() {
         ctx.send_message_async(from_str(format!(
-            "{} 个文件没能下载:
-{}",
+            "{} 个文件没能下载:\n{}",
             failures.len(),
-            failures.join(
-                "
-"
-            )
+            failures.join("\n")
         )));
     }
 
@@ -124,4 +158,89 @@ pub async fn download(ctx: Context) -> Result<()> {
     task.finish().await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::xmu_service::llm::choose_files::File;
+
+    fn file(id: i64, activity: &str, closed_at: Option<&str>) -> File {
+        File {
+            reference_id: id,
+            name: format!("{activity}-文件{id}"),
+            activity_title: activity.to_string(),
+            closed_at: closed_at.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn closed_time_is_shown_as_a_date() {
+        assert_eq!(format_closed_at("2026-07-17T07:42:00Z"), Some("2026-07-17"));
+        assert_eq!(format_closed_at("2026-08-01T15:33:00Z"), Some("2026-08-01"));
+    }
+
+    /// 形状不对就不显示，别把原始串糊到用户消息里。
+    #[test]
+    fn unparseable_close_time_is_hidden() {
+        assert_eq!(format_closed_at(""), None);
+        assert_eq!(format_closed_at("不知道什么时候"), None);
+        assert_eq!(format_closed_at("2026-7-17T07:42:00Z"), None);
+    }
+
+    /// 已关闭活动的文件要被摘出来，不去发那些注定 403 的请求。
+    /// 数字取自线上那门课：62 个文件里 27 个来自 4 个已关闭的活动。
+    #[test]
+    fn closed_files_are_separated_from_downloadable_ones() {
+        let files = vec![
+            file(1, "专题报告集锦", Some("2026-07-17T07:42:00Z")),
+            file(2, "专题报告集锦", Some("2026-07-17T07:42:00Z")),
+            file(3, "0 课程概述", Some("2026-08-01T15:33:00Z")),
+            file(4, "12 昇腾实验助手实现", None),
+            file(5, "1 Linux基础", None),
+        ];
+
+        let (closed, open): (Vec<_>, Vec<_>) =
+            files.into_iter().partition(|f| f.closed_at.is_some());
+
+        assert_eq!(closed.len(), 3, "已关闭的要全部摘出来");
+        assert_eq!(open.len(), 2, "进行中的照常下载");
+        assert!(open.iter().all(|f| f.closed_at.is_none()));
+    }
+
+    /// 同一个活动下的几十个文件归并成一行，不逐个刷屏。
+    #[test]
+    fn closed_files_are_grouped_by_activity() {
+        let closed = vec![
+            file(1, "专题报告集锦", Some("2026-07-17T07:42:00Z")),
+            file(2, "专题报告集锦", Some("2026-07-17T07:42:00Z")),
+            file(3, "专题报告集锦", Some("2026-07-17T07:42:00Z")),
+            file(4, "0 课程概述", Some("2026-08-01T15:33:00Z")),
+        ];
+
+        let mut by_activity: BTreeMap<(String, String), usize> = BTreeMap::new();
+        for f in &closed {
+            let when = f.closed_at.clone().unwrap_or_default();
+            *by_activity
+                .entry((f.activity_title.clone(), when))
+                .or_default() += 1;
+        }
+        let detail = by_activity
+            .into_iter()
+            .map(|((title, when), n)| match format_closed_at(&when) {
+                Some(day) => format!("「{title}」已于 {day} 关闭，{n} 个文件"),
+                None => format!("「{title}」已关闭，{n} 个文件"),
+            })
+            .collect::<Vec<_>>()
+            .join(
+                "
+",
+            );
+
+        assert_eq!(
+            detail,
+            "「0 课程概述」已于 2026-08-01 关闭，1 个文件
+「专题报告集锦」已于 2026-07-17 关闭，3 个文件"
+        );
+    }
 }
