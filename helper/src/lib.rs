@@ -932,10 +932,10 @@ pub fn lnt_get_api(args: TokenStream, input: TokenStream) -> TokenStream {
                         .map_err(|e| anyhow::anyhow!("Network Error: Failed to reach '{}'. Details: {}", target_url, e))?;
 
                     if !res.status().is_success() {
-                        return Err(anyhow::anyhow!(
-                            "HTTP Error: API returned status {} for URL: {}",
-                            res.status(),
-                            target_url
+                        // 带上状态码的类型化错误：调用方要靠它区分「重试有用」和
+                        // 「重试多少次都没用」（403 没权限就不该再试）。
+                        return Err(anyhow::Error::new(
+                            crate::api::network::ApiStatusError::new(res.status(), &target_url)
                         ));
                     }
 

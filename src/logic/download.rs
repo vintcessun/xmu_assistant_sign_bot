@@ -4,6 +4,7 @@ use crate::{
         logic_import::*,
         message::{MessageSend, from_str},
     },
+    api::network::api_status_of,
     api::xmu_service::{
         llm::{ChooseCourse, ChooseFiles},
         lnt::FileUrl,
@@ -60,16 +61,31 @@ pub async fn download(ctx: Context) -> Result<()> {
                         return Ok(f);
                     }
                     Err(e) => {
+                        // 没权限 / 文件不存在这种再试一百次也是同一个结果。
+                        // 课程里混着别人提交的作业报告，这类 403 是常态，不是故障：
+                        // 立刻放弃并如实说明原因，别拿"多次尝试后失败"糊弄用户，
+                        // 也别为一堆注定失败的文件白打三倍请求。
+                        if let Some(status) = api_status_of(&e)
+                            && status.is_permanent()
+                        {
+                            debug!(
+                                file_name = file.name,
+                                status = %status.status,
+                                "文件不可下载，跳过重试"
+                            );
+                            return Err(anyhow!("{}「{}」", status.user_reason(), file.name));
+                        }
                         warn!(file_name = file.name, retry_count = i, error = ?e, "下载文件失败，正在重试");
                     }
                 }
             }
             error!(file = ?file, "多次尝试后下载文件失败");
-            Err(anyhow!("多次尝试后下载文件 {:?} 失败", file))
+            Err(anyhow!("多次尝试后下载「{}」失败", file.name))
         }));
     }
 
     let mut files = Vec::with_capacity(tasks.len());
+    let mut failures = Vec::new();
     for res in futures_util::future::join_all(tasks).await {
         let res_inner = res?;
         match res_inner {
@@ -81,9 +97,22 @@ pub async fn download(ctx: Context) -> Result<()> {
             }
             Err(e) => {
                 error!(error = ?e, "文件下载任务失败");
-                ctx.send_message_async(from_str(format!("下载文件失败: {}", e)))
+                failures.push(format!("{}", e));
             }
         }
+    }
+
+    // 失败的汇总成一条发。一门课里动辄几十个没权限的文件，一个一条会把群刷爆。
+    if !failures.is_empty() {
+        ctx.send_message_async(from_str(format!(
+            "{} 个文件没能下载:
+{}",
+            failures.len(),
+            failures.join(
+                "
+"
+            )
+        )));
     }
 
     // 文件列表网页：把临时文件所有权交给任务保活，网页有效期（1 天）内可下载，
