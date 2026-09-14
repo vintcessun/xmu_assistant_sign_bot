@@ -1,0 +1,17 @@
+# 浏览器 profile：含登录 cookie / session，绝不入库
+chrome-profile-*/
+*profile*/
+
+# uv / python 临时物
+__pycache__/
+*.pyc
+.venv/
+
+# 探测输出
+out/
+*.log
+
+# 二维码样本图（含真实 QR，不入库）
+*.jpg
+*.jpeg
+*.png
