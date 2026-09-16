@@ -35,6 +35,7 @@ pub static LOCATIONS: LazyLock<LocationService> = LazyLock::new(|| {
         Location::new(Region::SiMing, "钟铭选楼", 118.093_864, 24.436_96),
         Location::new(Region::SiMing, "联兴楼", 118.099_44, 24.434_107),
         Location::new(Region::XiangAn, "希平楼", 118.317_6, 24.605_528),
+        Location::new(Region::SiMing, "艺术学院", 118.109_67, 24.430_94),
     ])
 });
 
