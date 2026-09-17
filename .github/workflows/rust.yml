@@ -154,22 +154,46 @@ jobs:
                       }
                   }
 
-            - name: Install FFmpeg 7.1 Shared (Download)
+            - name: Install FFmpeg Shared (Download)
               shell: pwsh
               run: |
                   $TARGET = "${{ matrix.target }}"
                   if (Test-Path -Path "C:\ffmpeg") { Remove-Item -Recurse -Force "C:\ffmpeg" }
                   New-Item -ItemType Directory -Path "C:\ffmpeg"
 
+                  # 这两个版本号必须跟 ffmpeg-sys-next 的主次版本对齐（当前 8.1），
+                  # 否则 bindgen 会拿到错版本的头文件。
+                  # 另外 BtbN 的 latest release 只保留还在维护的发布分支，老分支会被整批删掉
+                  # —— n7.1 就是这么消失的，下载直接 404，构建从 2026-09 起一直挂在这一步。
+                  $FFMPEG_BRANCH = "n8.1"
+                  $FFMPEG_SUFFIX = "8.1"
+
                   # x86_64 和 aarch64 使用预编译。
                   if ($TARGET -like "*aarch64*") {
-                    $URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-winarm64-gpl-shared-7.1.zip"
+                    $ARCH = "winarm64"
                   } else {
-                    $URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-win64-gpl-shared-7.1.zip"
+                    $ARCH = "win64"
                   }
+                  $ASSET = "ffmpeg-$FFMPEG_BRANCH-latest-$ARCH-gpl-shared-$FFMPEG_SUFFIX.zip"
+                  $URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$ASSET"
 
                   Write-Host "Downloading pre-built FFmpeg from $URL"
-                  Invoke-WebRequest -Uri $URL -OutFile ffmpeg.zip
+                  try {
+                      Invoke-WebRequest -Uri $URL -OutFile ffmpeg.zip
+                  } catch {
+                      # 404 基本都是上游轮换掉了这个分支。直接把现有资产列出来，
+                      # 省得下一个人再去翻日志猜是哪个名字没了。
+                      Write-Host "下载失败: $($_.Exception.Message)"
+                      Write-Host "BtbN latest release 当前提供的 shared 资产:"
+                      try {
+                          $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/latest" -Headers @{ "User-Agent" = "gh-actions" }
+                          $rel.assets.name | Where-Object { $_ -like "*gpl-shared*" } | ForEach-Object { Write-Host "  $_" }
+                      } catch {
+                          Write-Host "  (资产列表也拉不到: $($_.Exception.Message))"
+                      }
+                      Write-Error "FFmpeg 下载失败: 把 FFMPEG_BRANCH/FFMPEG_SUFFIX 改成上面列出的、且与 ffmpeg-sys-next 匹配的版本。"
+                      exit 1
+                  }
                   Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg_temp
 
                   $FFMPEG_EXTRACTED_DIR = Get-ChildItem -Path ffmpeg_temp -Directory | Select-Object -First 1
@@ -317,6 +341,9 @@ jobs:
     build-macos:
         name: macOS builds
         runs-on: ${{ matrix.target == 'x86_64-apple-darwin' && 'macos-15-intel' || 'macos-latest' }}
+        env:
+            # 与生产容器（scripts/Dockerfile.alinux3）一致，别让两边的 OpenCV 版本漂开。
+            OPENCV_VERSION: 4.10.0
         strategy:
             fail-fast: false
             matrix:
@@ -368,9 +395,62 @@ jobs:
                   echo "CPATH=$FFMPEG_DIR/include:$OPENSSL_DIR/include" >> $GITHUB_ENV
                   echo "LIBRARY_PATH=$FFMPEG_DIR/lib:$OPENSSL_DIR/lib" >> $GITHUB_ENV
 
-            - name: Install OpenCV via Homebrew
+            # Homebrew 的 opencv 已经升到 5.0，opencv crate 0.98 编不过它
+            # （MatShape/MatStep/VolumeType 等一堆绑定错误，2026-09 起 macOS 构建就挂在这）。
+            # opencv@4 又没有 x86_64 macOS 的预编译瓶，所以两个架构统一从源码编，
+            # 版本对齐生产环境的 4.10.0，模块只留 wechat_qrcode 这条链需要的。
+            - name: Cache OpenCV build
+              id: opencv-cache
+              uses: actions/cache@v4
+              with:
+                  path: ~/opencv-dist
+                  key: opencv-${{ env.OPENCV_VERSION }}-${{ matrix.target }}-v1
+
+            - name: Build OpenCV from source
+              if: steps.opencv-cache.outputs.cache-hit != 'true'
               run: |
-                  brew install opencv
+                  set -euo pipefail
+                  WORK="$(mktemp -d)"
+                  cd "$WORK"
+                  curl -fsSL -o opencv.zip "https://github.com/opencv/opencv/archive/refs/tags/${OPENCV_VERSION}.zip"
+                  curl -fsSL -o opencv_contrib.zip "https://github.com/opencv/opencv_contrib/archive/refs/tags/${OPENCV_VERSION}.zip"
+                  unzip -q opencv.zip
+                  unzip -q opencv_contrib.zip
+                  mkdir build && cd build
+
+                  # wechat_qrcode 依赖 core/imgproc/objdetect/dnn，objdetect 再拉 calib3d -> features2d -> flann；
+                  # imgcodecs 是本项目自己要用的。videoio/ffmpeg 一律关掉，视频走 video-rs 不经过 OpenCV。
+                  # CMAKE_POLICY_VERSION_MINIMUM 是给 CMake 4 用的：它删掉了 <3.5 的兼容层，
+                  # 而 OpenCV 4.10 的 CMakeLists 还声明着老策略。
+                  cmake "../opencv-${OPENCV_VERSION}" \
+                    -DCMAKE_BUILD_TYPE=Release \
+                    -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+                    -DCMAKE_INSTALL_PREFIX="$HOME/opencv-dist" \
+                    -DOPENCV_EXTRA_MODULES_PATH="$WORK/opencv_contrib-${OPENCV_VERSION}/modules" \
+                    -DOPENCV_GENERATE_PKGCONFIG=ON \
+                    -DBUILD_LIST=core,imgproc,imgcodecs,dnn,flann,features2d,calib3d,objdetect,wechat_qrcode \
+                    -DBUILD_SHARED_LIBS=ON \
+                    -DBUILD_TESTS=OFF \
+                    -DBUILD_PERF_TESTS=OFF \
+                    -DBUILD_EXAMPLES=OFF \
+                    -DBUILD_DOCS=OFF \
+                    -DBUILD_opencv_apps=OFF \
+                    -DBUILD_opencv_python2=OFF \
+                    -DBUILD_opencv_python3=OFF \
+                    -DBUILD_JAVA=OFF \
+                    -DWITH_FFMPEG=OFF \
+                    -DWITH_GSTREAMER=OFF \
+                    -DWITH_OPENCL=OFF
+                  cmake --build . --parallel "$(sysctl -n hw.ncpu)"
+                  cmake --install .
+
+            - name: Configure OpenCV environment
+              run: |
+                  OPENCV_DIST="$HOME/opencv-dist"
+                  echo "PKG_CONFIG_PATH=$OPENCV_DIST/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> $GITHUB_ENV
+                  # 编出来的二进制运行时要找得到这些 dylib。
+                  echo "DYLD_FALLBACK_LIBRARY_PATH=$OPENCV_DIST/lib" >> $GITHUB_ENV
+                  PKG_CONFIG_PATH="$OPENCV_DIST/lib/pkgconfig" pkg-config --modversion opencv4
             - name: Build release binary
               run: cargo build --release --target ${{ matrix.target }} --verbose
               env:
