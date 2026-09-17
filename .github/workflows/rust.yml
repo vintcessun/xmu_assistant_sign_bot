@@ -408,6 +408,8 @@ jobs:
 
             - name: Build OpenCV from source
               if: steps.opencv-cache.outputs.cache-hit != 'true'
+              env:
+                  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
               run: |
                   set -euo pipefail
                   WORK="$(mktemp -d)"
@@ -416,6 +418,17 @@ jobs:
                   curl -fsSL -o opencv_contrib.zip "https://github.com/opencv/opencv_contrib/archive/refs/tags/${OPENCV_VERSION}.zip"
                   unzip -q opencv.zip
                   unzip -q opencv_contrib.zip
+
+                  # CMake 4 删掉了 <3.5 的兼容层，而 OpenCV 4.10 里还有几处写着
+                  # cmake_minimum_required(VERSION 2.8.x)。其中 OpenCVGenPkgconfig.cmake
+                  # 是被 cmake -P 单独调起的，主配置上的 -DCMAKE_POLICY_VERSION_MINIMUM
+                  # 传不进去，所以直接把这些声明抬到 3.5。
+                  grep -rl "cmake_minimum_required(VERSION 2" \
+                    "opencv-${OPENCV_VERSION}" "opencv_contrib-${OPENCV_VERSION}" \
+                    | while read -r f; do
+                        sed -i '' -E 's/cmake_minimum_required\(VERSION 2[0-9.]*/cmake_minimum_required(VERSION 3.5/' "$f"
+                      done || true  # grep 无命中时返回 1，别让 pipefail 把整步搞挂
+
                   mkdir build && cd build
 
                   # wechat_qrcode 依赖 core/imgproc/objdetect/dnn，objdetect 再拉 calib3d -> features2d -> flann；
