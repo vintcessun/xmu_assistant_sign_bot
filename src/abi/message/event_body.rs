@@ -176,7 +176,11 @@ pub mod notice {
                 Notice::GroupRecall(n) => Target::Group(n.group_id),
                 Notice::FriendRecall(n) => Target::Private(n.user_id),
                 Notice::Notify(notify) => match notify {
-                    Notify::Poke(poke) => Target::Group(poke.group_id),
+                    Notify::Poke(poke) => match poke.group_id {
+                        Some(group_id) => Target::Group(group_id),
+                        // 私戳：回到发起者的私聊窗口。
+                        None => Target::Private(poke.user_id),
+                    },
                     Notify::LuckyKing(lucky_king) => Target::Group(lucky_king.group_id),
                     Notify::Honor(honor) => Target::Group(honor.group_id),
                     Notify::Title(title) => Target::Group(title.group_id),
@@ -422,7 +426,9 @@ pub mod notice {
         pub struct Poke {
             pub time: i64,
             pub self_id: i64,
-            pub group_id: i64,
+            /// 私聊戳一戳不带这个字段，NapCat 只在群里戳时才给。
+            /// 写成必填会让整条事件反序列化失败，私戳就永远收不到。
+            pub group_id: Option<i64>,
             pub user_id: i64,
             pub target_id: i64,
         }

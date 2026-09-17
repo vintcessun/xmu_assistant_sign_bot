@@ -110,6 +110,12 @@ pub fn all_timetable_users() -> Vec<i64> {
     users
 }
 
+/// 该用户的课表还停留在 v3（没有 class_code）。状态卡靠它显示"待迁移"标记；
+/// v3 表排空后连同标记一起删。
+pub fn is_legacy_timetable(qq: i64) -> bool {
+    DATA.get(&qq).is_none() && TIMETABLE_DATA_V3.get(&qq).is_some()
+}
+
 /// 还留在 v3 表上的用户数。归零就说明存量已经刷干净，可以删掉 v3 的表和代码了。
 pub fn legacy_v3_count() -> usize {
     let mut n = 0;

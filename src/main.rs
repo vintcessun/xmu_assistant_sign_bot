@@ -68,6 +68,9 @@ async fn main() -> Result<()> {
     // 连接建立后立即触发后台定时任务（定时签到 + 选课索引），不再等收到消息才懒触发。
     logic::rollcall::spawn_background_tasks();
 
+    // 版本号变了就把更新日志推给各个群（干跑期间只发调试群）。
+    logic::notify::spawn_version_broadcast();
+
     info!("Napcat ABI 初始化成功，等待消息...");
 
     web::start().await.context("启动 Web 服务失败")?;
