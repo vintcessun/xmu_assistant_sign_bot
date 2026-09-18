@@ -103,8 +103,9 @@ docker compose -f docker/docker-compose.yml down
 验收目标不是访问公网，而是证明 SOCKS5 流量确实进了隧道。宿主机 PowerShell：
 
 ```powershell
-# FTP 探针 121.192.180.236:21 —— 期望看到 "220 ..." FTP banner
-curl.exe -v --socks5-hostname 127.0.0.1:1080 telnet://121.192.180.236:21 --max-time 15
+# FTP 探针 121.192.180.215:2333 —— 期望看到 "220-FileZilla Server ..." banner
+# （软工系课程 FTP；21 端口已被学院禁用，服务搬到 2333）
+curl.exe -v --socks5-hostname 127.0.0.1:1080 telnet://121.192.180.215:2333 --max-time 15
 
 # SSH 探针 59.77.5.59:2222 —— 期望看到 "SSH-2.0-..." banner
 curl.exe -v --socks5-hostname 127.0.0.1:1080 telnet://59.77.5.59:2222 --max-time 15
@@ -113,7 +114,7 @@ curl.exe -v --socks5-hostname 127.0.0.1:1080 telnet://59.77.5.59:2222 --max-time
 容器内确认这两个目标确实走 VPN 网卡（而不是 `eth0`）：
 
 ```powershell
-docker exec -it xmu-securelink-socks ip route get 121.192.180.236
+docker exec -it xmu-securelink-socks ip route get 121.192.180.215
 docker exec -it xmu-securelink-socks ip route get 59.77.5.59
 ```
 
@@ -121,6 +122,15 @@ docker exec -it xmu-securelink-socks ip route get 59.77.5.59
 路由仍走原始 `eth0`。
 
 只有当上面两条 `curl` 都能连上并看到 banner 时，才算跑通。
+
+> **FTP 探针为什么必须看 banner，不能只看 `ip route get`**：`121.192.180.215`
+> 从公网也连得上，所以少了 `/32` 路由时，故障长得特别像"连上了"——TCP 握手
+> 40ms 就成功，却永远等不到 FTP 的 220 欢迎语，客户端一发数据就被 RST。
+> （打到的是直连路径上应答的那台机器，不是校内这台 FileZilla Server。）
+> 只有把 banner 也抓出来，才能挡住这种假阳性。
+>
+> 另注：`121.192.180.236` 曾经是探针目标，但实测隧道内 `ping` 100% 丢包、
+> 各端口全部超时，那台主机已不对外服务，故换成 `.215:2333`。
 
 ---
 

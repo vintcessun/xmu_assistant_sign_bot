@@ -125,7 +125,12 @@ XMU_ROUTE_DOMAINS="ids.xmu.edu.cn lnt.xmu.edu.cn jw.xmu.edu.cn c-identity.xmu.ed
 # A DNS hiccup there would silently leak every campus request to eth0, so the IPs
 # the bot actually needs are hardcoded too. 219.229.81.240 currently serves
 # ids/lnt/jw/c-identity/c-media; .200 is the www site.
-XMU_ROUTE_STATIC_IPS="121.192.180.236 59.77.5.59 219.229.81.200 219.229.81.240"
+# 121.192.180.215 is the 软工系 course FTP (FileZilla Server, port 2333 — the
+# faculty disabled 21). It is reachable from the public internet too, which makes
+# a missing route look like a working connection: the TCP handshake completes in
+# ~40ms against whatever answers on the direct path, but the FTP 220 banner never
+# arrives and the first byte we send gets an RST. Pin it so it goes through the VPN.
+XMU_ROUTE_STATIC_IPS="121.192.180.215 121.192.180.236 59.77.5.59 219.229.81.200 219.229.81.240"
 XMU_ROUTE_IPS=""
 
 resolve_xmu_domains() {
@@ -167,6 +172,7 @@ add_xmu_routes() {
   done
 
   log "probe target routes:"
+  ip route get 121.192.180.215 2>/dev/null || true
   ip route get 121.192.180.236 2>/dev/null || true
   ip route get 59.77.5.59 2>/dev/null || true
 }
