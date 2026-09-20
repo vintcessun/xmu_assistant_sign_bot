@@ -68,6 +68,9 @@ async fn main() -> Result<()> {
     // 连接建立后立即触发后台定时任务（定时签到 + 选课索引），不再等收到消息才懒触发。
     logic::rollcall::spawn_background_tasks();
 
+    // 校历：立刻从教务处抓一次，之后每天刷一次。抓不到就用代码里手抄的那份。
+    api::xmu_service::calendar::spawn_refresh_task();
+
     // 版本号变了就把更新日志推给各个群（干跑期间只发调试群）。
     logic::notify::spawn_version_broadcast();
 

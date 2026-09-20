@@ -72,9 +72,16 @@ fn get_week_number(start_date: NaiveDate, target_date: NaiveDate) -> (i32, Weekd
     )
 }
 
+/// 今天是哪一天（北京时间）。
+///
+/// 周次/星期由 [`get_today`] 给，但校历判定（放假、调休）要的是**日期**本身，
+/// 见 [`crate::api::xmu_service::calendar`]。
+pub fn today_date() -> NaiveDate {
+    chrono::Utc::now().with_timezone(&TIME_ZONE).date_naive()
+}
+
 pub fn get_today() -> (i32, Weekday) {
-    let today = chrono::Utc::now().with_timezone(&TIME_ZONE).date_naive();
-    get_week_number(semester_start(), today)
+    get_week_number(semester_start(), today_date())
 }
 
 #[cfg(test)]
