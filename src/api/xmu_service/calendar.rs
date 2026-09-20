@@ -778,7 +778,7 @@ pub fn parse(src: &str) -> Result<Calendar> {
         bail!("没有解析出任何年份块");
     }
 
-    years.sort_by(|a, b| b.name.cmp(&a.name));
+    years.sort_by_key(|b| std::cmp::Reverse(b.name));
     holidays.sort_by_key(|h| h.span.start);
     holidays.dedup();
     Ok(Calendar { years, holidays })
