@@ -111,6 +111,7 @@ fn report_legacy_drain() {
     } else {
         info!(
             legacy_v3_users = count,
+            qqs = ?super::timetable::legacy_v3_users(),
             "仍有用户停留在 v3 课表，等他们重新 /signtime"
         );
     }

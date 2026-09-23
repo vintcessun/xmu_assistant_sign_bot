@@ -221,3 +221,24 @@ pub async fn process_login_castgc<T: BotClient + BotHandler + fmt::Debug>(
 
     Ok(client)
 }
+
+/// 后台任务用的教务登录：和 [`process_login_castgc`] 前两步一样（先验 CASTGC，再试账号密码），
+/// 但没有消息上下文，所以既不发消息，也不会退到扫码。两步都不行就返回错误，由调用方跳过这个人。
+pub async fn login_castgc_for_id(id: i64) -> Result<SessionClient> {
+    if let Some(data) = LOGIN_DATA.get(&id)
+        && UserInfo::get(&data.castgc).await.is_ok()
+    {
+        let session = SessionClient::new();
+        session.set_cookie(
+            "CASTGC",
+            &data.castgc,
+            &url::Url::parse("https://ids.xmu.edu.cn").unwrap(),
+        );
+        write_client_cache(id, session.clone(), "recover_castgc");
+        return Ok(session);
+    }
+
+    let client = SessionClient::new();
+    try_pwd_login(&client, id).await?;
+    Ok(client)
+}

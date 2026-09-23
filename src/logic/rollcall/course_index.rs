@@ -347,6 +347,8 @@ pub fn spawn_background_tasks() {
         legacy_v3_users = legacy,
         "已在启动时触发定时签到与选课索引后台任务"
     );
+    // 还停在 v3 的人，能登上教务的就在后台替他重跑一次 /signtime，补上班级代码。
+    tokio::spawn(super::timetable::migrate_legacy_v3());
 }
 
 #[cfg(test)]

@@ -4,7 +4,8 @@ use super::data::TIMETABLE_DATA as DATA;
 use super::data::TIMETABLE_DATA_V3;
 use super::data::TIMETABLE_GROUP;
 use super::time::{TIME_SIGN_TASK, get_today_courses};
-use crate::logic::login::process::process_login_castgc;
+use super::utils::uniform;
+use crate::logic::login::process::{login_castgc_for_id, process_login_castgc};
 use crate::{
     abi::{logic_import::*, message::from_str},
     api::xmu_service::{
@@ -14,6 +15,7 @@ use crate::{
 };
 use anyhow::{Result, anyhow};
 use std::sync::Arc;
+use tracing::{info, warn};
 
 #[handler(msg_type=Message,command="signtime",echo_cmd=true,
 help_msg=r#"用法:/signtime <描述>
@@ -125,6 +127,17 @@ pub fn legacy_v3_count() -> usize {
     n
 }
 
+/// 还留在 v3 表上的用户 QQ（升序），随人数播报一起打进日志，方便判断这些人还用不用。
+/// v3 空了之后连同 `legacy_v3_count` 一起删。
+pub fn legacy_v3_users() -> Vec<i64> {
+    let mut users: Vec<i64> = Vec::new();
+    for entry in &*TIMETABLE_DATA_V3 {
+        users.push(*entry.key());
+    }
+    users.sort_unstable();
+    users
+}
+
 /// 写 v4 的同时把 v3 的旧行删掉，让 v3 表真的能被排空。
 fn write_sign_time(qq: i64, course_time: Arc<ScheduleCourseTime>) -> Result<()> {
     DATA.insert(qq, course_time)?;
@@ -147,4 +160,57 @@ pub async fn update_sign_time(qq: i64, course_time: ScheduleCourseTime) -> Resul
     write_sign_time(qq, Arc::new(course_time))?;
     TIME_SIGN_TASK.force_update().await?;
     Ok(())
+}
+
+/// 替还停在 v3 的用户在后台重跑一次 `/signtime`（默认学期、不问 LLM），
+/// 从教务拿回真实的班级代码写进 v4，同时删掉 v3 行。
+///
+/// 登不上（CASTGC 失效且没有账号密码）、拉课表失败、或拉回来是空课表的，一律跳过，
+/// 让他继续留在 v3——绝不拿 v3 转一份空 class_code 的 v4 去顶替。
+/// 启动时跑一次；每次重启都会重试剩下的人。v3 空了之后连同 legacy 代码一起删。
+pub async fn migrate_legacy_v3() {
+    let users = legacy_v3_users();
+    if users.is_empty() {
+        return;
+    }
+    info!(users = ?users, "开始自动迁移 v3 课表");
+    for (i, qq) in users.into_iter().enumerate() {
+        // 别在同一秒打一排 CAS 登录。
+        if i > 0 {
+            tokio::time::sleep(std::time::Duration::from_secs(uniform(5..15))).await;
+        }
+        match migrate_one_legacy(qq).await {
+            Ok((total, with_code)) => info!(
+                qq,
+                courses = total,
+                with_class_code = with_code,
+                "v3 课表已自动迁移到 v4"
+            ),
+            Err(e) => warn!(qq, error = %e, "v3 课表自动迁移跳过，保留原课表"),
+        }
+    }
+    info!(
+        legacy_v3_users = legacy_v3_count(),
+        remaining = ?legacy_v3_users(),
+        "v3 课表自动迁移结束"
+    );
+}
+
+async fn migrate_one_legacy(qq: i64) -> Result<(usize, usize)> {
+    let client = login_castgc_for_id(qq)
+        .await
+        .map_err(|e| anyhow!("教务登录失败: {e}"))?;
+    let (schedule, _) = ChooseTimetable::get_from_client(&client, "").await?;
+    let course_time = ScheduleCourseTime::new(schedule)?;
+    if course_time.times.is_empty() {
+        return Err(anyhow!("教务返回的默认学期课表是空的"));
+    }
+    let total = course_time.times.len();
+    let with_code = course_time
+        .times
+        .iter()
+        .filter(|c| !c.class_code.is_empty())
+        .count();
+    update_sign_time(qq, course_time).await?;
+    Ok((total, with_code))
 }
