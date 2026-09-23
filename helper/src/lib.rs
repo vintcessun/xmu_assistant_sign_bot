@@ -745,9 +745,14 @@ pub fn jw_api(args: TokenStream, input: TokenStream) -> TokenStream {
         CallType::Get => quote! {
             impl #original_ident {
                 pub async fn call_client(client: &crate::api::network::SessionClient) -> Result<#original_ident> {
+                    // 入口页必须走普通 GET：它要靠 302 链跳完 CAS 才能换到会话，
+                    // 带上 AJAX 头可能被改成返回 401 而不是重定向。
                     let res_auth = client.get(#original_ident::APP_ENTRANCE).await?;
-                    let res = client.get(#original_ident::URL_DATA).await?;
-                    crate::api::xmu_service::jw::ensure_json_response(&res)?;
+                    let res = client.get_with_headers(
+                        #original_ident::URL_DATA,
+                        crate::api::xmu_service::jw::ajax_headers(),
+                    ).await?;
+                    let res = crate::api::xmu_service::jw::ensure_json_response(res).await?;
                     let resp = res.json_smart().await?;
                     Ok(resp)
                 }
@@ -761,9 +766,15 @@ pub fn jw_api(args: TokenStream, input: TokenStream) -> TokenStream {
         CallType::Post => quote! {
             impl #original_ident {
                 pub async fn call_client<D: Serialize + Sync>(client: &crate::api::network::SessionClient, data: &D) -> Result<#original_ident> {
+                    // 入口页必须走普通 GET：它要靠 302 链跳完 CAS 才能换到会话，
+                    // 带上 AJAX 头可能被改成返回 401 而不是重定向。
                     let res_auth = client.get(#original_ident::APP_ENTRANCE).await?;
-                    let res = client.post(#original_ident::URL_DATA, data).await?;
-                    crate::api::xmu_service::jw::ensure_json_response(&res)?;
+                    let res = client.post_with_headers(
+                        #original_ident::URL_DATA,
+                        data,
+                        crate::api::xmu_service::jw::ajax_headers(),
+                    ).await?;
+                    let res = crate::api::xmu_service::jw::ensure_json_response(res).await?;
                     let resp = res.json_smart().await?;
                     Ok(resp)
                 }

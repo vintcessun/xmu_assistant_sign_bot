@@ -250,7 +250,12 @@ async fn query_handler(
     .await
     {
         Ok(outcome) => outcome,
-        Err(e) => return upstream("申请绩点计算失败", e),
+        Err(e) => {
+            // 带上会话与成绩范围：以前这条 WARN 只有一句错误文本，
+            // 事后根本没法把失败归到是哪个页面、哪个范围上。
+            warn!(session_id = %session.id, range_wid = %payload.range_wid, "绩点计算申请失败");
+            return upstream("申请绩点计算失败", e);
+        }
     };
     info!(session_id = %session.id, range_wid = %payload.range_wid, outcome = ?outcome, "绩点计算申请完成");
 

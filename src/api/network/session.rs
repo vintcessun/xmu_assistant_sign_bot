@@ -339,6 +339,42 @@ impl SessionClient {
         .await
     }
 
+    /// 带额外请求头的 GET。见 [`Self::post_with_headers`]。
+    pub async fn get_with_headers<U: IntoUrl>(
+        &self,
+        url: U,
+        headers: reqwest::header::HeaderMap,
+    ) -> Result<Response> {
+        let url = url.into_url()?;
+        self.request_internal(reqwest::Method::GET, url, None, Some(headers))
+            .await
+    }
+
+    /// 带额外请求头的 POST。
+    ///
+    /// 教务 jwapp 只有在请求“看起来像 AJAX”时才把业务错误渲染成 JSON，否则回一张
+    /// text/html 的“系统异常”页，所以教务侧的业务接口必须带上 `X-Requested-With`，
+    /// 见 [`crate::api::xmu_service::jw::ajax_headers`]。
+    pub async fn post_with_headers<U: IntoUrl, T: serde::Serialize + ?Sized>(
+        &self,
+        url: U,
+        data: &T,
+        headers: reqwest::header::HeaderMap,
+    ) -> Result<Response> {
+        let url = url.into_url()?;
+        let body = serde_urlencoded::to_string(data).map_err(|e| {
+            error!(error = ?e, "POST 请求体 URL 编码失败");
+            e
+        })?;
+        self.request_internal(
+            reqwest::Method::POST,
+            url,
+            Some((body, "application/x-www-form-urlencoded")),
+            Some(headers),
+        )
+        .await
+    }
+
     pub async fn post_json<U: IntoUrl, T: serde::Serialize + ?Sized>(
         &self,
         url: U,
@@ -537,6 +573,59 @@ mod tests {
             println!("多协程下载 ({}): 耗时: {:?}", n, total);
         }
 
+        Ok(())
+    }
+
+    /// `request_internal` 的 `headers` 参数此前没有任何公开入口用过，
+    /// 所以这里用一个本地回显服务盯死：教务要的 `X-Requested-With` 确实发得出去。
+    /// 不带这个头，教务的业务错误会回 text/html 的“系统异常”页，见 `jw::ajax_headers`。
+    #[tokio::test]
+    async fn post_with_headers_actually_sends_them() -> Result<()> {
+        use tokio::io::AsyncReadExt;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+
+        let server = tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await?;
+            // 读到请求头结束为止即可，断言只看头。
+            let mut raw = Vec::new();
+            let mut chunk = [0u8; 1024];
+            while !raw.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = sock.read(&mut chunk).await?;
+                if n == 0 {
+                    break;
+                }
+                raw.extend_from_slice(&chunk[..n]);
+            }
+            sock.write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}",
+            )
+            .await?;
+            sock.flush().await?;
+            anyhow::Ok(String::from_utf8_lossy(&raw).into_owned())
+        });
+
+        let client = SessionClient::new();
+        let resp = client
+            .post_with_headers(
+                format!("http://{addr}/probe"),
+                &[("CJFWWID", "deadbeef")][..],
+                crate::api::xmu_service::jw::ajax_headers(),
+            )
+            .await?;
+        assert!(resp.status().is_success());
+
+        let request = server.await??.to_ascii_lowercase();
+        assert!(
+            request.contains("x-requested-with: xmlhttprequest"),
+            "请求里没有 X-Requested-With：\n{request}"
+        );
+        // 顺带确认加了自定义头之后，表单的 Content-Type 没有被顶掉。
+        assert!(
+            request.contains("content-type: application/x-www-form-urlencoded"),
+            "Content-Type 被自定义头挤掉了：\n{request}"
+        );
         Ok(())
     }
 
