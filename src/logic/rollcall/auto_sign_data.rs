@@ -244,6 +244,8 @@ pub enum RadarType {
     Timetable,
     Cache,
     Triple,
+    /// 三点推算的坐标不在任何已知的楼附近，直接拿原始坐标去签（位置报「未知」）。
+    TripleUnknown,
 }
 
 impl Display for RadarType {
@@ -253,6 +255,7 @@ impl Display for RadarType {
             Self::Timetable => write!(f, "课程表法"),
             Self::Cache => write!(f, "缓存法"),
             Self::Triple => write!(f, "三点定位法"),
+            Self::TripleUnknown => write!(f, "三点推算兜底"),
         }?;
         Ok(())
     }

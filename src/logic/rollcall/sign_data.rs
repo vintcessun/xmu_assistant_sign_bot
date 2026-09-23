@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 use std::fmt::Display;
 use std::sync::Arc;
+use tracing::{info, warn};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RadarSign {
@@ -88,11 +89,15 @@ impl SignData {
         bail!("无法获取有效的位置信息，最近的距离为 {student_distance} 米");
     }
 
-    pub async fn location_fix_triple(
+    /// 用位置库前三个点各测一次雷达距离，三点推算出老师的大致坐标。
+    ///
+    /// 推算结果可能不在任何已知的楼附近——那时 [`Self::location_fix_triple`] 会失败，
+    /// 但坐标本身还能留给最后的兜底直接去签。
+    pub async fn triple_estimate(
         client: &SessionClient,
         activity_id: i64,
         device_id: &str,
-    ) -> Result<Arc<LocationStore>> {
+    ) -> Result<GeoPoint> {
         let mut location = Vec::with_capacity(3);
         for i in 0..3 {
             if let Some(loc) = LOCATIONS.get(i) {
@@ -111,26 +116,35 @@ impl SignData {
             bail!("可用的位置信息不足，无法使用三次定位计算");
         }
 
-        let ret = location_trilaterate(
-            GeoPoint {
-                lat: location[0].0.latitude,
-                lon: location[0].0.longitude,
-                dist: location[0].1,
-            },
-            GeoPoint {
-                lat: location[1].0.latitude,
-                lon: location[1].0.longitude,
-                dist: location[1].1,
-            },
-            GeoPoint {
-                lat: location[2].0.latitude,
-                lon: location[2].0.longitude,
-                dist: location[2].1,
-            },
-        );
-        if let Some(loc) = ret
-            && let Some(loc) = LOCATIONS.find(loc.lat, loc.lon, 100.0)
-        {
+        let point = |i: usize| GeoPoint {
+            lat: location[i].0.latitude,
+            lon: location[i].0.longitude,
+            dist: location[i].1,
+        };
+        let distances: Vec<String> = location
+            .iter()
+            .map(|(loc, d)| format!("{}={:.0}m", loc.name, d))
+            .collect();
+        match location_trilaterate(point(0), point(1), point(2)) {
+            Some(p) => {
+                info!(activity_id, lat = p.lat, lon = p.lon, distances = ?distances, "三点推算出签到位置");
+                Ok(p)
+            }
+            None => {
+                warn!(activity_id, distances = ?distances, "三点测距无法交汇，推算不出位置");
+                bail!("三点测距无法交汇，推算不出位置")
+            }
+        }
+    }
+
+    /// 把三点推算的坐标吸附到 100 米内的已知楼，再实测一次确认在 100 米内。
+    pub async fn location_fix_triple(
+        client: &SessionClient,
+        activity_id: i64,
+        device_id: &str,
+        estimate: GeoPoint,
+    ) -> Result<Arc<LocationStore>> {
+        if let Some(loc) = LOCATIONS.find(estimate.lat, estimate.lon, 100.0) {
             let sign_dis = AutoSignRequest::radar_distance(
                 client,
                 device_id,
@@ -145,7 +159,7 @@ impl SignData {
                 return Ok(loc);
             }
         }
-        bail!("无法获取有效的位置信息");
+        bail!("三点推算的位置附近没有已知的楼");
     }
 
     pub async fn location_remove(activity_id: i64) -> Result<()> {

@@ -6,12 +6,14 @@ use crate::{
         xmu_service::{
             jw::LocationStore,
             lnt::{CourseData, Profile, Rollcalls, rollcalls::RollcallStatus},
+            location::{LOCATIONS, Location, Region},
         },
     },
     logic::rollcall::{
         auto_sign_data::{
             AutoSignResponse, RadarType, auto_sign_response::qr::QRSignSuccessResult,
         },
+        location_utils::GeoPoint,
         sign_data::{RadarSign, SignData},
         utils::{generate_uuid, get_ts, string_similarity, uniform},
     },
@@ -21,7 +23,7 @@ use dashmap::DashMap;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::sync::LazyLock;
-use tracing::trace;
+use tracing::{debug, info, trace, warn};
 
 pub struct AutoSignRequest {
     pub device_id: String,
@@ -334,10 +336,31 @@ impl AutoSignRequest {
             .await
     }
 
-    async fn radar_triple(&self, activity_id: i64) -> Result<AutoSignResponse> {
-        let loc = SignData::location_fix_triple(&self.client, activity_id, &self.device_id).await?;
+    async fn radar_triple(&self, activity_id: i64, estimate: GeoPoint) -> Result<AutoSignResponse> {
+        let loc =
+            SignData::location_fix_triple(&self.client, activity_id, &self.device_id, estimate)
+                .await?;
 
         self.radar_inner(activity_id, loc, true, RadarType::Triple)
+            .await
+    }
+
+    /// 最后的兜底：三点推算的坐标不在任何已知的楼附近，就直接拿这个坐标去签，位置报「未知」。
+    /// 不加随机偏移——这个点本身就是推算出来的，再抖动只会离得更远。
+    async fn radar_triple_unknown(
+        &self,
+        activity_id: i64,
+        estimate: GeoPoint,
+    ) -> Result<AutoSignResponse> {
+        // 校区取离推算点最近的已知楼所在的校区，只用于显示。
+        let region = LOCATIONS
+            .find(estimate.lat, estimate.lon, f64::MAX)
+            .map(|l| l.region.clone())
+            .unwrap_or(Region::XiangAn);
+        let loc = Location::new(region, "未知", estimate.lon, estimate.lat);
+        let loc = Arc::new(LocationStore::from(loc));
+
+        self.radar_inner(activity_id, loc, false, RadarType::TripleUnknown)
             .await
     }
 
@@ -354,17 +377,33 @@ impl AutoSignRequest {
 
 impl AutoSignRequest {
     pub async fn radar(&self, activity_id: i64) -> Result<AutoSignResponse> {
-        if let Ok(loc) = self.radar_cache(activity_id).await {
-            return Ok(loc);
+        let qq = self.qq;
+        match self.radar_cache(activity_id).await {
+            Ok(r) => return Ok(r),
+            Err(e) => debug!(qq, activity_id, error = %e, "雷达签到：缓存法未成功"),
         }
-        if let Ok(loc) = self.radar_timetable(activity_id).await {
-            return Ok(loc);
+        match self.radar_timetable(activity_id).await {
+            Ok(r) => return Ok(r),
+            Err(e) => info!(qq, activity_id, error = %e, "雷达签到：课程表法未成功"),
         }
-        if let Ok(loc) = self.radar_triple(activity_id).await {
-            return Ok(loc);
+        // 三点推算只测一次，吸附已知楼失败时，坐标留给最后的兜底。
+        let estimate =
+            match SignData::triple_estimate(&self.client, activity_id, &self.device_id).await {
+                Ok(p) => Some(p),
+                Err(e) => {
+                    info!(qq, activity_id, error = %e, "雷达签到：三点推算失败");
+                    None
+                }
+            };
+        if let Some(p) = estimate {
+            match self.radar_triple(activity_id, p).await {
+                Ok(r) => return Ok(r),
+                Err(e) => info!(qq, activity_id, error = %e, "雷达签到：三点定位法未成功"),
+            }
         }
-        if let Ok(loc) = self.radar_retry(activity_id).await {
-            return Ok(loc);
+        match self.radar_retry(activity_id).await {
+            Ok(r) => return Ok(r),
+            Err(e) => info!(qq, activity_id, error = %e, "雷达签到：多次尝试法未成功"),
         }
         // 兜底：四种策略都“失败”，但每次尝试其实都已向 /answer 提交过位置，
         // 服务端可能已据此把该活动记为已签到（如距离>300 的客户端保护先返回、
@@ -375,6 +414,27 @@ impl AutoSignRequest {
             return Ok(AutoSignResponse::radar_already_signed(
                 course_info.name.clone(),
             ));
+        }
+        // 真的都失败了：拿三点推算出的原始坐标直接签，位置报「未知」。
+        if let Some(p) = estimate {
+            warn!(
+                qq,
+                activity_id,
+                lat = p.lat,
+                lon = p.lon,
+                "雷达签到：各方法都失败，用三点推算的原始坐标兜底（位置未知）"
+            );
+            match self.radar_triple_unknown(activity_id, p).await {
+                Ok(r) => return Ok(r),
+                Err(e) => warn!(
+                    qq,
+                    activity_id,
+                    lat = p.lat,
+                    lon = p.lon,
+                    error = %e,
+                    "雷达签到：三点推算兜底也失败"
+                ),
+            }
         }
         bail!("所有尝试雷达签到失败")
     }
