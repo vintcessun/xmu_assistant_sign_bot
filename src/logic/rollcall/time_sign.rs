@@ -91,32 +91,6 @@ static PROGRESS_CACHE: LazyLock<DashMap<i64, (Instant, usize, usize)>> =
 /// `qq -> 上次因索引落后而补拉选课的时刻`。
 static HEAL_TRIED: LazyLock<DashMap<i64, Instant>> = LazyLock::new(DashMap::new);
 
-/// 上一次播报过的 v3 存量人数，只在变化时才打日志，不刷屏。
-static LAST_LEGACY_COUNT: AtomicU64 = AtomicU64::new(u64::MAX);
-
-/// 播报还有多少人留在 v3 课表上。人数变化才打一条，归零时那条就是
-/// 「可以删掉 legacy 模块和 v3 表了」的信号。
-///
-/// v3 空了之后这个函数连同 `legacy_v3_count` 一起删掉。
-fn report_legacy_drain() {
-    let count = super::timetable::legacy_v3_count() as u64;
-    if LAST_LEGACY_COUNT.swap(count, Ordering::Relaxed) == count {
-        return;
-    }
-    if count == 0 {
-        info!(
-            legacy_v3_users = 0,
-            "v3 课表存量已清空，可以移除 legacy 兼容代码与 logic_command_sign_time_v3 表"
-        );
-    } else {
-        info!(
-            legacy_v3_users = count,
-            qqs = ?super::timetable::legacy_v3_users(),
-            "仍有用户停留在 v3 课表，等他们重新 /signtime"
-        );
-    }
-}
-
 /// 通用的按人限流：距上次超过 `cooldown` 才放行，并记下这一次。
 fn log_cooldown_passed(table: &DashMap<i64, Instant>, qq: i64, cooldown: Duration) -> bool {
     if table
@@ -209,7 +183,6 @@ struct Gathered {
 
 async fn time_sign_task() -> Result<()> {
     prune_caches();
-    report_legacy_drain();
 
     let course_time = TIME_SIGN_TASK.get_latest().await?;
 
@@ -253,7 +226,7 @@ async fn time_sign_task() -> Result<()> {
     // （线上实测 79 人摊出 2043 门），往年的课基本没有第二个人选，混进来就会把
     // 要覆盖的集合撑爆，逼得每个人都自己当哨兵，同课分组等于白做。
     //
-    // 班级代码为空（还没重新跑过 `/signtime` 的 v3 存量数据）或课不在索引里的，
+    // 班级代码为空（教务没给）或课不在索引里的，
     // 一律不进 courses_of —— 排班会让他自己当哨兵，他那条 rollcalls 照样能看到
     // 自己全部的签到，不会漏签，只是省不掉这条请求。
     let mut courses_of: HashMap<i64, Vec<i64>> = HashMap::new();

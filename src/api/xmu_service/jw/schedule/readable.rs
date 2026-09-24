@@ -324,8 +324,7 @@ impl Display for Weekday {
 pub struct CourseTime {
     pub name: String,
     /// 教务的班级代码（`BJDM`），等于 lnt 的 `course_code`，用来把这节课精确对到
-    /// lnt 的某个教学班。空串表示「未知」——那是从旧版 v3 课表迁上来的数据，
-    /// 用户重新跑一次 `/signtime` 就会补上。
+    /// lnt 的某个教学班。空串表示「未知」（教务没给），定时签到会让这个人自己蹲守自己的课。
     pub class_code: String,
     pub location: Arc<LocationStore>,
     pub start: ClockTime,
@@ -535,16 +534,6 @@ mod tests {
     }
 }
 
-/// 旧版（v3）课表的存储结构，**只用于把 `logic_command_sign_time_v3` 里的存量数据读出来**。
-///
-/// bincode 不是自描述格式：给 [`CourseTime`] 加了 `class_code` 之后，旧行就再也解不出来了，
-/// 所以新数据写到 `logic_command_sign_time_v4`，旧表原样保留、只读、并在用户下次
-/// `/signtime` 时删掉对应行。等 v3 表彻底空了，**这个模块连同 v3 表一起删掉**。
-///
-/// 删除清单（v3 空了之后）：
-/// - 本模块 `legacy`
-/// - `logic::rollcall::data::TIMETABLE_DATA_V3`
-/// - `logic::rollcall::timetable` 里的 v3 读回落与 `TIMETABLE_DATA_V3.remove`
 #[cfg(test)]
 mod watch_window_tests {
     use super::*;
@@ -604,120 +593,5 @@ mod watch_window_tests {
             !c.is_watching(0, &Weekday::Monday, now),
             "周次为 0 视为未知"
         );
-    }
-}
-
-#[cfg(test)]
-mod legacy_tests {
-    use super::legacy::*;
-    use super::*;
-
-    const CFG: bincode::config::Configuration<
-        bincode::config::LittleEndian,
-        bincode::config::Fixint,
-    > = bincode::config::standard().with_fixed_int_encoding();
-
-    /// v3 的存量数据必须还能原样读出来并转成新结构——这是不把 71 个用户的课表读没了的保证。
-    /// bincode 不是自描述格式，所以旧行只能用冻结的旧结构体解，不能指望新结构体兼容。
-    #[test]
-    fn v3_rows_still_decode_and_convert() {
-        let start = ClockTime::new(14, 30);
-        let end = ClockTime::new(16, 10);
-        let old = ScheduleCourseTimeV3 {
-            times: vec![CourseTimeV3 {
-                name: "复变函数".into(),
-                location: Arc::new(LocationStore::from(None)),
-                start,
-                end,
-                time_bitmap: TimeBitMap::from_range(start, end),
-                week_mask: BitField32::new(0b1111),
-                day: Weekday::Wednesday,
-            }],
-        };
-
-        // 按线上真实的存储路径编码/解码一遍
-        let bytes = bincode::serde::encode_to_vec(&old, CFG).unwrap();
-        let (decoded, _): (ScheduleCourseTimeV3, usize) =
-            bincode::serde::decode_from_slice(&bytes, CFG).unwrap();
-        let converted = ScheduleCourseTime::from(decoded);
-
-        assert_eq!(converted.times.len(), 1);
-        let c = &converted.times[0];
-        assert_eq!(c.name, "复变函数");
-        assert_eq!(c.class_code, "", "v3 没有班级代码，转换后应当是空串");
-        assert_eq!(c.start, start);
-        assert_eq!(c.end, end);
-        assert_eq!(c.day, Weekday::Wednesday);
-        assert_eq!(c.week_mask, BitField32::new(0b1111));
-        // 时间信息没丢，蹲守窗口照样算得出来
-        assert!(c.watch_window().is_active(ClockTime::new(14, 20)));
-    }
-
-    /// 新结构体解不了旧字节——这正是必须分表的原因，测出来免得以后有人想"直接加个字段"。
-    #[test]
-    fn new_struct_cannot_decode_v3_bytes() {
-        let start = ClockTime::new(8, 0);
-        let old = ScheduleCourseTimeV3 {
-            times: vec![CourseTimeV3 {
-                name: "线性代数".into(),
-                location: Arc::new(LocationStore::from(None)),
-                start,
-                end: ClockTime::new(9, 40),
-                time_bitmap: TimeBitMap::from_range(start, ClockTime::new(9, 40)),
-                week_mask: BitField32::new(0b1),
-                day: Weekday::Friday,
-            }],
-        };
-        let bytes = bincode::serde::encode_to_vec(&old, CFG).unwrap();
-        let res: Result<(ScheduleCourseTime, usize), _> =
-            bincode::serde::decode_from_slice(&bytes, CFG);
-        assert!(
-            res.is_err(),
-            "新结构体不该能解出旧字节，否则会读到错位的数据"
-        );
-    }
-}
-
-pub mod legacy {
-    use super::*;
-
-    #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-    pub struct CourseTimeV3 {
-        pub name: String,
-        pub location: Arc<LocationStore>,
-        pub start: ClockTime,
-        pub end: ClockTime,
-        pub time_bitmap: TimeBitMap,
-        pub week_mask: BitField32,
-        pub day: Weekday,
-    }
-
-    #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-    pub struct ScheduleCourseTimeV3 {
-        pub times: Vec<CourseTimeV3>,
-    }
-
-    impl From<CourseTimeV3> for CourseTime {
-        fn from(old: CourseTimeV3) -> Self {
-            Self {
-                name: old.name,
-                // v3 没存班级代码；空串表示未知，定时签到会让这个人自己蹲守自己的课。
-                class_code: String::new(),
-                location: old.location,
-                start: old.start,
-                end: old.end,
-                time_bitmap: old.time_bitmap,
-                week_mask: old.week_mask,
-                day: old.day,
-            }
-        }
-    }
-
-    impl From<ScheduleCourseTimeV3> for ScheduleCourseTime {
-        fn from(old: ScheduleCourseTimeV3) -> Self {
-            Self {
-                times: old.times.into_iter().map(CourseTime::from).collect(),
-            }
-        }
     }
 }

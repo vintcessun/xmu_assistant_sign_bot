@@ -12,9 +12,7 @@ use crate::api::xmu_service::lnt::ProfileWithoutCache;
 use crate::api::xmu_service::lnt::profile::ProfileResponse;
 use crate::api::xmu_service::login::LoginData;
 use crate::logic::login::{LOGIN_DATA, PWD_DATA};
-use crate::logic::rollcall::{
-    is_legacy_timetable, is_sign_time_active_now, query_sign_group, query_sign_time,
-};
+use crate::logic::rollcall::{is_sign_time_active_now, query_sign_group, query_sign_time};
 use crate::web::guard::has_secret;
 use anyhow::anyhow;
 use std::collections::HashSet;
@@ -102,14 +100,6 @@ static FIELDS: &[Field] = &[
             }
             None => "未保存，发 /signtime 录入".to_string(),
         })
-    }),
-    // v3 课表还没迁完的过渡标记。等 v3 表清空，这一项和 is_legacy_timetable 一起删。
-    ("课表版本", |c| {
-        if is_legacy_timetable(c.qq) {
-            Some("旧版(v3)，待迁移，重新发一次 /signtime 即可".to_string())
-        } else {
-            None
-        }
     }),
     ("当前时段", |c| {
         if query_sign_time(c.qq).is_some() {

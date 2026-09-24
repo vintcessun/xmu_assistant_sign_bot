@@ -340,15 +340,7 @@ pub fn spawn_remove(qq: i64) {
 pub fn spawn_background_tasks() {
     LazyLock::force(&super::time_sign::TIME_SIGN_TASK_RUNNER);
     LazyLock::force(&COURSE_INDEX_TASK);
-    // 还留在 v3 课表上的人数。归零＝存量已被 `/signtime` 刷干净，
-    // 那时就可以把 legacy 模块、v3 表和这行日志一起删掉。
-    let legacy = super::timetable::legacy_v3_count();
-    info!(
-        legacy_v3_users = legacy,
-        "已在启动时触发定时签到与选课索引后台任务"
-    );
-    // 还停在 v3 的人，能登上教务的就在后台替他重跑一次 /signtime，补上班级代码。
-    tokio::spawn(super::timetable::migrate_legacy_v3());
+    info!("已在启动时触发定时签到与选课索引后台任务");
 }
 
 #[cfg(test)]
