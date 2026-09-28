@@ -226,7 +226,45 @@ async fn describe_login_failure(resp: reqwest::Response) -> String {
             break;
         }
     }
+    if let Some(path) = save_failed_login_page(&html).await {
+        info!(path = path, "登录失败页面已保存");
+    }
     parts.join("，")
+}
+
+const LOGIN_FAIL_DIR: &str = "data/debug";
+const LOGIN_FAIL_KEEP: usize = 5;
+
+/// 把统一认证打回来的整页 HTML 存下来，只留最近 [`LOGIN_FAIL_KEEP`] 份。
+/// 提示写在哪认不出来的时候，直接打开这份页面看。
+async fn save_failed_login_page(html: &str) -> Option<String> {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_millis();
+    let path = format!("{LOGIN_FAIL_DIR}/login_fail_{ts}.html");
+    tokio::fs::create_dir_all(LOGIN_FAIL_DIR).await.ok()?;
+    if let Err(e) = tokio::fs::write(&path, html).await {
+        error!(error = ?e, path = path, "保存登录失败页面出错");
+        return None;
+    }
+
+    // 文件名带毫秒时间戳，按名字排序即按时间排序。
+    let mut saved = Vec::new();
+    if let Ok(mut dir) = tokio::fs::read_dir(LOGIN_FAIL_DIR).await {
+        while let Ok(Some(entry)) = dir.next_entry().await {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with("login_fail_") && name.ends_with(".html") {
+                saved.push(entry.path());
+            }
+        }
+    }
+    saved.sort();
+    let excess = saved.len().saturating_sub(LOGIN_FAIL_KEEP);
+    for old in &saved[..excess] {
+        tokio::fs::remove_file(old).await.ok();
+    }
+    Some(path)
 }
 
 pub async fn login_request(session: &SessionClient, data: LoginRequest) -> Result<LoginData> {
