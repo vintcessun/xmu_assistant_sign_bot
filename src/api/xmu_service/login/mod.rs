@@ -168,21 +168,80 @@ mod session_test {
     }
 }
 
+/// 在 HTML 里找 `marker`，取它所在标签之后的可见文字（去标签、压空白，最多 100 字）。
+fn text_after_marker(html: &str, marker: &str) -> Option<String> {
+    let start = html.find(marker)?;
+    let rest = &html[start..];
+    let rest = &rest[rest.find('>')? + 1..];
+    let end = ["</div>", "</title>"]
+        .iter()
+        .filter_map(|m| rest.find(m))
+        .min()
+        .unwrap_or(rest.len())
+        .min(1200);
+    let end = (0..=end).rev().find(|&i| rest.is_char_boundary(i))?;
+    let mut text = String::new();
+    let mut in_tag = false;
+    for c in rest[..end].chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => {
+                in_tag = false;
+                text.push(' ');
+            }
+            _ if !in_tag => text.push(c),
+            _ => {}
+        }
+    }
+    let text: String = text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(100)
+        .collect();
+    (!text.is_empty()).then_some(text)
+}
+
+/// 统一认证没下发 CASTGC 时，把它回的页面概括成一句话：状态码、落地地址（不带参数）、
+/// 页面标题、页面上的错误提示，用来判断是二次认证、改密还是请求本身不对。
+async fn describe_login_failure(resp: reqwest::Response) -> String {
+    let status = resp.status();
+    let mut url = resp.url().clone();
+    url.set_query(None);
+    let html = resp.text().await.unwrap_or_default();
+
+    let mut parts = vec![format!("状态码 {status}"), format!("落地 {url}")];
+    if let Some(title) = text_after_marker(&html, "<title") {
+        parts.push(format!("标题「{title}」"));
+    }
+    for marker in [
+        "id=\"showErrorTip\"",
+        "id=\"errorMsg\"",
+        "id=\"msg\"",
+        "class=\"auth_error\"",
+    ] {
+        if let Some(tip) = text_after_marker(&html, marker) {
+            parts.push(format!("提示「{tip}」"));
+            break;
+        }
+    }
+    parts.join("，")
+}
+
 pub async fn login_request(session: &SessionClient, data: LoginRequest) -> Result<LoginData> {
     info!(url = data.url, "发送登录请求");
-    session
-        .post(&data.url, &data.body)
-        .await?
-        .error_for_status_ref()
-        .map_err(|e| {
-            error!(url = data.url, error = ?e, "登录请求返回非成功状态码");
-            e
-        })?;
-
-    let castgc = session.get_cookie("CASTGC", &IDS_URL).ok_or_else(|| {
-        error!("登录失败，未获取到 CASTGC Cookie");
-        anyhow!("登录失败，未获取到CASTGC Cookie")
+    let resp = session.post(&data.url, &data.body).await?;
+    resp.error_for_status_ref().map_err(|e| {
+        error!(url = data.url, error = ?e, "登录请求返回非成功状态码");
+        e
     })?;
+
+    let Some(castgc) = session.get_cookie("CASTGC", &IDS_URL) else {
+        let reason = describe_login_failure(resp).await;
+        error!(reason = reason, "登录失败，未获取到 CASTGC Cookie");
+        return Err(anyhow!("登录失败，未获取到CASTGC Cookie（{reason}）"));
+    };
     debug!("成功获取 CASTGC Cookie");
 
     // 通过 /api/profile 触发大陆 cas-client broker 完成 SSO：CASTGC 挂在 ids.xmu.edu.cn 上，
@@ -210,22 +269,41 @@ pub async fn login_request(session: &SessionClient, data: LoginRequest) -> Resul
 
 pub async fn login_request_castgc(session: &SessionClient, data: LoginRequest) -> Result<String> {
     info!(url = data.url, "发送登录请求以获取 CASTGC");
-    session
-        .post(&data.url, &data.body)
-        .await?
-        .error_for_status_ref()
-        .map_err(|e| {
-            error!(url = data.url, error = ?e, "二维码登录请求返回非成功状态码");
-            e
-        })?;
-
-    let castgc = session.get_cookie("CASTGC", &IDS_URL).ok_or_else(|| {
-        error!("登录失败，未获取到 CASTGC Cookie");
-        anyhow!("登录失败，未获取到CASTGC Cookie")
+    let resp = session.post(&data.url, &data.body).await?;
+    resp.error_for_status_ref().map_err(|e| {
+        error!(url = data.url, error = ?e, "二维码登录请求返回非成功状态码");
+        e
     })?;
+
+    let Some(castgc) = session.get_cookie("CASTGC", &IDS_URL) else {
+        let reason = describe_login_failure(resp).await;
+        error!(reason = reason, "登录失败，未获取到 CASTGC Cookie");
+        return Err(anyhow!("登录失败，未获取到CASTGC Cookie（{reason}）"));
+    };
 
     info!("成功通过登录流程获取 CASTGC");
     Ok(castgc.to_string())
+}
+
+#[cfg(test)]
+mod describe_tests {
+    use super::text_after_marker;
+
+    #[test]
+    fn picks_title_and_error_tip() {
+        let html = r#"<html><head><title> 统一身份认证 </title></head><body>
+            <div><span id="showErrorTip"><span>您的账号存在
+            安全风险</span>，请进行二次认证</span></div></body></html>"#;
+        assert_eq!(
+            text_after_marker(html, "<title").as_deref(),
+            Some("统一身份认证")
+        );
+        assert_eq!(
+            text_after_marker(html, "id=\"showErrorTip\"").as_deref(),
+            Some("您的账号存在 安全风险 ，请进行二次认证")
+        );
+        assert_eq!(text_after_marker(html, "id=\"errorMsg\""), None);
+    }
 }
 
 #[cfg(test)]
