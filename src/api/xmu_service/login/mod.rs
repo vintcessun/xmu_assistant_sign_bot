@@ -168,6 +168,55 @@ mod session_test {
     }
 }
 
+/// 提交登录表单后统一认证回的最后一页。
+struct LoginPage {
+    status: reqwest::StatusCode,
+    url: Url,
+    html: String,
+}
+
+impl LoginPage {
+    async fn read(resp: reqwest::Response) -> Result<Self> {
+        resp.error_for_status_ref().map_err(|e| {
+            error!(url = %resp.url(), error = ?e, "登录请求返回非成功状态码");
+            anyhow!("登录请求返回非成功状态码：{e}")
+        })?;
+        Ok(Self {
+            status: resp.status(),
+            url: resp.url().clone(),
+            html: resp.text().await.unwrap_or_default(),
+        })
+    }
+}
+
+/// 「单处登录提示」页里「踢出以上会话并继续登录」表单的 execution；不是这个页就返回 None。
+fn kickout_continue_execution(html: &str) -> Option<String> {
+    if !html.contains("kick-out-content") {
+        return None;
+    }
+    let pos = html.find("id=\"continue\"")?;
+    extract_execution_fast(&html[pos..])
+}
+
+/// 提交登录表单。账号已在别的 PC 登着时，统一认证不发 CASTGC，而是回「单处登录提示」页
+/// 让选踢不踢；这里自动选「踢出以上会话并继续登录」（对方 PC 上的统一认证会被登出）。
+async fn submit_login<T: serde::Serialize + ?Sized>(
+    session: &SessionClient,
+    url: &str,
+    body: &T,
+) -> Result<LoginPage> {
+    let page = LoginPage::read(session.post(url, body).await?).await?;
+    if session.get_cookie("CASTGC", &IDS_URL).is_some() {
+        return Ok(page);
+    }
+    let Some(execution) = kickout_continue_execution(&page.html) else {
+        return Ok(page);
+    };
+    info!("统一认证提示账号已在其他 PC 登录，踢出该会话并继续登录");
+    let form = [("execution", execution.as_str()), ("_eventId", "continue")];
+    LoginPage::read(session.post(page.url.clone(), &form).await?).await
+}
+
 /// 在 HTML 里找 `marker`，取它所在标签之后的可见文字（去标签、压空白，最多 100 字）。
 fn text_after_marker(html: &str, marker: &str) -> Option<String> {
     let start = html.find(marker)?;
@@ -205,14 +254,13 @@ fn text_after_marker(html: &str, marker: &str) -> Option<String> {
 
 /// 统一认证没下发 CASTGC 时，把它回的页面概括成一句话：状态码、落地地址（不带参数）、
 /// 页面标题、页面上的错误提示，用来判断是二次认证、改密还是请求本身不对。
-async fn describe_login_failure(resp: reqwest::Response) -> String {
-    let status = resp.status();
-    let mut url = resp.url().clone();
+async fn describe_login_failure(page: &LoginPage) -> String {
+    let html = &page.html;
+    let mut url = page.url.clone();
     url.set_query(None);
-    let html = resp.text().await.unwrap_or_default();
 
-    let mut parts = vec![format!("状态码 {status}"), format!("落地 {url}")];
-    if let Some(title) = text_after_marker(&html, "<title") {
+    let mut parts = vec![format!("状态码 {}", page.status), format!("落地 {url}")];
+    if let Some(title) = text_after_marker(html, "<title") {
         parts.push(format!("标题「{title}」"));
     }
     for marker in [
@@ -221,12 +269,12 @@ async fn describe_login_failure(resp: reqwest::Response) -> String {
         "id=\"msg\"",
         "class=\"auth_error\"",
     ] {
-        if let Some(tip) = text_after_marker(&html, marker) {
+        if let Some(tip) = text_after_marker(html, marker) {
             parts.push(format!("提示「{tip}」"));
             break;
         }
     }
-    if let Some(path) = save_failed_login_page(&html).await {
+    if let Some(path) = save_failed_login_page(html).await {
         info!(path = path, "登录失败页面已保存");
     }
     parts.join("，")
@@ -269,14 +317,10 @@ async fn save_failed_login_page(html: &str) -> Option<String> {
 
 pub async fn login_request(session: &SessionClient, data: LoginRequest) -> Result<LoginData> {
     info!(url = data.url, "发送登录请求");
-    let resp = session.post(&data.url, &data.body).await?;
-    resp.error_for_status_ref().map_err(|e| {
-        error!(url = data.url, error = ?e, "登录请求返回非成功状态码");
-        e
-    })?;
+    let page = submit_login(session, &data.url, &data.body).await?;
 
     let Some(castgc) = session.get_cookie("CASTGC", &IDS_URL) else {
-        let reason = describe_login_failure(resp).await;
+        let reason = describe_login_failure(&page).await;
         error!(reason = reason, "登录失败，未获取到 CASTGC Cookie");
         return Err(anyhow!("登录失败，未获取到CASTGC Cookie（{reason}）"));
     };
@@ -307,14 +351,10 @@ pub async fn login_request(session: &SessionClient, data: LoginRequest) -> Resul
 
 pub async fn login_request_castgc(session: &SessionClient, data: LoginRequest) -> Result<String> {
     info!(url = data.url, "发送登录请求以获取 CASTGC");
-    let resp = session.post(&data.url, &data.body).await?;
-    resp.error_for_status_ref().map_err(|e| {
-        error!(url = data.url, error = ?e, "二维码登录请求返回非成功状态码");
-        e
-    })?;
+    let page = submit_login(session, &data.url, &data.body).await?;
 
     let Some(castgc) = session.get_cookie("CASTGC", &IDS_URL) else {
-        let reason = describe_login_failure(resp).await;
+        let reason = describe_login_failure(&page).await;
         error!(reason = reason, "登录失败，未获取到 CASTGC Cookie");
         return Err(anyhow!("登录失败，未获取到CASTGC Cookie（{reason}）"));
     };
@@ -325,7 +365,26 @@ pub async fn login_request_castgc(session: &SessionClient, data: LoginRequest) -
 
 #[cfg(test)]
 mod describe_tests {
-    use super::text_after_marker;
+    use super::{kickout_continue_execution, text_after_marker};
+
+    #[test]
+    fn kickout_page_gives_continue_execution() {
+        // 线上抓到的「单处登录提示」页，去掉了会话表格。
+        let html = r#"<div class="kick-out-content-box"><div class="kick-out-content">
+            <h3 class="kick-out-title"><span>单处登录提示</span></h3>
+            <form method="post" id="continue">
+                <input type="hidden" name="execution" value="e1s2"/><input type="hidden" name="_eventId" value="continue"/></form>
+            <form method="post" id="cancel">
+                <input type="hidden" name="execution" value="e1s3"/><input type="hidden" name="_eventId" value="cancel"/></form>
+            </div></div>"#;
+        assert_eq!(kickout_continue_execution(html).as_deref(), Some("e1s2"));
+        assert_eq!(
+            kickout_continue_execution(
+                r#"<form id="qrLoginForm"><input name="execution" value="x"/>"#
+            ),
+            None
+        );
+    }
 
     #[test]
     fn picks_title_and_error_tip() {

@@ -1,7 +1,7 @@
 use crate::api::xmu_service::IDS_URL;
 use crate::api::xmu_service::lnt::LNT_URL;
 use crate::api::xmu_service::login::{
-    LOGIN_URL, LoginData, extract_execution_fast, extract_salt_fast,
+    LOGIN_URL, LoginData, extract_execution_fast, extract_salt_fast, submit_login,
 };
 use crate::api::{network::SessionClient, xmu_service::login::LoginRequest};
 use anyhow::{Result, anyhow, bail};
@@ -94,10 +94,7 @@ pub async fn login_password(
 
     let login_request = LoginRequest::password(base_url, execution, &salt, username, password)?;
 
-    session
-        .post(&login_request.url, &login_request.body)
-        .await?
-        .error_for_status_ref()?;
+    submit_login(session, &login_request.url, &login_request.body).await?;
 
     let castgc = session
         .get_cookie("CASTGC", &IDS_URL)
