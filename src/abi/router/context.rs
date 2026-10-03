@@ -255,6 +255,23 @@ impl<
             }
         }
     }
+
+    /// 给指定消息贴表情；同一表情重复贴、表情不受支持时 NapCat 会返回失败。
+    pub async fn set_msg_emoji_like(&self, message_id: i64, emoji_id: String) -> Result<()> {
+        trace!(message_id = ?message_id, emoji_id = ?emoji_id, "准备贴表情");
+        let params = api::SetMsgEmojiLike::new(message_id, emoji_id);
+        let call = self.client.call_api(&params, Echo::new()).await?;
+        let res = call.wait_echo().await?;
+        trace!(response = ?res, "贴表情 API 返回");
+        match res.status {
+            api::Status::Ok => Ok(()),
+            api::Status::Failed => Err(anyhow::anyhow!(
+                "贴表情失败: {:?}",
+                res.message.unwrap_or("未知错误".to_string())
+            )),
+            api::Status::Async => Err(anyhow::anyhow!("贴表情异步处理中")),
+        }
+    }
 }
 
 impl<

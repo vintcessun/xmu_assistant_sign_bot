@@ -1,3 +1,4 @@
+mod emoji_like;
 mod get_forward_msg;
 mod get_group_info;
 mod get_group_list;
@@ -7,6 +8,7 @@ mod send_msg;
 mod set_add_request;
 mod title;
 
+pub use emoji_like::*;
 pub use get_forward_msg::*;
 pub use get_group_info::*;
 pub use get_group_list::*;

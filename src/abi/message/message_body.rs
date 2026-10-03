@@ -297,6 +297,8 @@ pub mod image {
         pub file: String,
         pub r#type: Option<String>,
         pub url: String,
+        /// 商城大表情才有：NapCat 把它转成 image 段并带上表情 ID。
+        pub emoji_id: Option<String>,
     }
 
     #[derive(Serialize, Deserialize, Debug, Clone)]
